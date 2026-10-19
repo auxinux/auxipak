@@ -178,6 +178,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "auxipak-builder"
+version = "1.0.0"
+dependencies = [
+ "anyhow",
+ "auxipak-core",
+ "chrono",
+ "clap",
+ "libc",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tokio-util",
+ "url",
+]
+
+[[package]]
 name = "auxipak-core"
 version = "1.0.0"
 dependencies = [
@@ -2707,10 +2725,6 @@ name = "tinyvec"
 version = "1.13.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fd3ca314f692efd6c868f8408f53fe444634a845f96c028b97d35f6a1f79f0ee"
-
-[[package]]
-name = "tmp-builder"
-version = "1.0.0"
 
 [[package]]
 name = "tmp-server"

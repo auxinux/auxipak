@@ -600,8 +600,11 @@ impl Manifest {
             return Err(ManifestError::TooLarge(bytes.len()));
         }
         let text = std::str::from_utf8(bytes).map_err(|e| ManifestError::Yaml(e.to_string()))?;
-        let value: serde_json::Value =
-            serde_yaml_ng::from_str(text).map_err(|e| ManifestError::Yaml(e.to_string()))?;
+        Manifest::from_value(parse_yaml_value(text)?)
+    }
+
+    /// Valide (schéma, typage strict, règles sémantiques) une valeur issue du YAML.
+    pub fn from_value(value: serde_json::Value) -> Result<(Manifest, Vec<Issue>), ManifestError> {
         crate::schema::validate_manifest_value(&value).map_err(ManifestError::Schema)?;
         let manifest: Manifest =
             serde_json::from_value(value).map_err(|e| ManifestError::Schema(vec![e.to_string()]))?;
@@ -742,6 +745,14 @@ impl Manifest {
         let lang = if self.languages.len() == 1 { self.languages[0].clone() } else { "mul".into() };
         format!("{}-{}-{}.apak", name, self.version, lang)
     }
+}
+
+/// Analyse un texte YAML en valeur générique (sans validation du manifeste).
+pub fn parse_yaml_value(text: &str) -> Result<serde_json::Value, ManifestError> {
+    if text.len() > MAX_MANIFEST_SIZE {
+        return Err(ManifestError::TooLarge(text.len()));
+    }
+    serde_yaml_ng::from_str(text).map_err(|e| ManifestError::Yaml(e.to_string()))
 }
 
 pub fn is_sha256_hex(s: &str) -> bool {
