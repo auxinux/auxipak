@@ -6,72 +6,16 @@ use crate::auth::{Actor, Scope};
 use crate::error::{bad, forbidden, ApiError, ApiResult};
 use crate::state::AppState;
 use anyhow::{anyhow, Context, Result};
-use auxipak_core::index::{
-    package_target, AppMeta, AppsIndex, ChannelIndex, ChannelRef, Release, RepoIndex, RepositoryInfo, Revocation,
-    RevocationList, SignatureRef, Status, APPS_TARGET, INDEX_META_VERSION, REPO_INDEX_TARGET, REVOCATIONS_TARGET,
-};
-use auxipak_core::manifest::{Manifest, Target};
-use auxipak_core::platform::{Arch, Channel, Distribution, Os};
+use auxipak_core::index::{AppMeta, RepositoryInfo, Revocation, Status};
+use auxipak_core::manifest::Manifest;
+use auxipak_core::repogen::{PublishedPackage, RepoContent};
 use auxipak_core::signature::{PackageRef, PackageSignature};
 use chrono::{DateTime, Duration, Utc};
-use std::collections::{BTreeMap, BTreeSet};
-use std::path::{Path, PathBuf};
+use std::collections::BTreeSet;
+use std::path::PathBuf;
 use uuid::Uuid;
 
-/// Entrée d'index d'une version pour un couple canal/architecture.
-#[derive(Debug, Clone)]
-pub struct ChannelEntry {
-    pub channel: Channel,
-    pub arch: Arch,
-    pub distributions: Vec<Distribution>,
-    pub architectures: Vec<Arch>,
-    pub target: Target,
-}
-
-/// Couples canal/architecture couverts par un manifeste.
-pub fn channel_entries(m: &Manifest) -> Vec<ChannelEntry> {
-    let mut out: BTreeMap<(Channel, Arch), ChannelEntry> = BTreeMap::new();
-    for t in &m.targets {
-        let chans: Vec<(Channel, Vec<Distribution>)> = match t.platform {
-            Os::Windows => vec![(Channel::Windows, vec![Distribution::Windows])],
-            Os::Macos => vec![(Channel::Macos, vec![Distribution::Macos])],
-            Os::Linux => {
-                let mut m: BTreeMap<Channel, Vec<Distribution>> = BTreeMap::new();
-                for d in &t.distributions {
-                    if let Some(c) = Channel::for_distribution(*d) {
-                        m.entry(c).or_default().push(*d);
-                    }
-                }
-                m.into_iter().collect()
-            }
-        };
-        let archs: Vec<Arch> = if t.architectures.contains(&Arch::Any) {
-            vec![Arch::X86_64, Arch::Arm64]
-        } else {
-            t.architectures.clone()
-        };
-        for (c, dists) in chans {
-            for a in &archs {
-                out.entry((c, *a))
-                    .and_modify(|e| {
-                        for d in &dists {
-                            if !e.distributions.contains(d) {
-                                e.distributions.push(*d);
-                            }
-                        }
-                    })
-                    .or_insert(ChannelEntry {
-                        channel: c,
-                        arch: *a,
-                        distributions: dists.clone(),
-                        architectures: t.architectures.clone(),
-                        target: t.clone(),
-                    });
-            }
-        }
-    }
-    out.into_values().collect()
-}
+pub use auxipak_core::repogen::{channel_entries, ChannelEntry};
 
 #[derive(sqlx::FromRow, Debug, Clone)]
 pub struct SubmissionRow {
@@ -273,15 +217,6 @@ struct RepoRow {
     generation: i64,
 }
 
-fn write_json<T: serde::Serialize>(dir: &Path, name: &str, v: &T) -> Result<PathBuf> {
-    let p = dir.join(name);
-    if let Some(parent) = p.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    std::fs::write(&p, serde_json::to_vec_pretty(v)?)?;
-    Ok(p)
-}
-
 /// Régénère les index et les métadonnées TUF d'un dépôt, puis bascule
 /// atomiquement le lien `current`.
 pub async fn regenerate(state: &AppState, repo: &str, actor: Option<&Actor>) -> Result<u64> {
@@ -327,9 +262,7 @@ async fn regenerate_locked(state: &AppState, repo: &str) -> Result<u64> {
     let work = tempfile::Builder::new().prefix("regen-").tempdir_in(state.config.tmp_dir())?;
     let src = work.path().join("src");
     std::fs::create_dir_all(&src)?;
-    let mut targets: Vec<(String, PathBuf)> = Vec::new();
-
-    let mut channels: BTreeMap<(Channel, Arch), Vec<Release>> = BTreeMap::new();
+    let mut packages = Vec::new();
     let mut revoked = Vec::new();
     for rel in &releases {
         if rel.state == "revoked" {
@@ -346,91 +279,54 @@ async fn regenerate_locked(state: &AppState, repo: &str) -> Result<u64> {
             continue;
         }
         let m: Manifest = serde_json::from_value(rel.manifest.clone()).context("manifeste stocké invalide")?;
-        let pkg_target = package_target(&rel.app_id, &rel.version, &rel.file_name);
-        let sig_target = format!("{pkg_target}.sig");
         let stored = state.config.packages_dir().join(repo).join(&rel.app_id).join(&rel.version);
-        let pkg_path = stored.join(&rel.file_name);
-        let sig_path = stored.join(format!("{}.sig", rel.file_name));
-        if !pkg_path.exists() || !sig_path.exists() {
+        let package_path = stored.join(&rel.file_name);
+        let signature_path = stored.join(format!("{}.sig", rel.file_name));
+        if !package_path.exists() || !signature_path.exists() {
             tracing::error!(release = %rel.id, "fichier publié manquant : version ignorée");
             continue;
         }
-        targets.push((pkg_target.clone(), pkg_path));
-        targets.push((sig_target.clone(), sig_path));
-        for e in channel_entries(&m) {
-            channels.entry((e.channel, e.arch)).or_default().push(Release {
-                id: rel.app_id.clone(),
-                version: rel.version.clone(),
-                languages: m.languages.clone(),
-                platform: e.target.platform,
-                distributions: e.distributions.clone(),
-                architectures: e.architectures.clone(),
-                file_name: rel.file_name.clone(),
-                target: pkg_target.clone(),
-                size: rel.size as u64,
-                sha256: rel.sha256.clone(),
-                signature: SignatureRef { target: sig_target.clone(), key_id: rel.signature_key_id.clone() },
-                published_at: rel.published_at,
-                dependencies: m.dependencies.clone(),
-                mode: e.target.mode,
-                privileges: e.target.effective_privileges(),
-                uses_scripts: rel.uses_scripts,
-                revoked: false,
-            });
-        }
+        packages.push(PublishedPackage {
+            manifest: m,
+            file_name: rel.file_name.clone(),
+            package_path,
+            signature_path,
+            size: rel.size as u64,
+            sha256: rel.sha256.clone(),
+            signature_key_id: rel.signature_key_id.clone(),
+            published_at: rel.published_at,
+            uses_scripts: rel.uses_scripts,
+        });
     }
-
-    let mut chan_refs = Vec::new();
-    for ((c, a), rels) in &channels {
-        let name = c.index_target(*a);
-        let p = write_json(
-            &src,
-            &name,
-            &ChannelIndex { meta_version: INDEX_META_VERSION, channel: *c, arch: *a, generated_at: now, releases: rels.clone() },
-        )?;
-        targets.push((name.clone(), p));
-        chan_refs.push(ChannelRef { channel: *c, arch: *a, target: name, releases: rels.len() });
-    }
-    let apps_idx = AppsIndex {
-        meta_version: INDEX_META_VERSION,
-        generated_at: now,
-        apps: apps
-            .iter()
-            .map(|a| AppMeta {
-                id: a.id.clone(),
-                name: a.name.clone(),
-                publisher: a.publisher.clone(),
-                summary: a.summary.clone(),
-                description: a.description.clone(),
-                license: a.license.clone(),
-                homepage: a.homepage.clone(),
-                categories: a.categories.clone(),
-                // Statut officiel : uniquement dans un dépôt officiel.
-                status: if r.official {
-                    a.status.as_deref().and_then(|s| s.parse().ok()).unwrap_or(Status::Unreviewed)
-                } else {
-                    Status::Unreviewed
-                },
-                status_note: if r.official { a.note.clone() } else { None },
-                evaluated_at: if r.official { a.evaluated_at } else { None },
-            })
-            .collect(),
-    };
-    targets.push((APPS_TARGET.into(), write_json(&src, APPS_TARGET, &apps_idx)?));
-    targets.push((
-        REVOCATIONS_TARGET.into(),
-        write_json(&src, REVOCATIONS_TARGET, &RevocationList { meta_version: INDEX_META_VERSION, generated_at: now, revoked })?,
-    ));
-    let index = RepoIndex {
-        meta_version: INDEX_META_VERSION,
-        repository: RepositoryInfo { name: r.name.clone(), title: r.title.clone(), description: r.description.clone(), official: r.official },
-        generated_at: now,
+    let apps: Vec<AppMeta> = apps
+        .iter()
+        .map(|a| AppMeta {
+            id: a.id.clone(),
+            name: a.name.clone(),
+            publisher: a.publisher.clone(),
+            summary: a.summary.clone(),
+            description: a.description.clone(),
+            license: a.license.clone(),
+            homepage: a.homepage.clone(),
+            categories: a.categories.clone(),
+            // Statut officiel : uniquement dans un dépôt officiel.
+            status: if r.official {
+                a.status.as_deref().and_then(|s| s.parse().ok()).unwrap_or(Status::Unreviewed)
+            } else {
+                Status::Unreviewed
+            },
+            status_note: if r.official { a.note.clone() } else { None },
+            evaluated_at: if r.official { a.evaluated_at } else { None },
+        })
+        .collect();
+    let content = RepoContent {
+        info: RepositoryInfo { name: r.name.clone(), title: r.title.clone(), description: r.description.clone(), official: r.official },
         generation,
-        apps: APPS_TARGET.into(),
-        revocations: REVOCATIONS_TARGET.into(),
-        channels: chan_refs,
+        packages,
+        apps,
+        revoked,
     };
-    targets.push((REPO_INDEX_TARGET.into(), write_json(&src, REPO_INDEX_TARGET, &index)?));
+    let targets = auxipak_core::repogen::write_indexes(&content, &src, now)?;
 
     let repo_dir = state.config.repos_dir().join(repo);
     std::fs::create_dir_all(&repo_dir)?;
@@ -540,38 +436,4 @@ pub async fn set_release_state(state: &AppState, actor: &Actor, id: Uuid, new_st
     .await;
     regenerate(state, &repo, Some(actor)).await?;
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn channel_entries_cover_any_arch_and_split_distributions() {
-        let yaml = r#"
-format: 1
-id: demo
-name: Demo
-version: "1.0"
-publisher: X
-summary: s
-license: MIT
-languages: [fr]
-targets:
-  - name: deb
-    platform: linux
-    distributions: [debian, ubuntu, auxinuxos]
-    architectures: [any]
-    mode: native
-    install: { method: package_manager, manager: apt, packages: [demo] }
-"#;
-        // apt n'est pas autorisé sur auxinuxos : manifeste refusé.
-        assert!(Manifest::parse(yaml.as_bytes()).is_err());
-        let yaml = yaml.replace(", auxinuxos]", "]");
-        let (m, _) = Manifest::parse(yaml.as_bytes()).unwrap();
-        let e = channel_entries(&m);
-        assert_eq!(e.len(), 2);
-        assert!(e.iter().all(|x| x.channel == Channel::LinuxDeb));
-        assert_eq!(e[0].distributions, vec![Distribution::Debian, Distribution::Ubuntu]);
-    }
 }

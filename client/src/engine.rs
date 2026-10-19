@@ -442,6 +442,7 @@ async fn install_txn(
     download::ensure_space(&work, vp.inspection.total_unpacked)?;
     archive::extract(&vp.path, &extracted, &Limits::default()).map_err(|e| anyhow!("extraction : {e}"))?;
     txn.set_phase(Phase::Extracted)?;
+    crash_point("after_extract");
     let staged = stage_app_state(&env.paths, &rel.id, &extracted)?;
 
     // Stratégie de mise à niveau.
@@ -469,6 +470,7 @@ async fn install_txn(
     };
     eprintln!("  installation ({} / {})", target.mode, target.install.method_name());
     let outcome = methods::install(&ctx, txn).await?;
+    crash_point("after_install");
     txn.set_phase(Phase::Installed)?;
     if methods::detect(&ctx).await? == Some(false) {
         bail!("l'installateur s'est terminé sans erreur mais l'application n'est pas détectée");
@@ -773,4 +775,16 @@ pub fn selector(version: Option<&str>, lang: Option<&str>, repo: Option<&str>) -
         language: lang.map(|s| s.to_string()),
         repo: repo.map(|s| s.to_string()),
     })
+}
+
+/// Interruption simulée (tests de reprise) : n'existe que dans les binaires
+/// de débogage, jamais dans une version publiée.
+fn crash_point(name: &str) {
+    #[cfg(debug_assertions)]
+    if std::env::var("AUXIPAK_TEST_CRASH_AT").as_deref() == Ok(name) {
+        eprintln!("[test] interruption simulée au point « {name} »");
+        std::process::abort();
+    }
+    #[cfg(not(debug_assertions))]
+    let _ = name;
 }

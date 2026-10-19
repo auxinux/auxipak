@@ -22,6 +22,7 @@ pub mod manifest;
 pub mod netpolicy;
 pub mod platform;
 pub mod project;
+pub mod repogen;
 pub mod schema;
 pub mod signature;
 pub mod tuf;
