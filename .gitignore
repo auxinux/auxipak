@@ -1,0 +1,6 @@
+/target
+*.apak.part
+/dev-data
+/.env
+*.pem
+!deploy/**/*.example.pem

@@ -1,0 +1,199 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pak.auxinux.ca/schemas/instruction.auxipak/1.json",
+  "title": "Manifeste AuxiPak (instruction.auxipak), format 1",
+  "description": "Manifeste déclaratif d'un paquet .apak. Aucune commande libre n'est acceptée : chaque méthode possède des paramètres structurés.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format", "id", "name", "version", "publisher", "summary", "license", "languages", "targets"],
+  "properties": {
+    "format": { "const": 1 },
+    "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9.+-]{1,63}$" },
+    "name": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "version": { "type": "string", "pattern": "^[0-9][A-Za-z0-9.+~_-]{0,63}$" },
+    "publisher": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "summary": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "description": { "type": "string", "maxLength": 20000 },
+    "license": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "homepage": { "type": "string", "format": "uri", "maxLength": 512 },
+    "languages": {
+      "type": "array", "minItems": 1, "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^[a-z]{2,3}(-[A-Z]{2}|-[A-Za-z]{4})?$" }
+    },
+    "categories": { "type": "array", "items": { "type": "string", "pattern": "^[a-z0-9-]{1,32}$" }, "maxItems": 10 },
+    "privacy": {
+      "type": "object", "additionalProperties": false, "required": ["telemetry"],
+      "properties": {
+        "telemetry": { "enum": ["none", "opt_in", "opt_out", "mandatory"] },
+        "details": { "type": "string", "maxLength": 4000 },
+        "data_collected": { "type": "array", "items": { "type": "string", "maxLength": 200 } }
+      }
+    },
+    "dependencies": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false, "required": ["id"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9.+-]{1,63}$" },
+          "version": { "type": "string", "maxLength": 128 }
+        }
+      }
+    },
+    "contents": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false, "required": ["path", "sha256", "size"],
+        "properties": {
+          "path": { "type": "string", "pattern": "^(payload|scripts)/", "maxLength": 512 },
+          "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+          "size": { "type": "integer", "minimum": 0 },
+          "executable": { "type": "boolean" }
+        }
+      }
+    },
+    "targets": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/target" } }
+  },
+  "$defs": {
+    "nativePackage": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9.+_:@/-]{0,127}$" },
+    "manager": { "enum": ["apt", "auxi", "virtuaos", "winget", "brew"] },
+    "args": { "type": "array", "items": { "type": "string", "minLength": 1, "maxLength": 256 } },
+    "source": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "file": { "type": "string", "pattern": "^payload/" },
+        "url": { "type": "string", "pattern": "^https://" },
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "size": { "type": "integer", "minimum": 0 },
+        "allowed_hosts": { "type": "array", "items": { "type": "string" } },
+        "file_name": { "type": "string" }
+      },
+      "oneOf": [
+        { "required": ["file"], "not": { "anyOf": [ { "required": ["url"] }, { "required": ["sha256"] } ] } },
+        { "required": ["url", "sha256"], "not": { "required": ["file"] } }
+      ]
+    },
+    "install": {
+      "type": "object",
+      "required": ["method"],
+      "properties": { "method": { "enum": ["package_manager", "deb", "msi", "exe", "pkg", "dmg", "files", "script"] } },
+      "allOf": [
+        { "if": { "properties": { "method": { "const": "package_manager" } } }, "then": {
+          "additionalProperties": false, "required": ["manager", "packages"],
+          "properties": { "method": true, "manager": { "$ref": "#/$defs/manager" },
+            "packages": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/nativePackage" } } } } },
+        { "if": { "properties": { "method": { "const": "deb" } } }, "then": {
+          "additionalProperties": false, "required": ["package", "source"],
+          "properties": { "method": true, "package": { "$ref": "#/$defs/nativePackage" }, "source": { "$ref": "#/$defs/source" } } } },
+        { "if": { "properties": { "method": { "const": "msi" } } }, "then": {
+          "additionalProperties": false, "required": ["source"],
+          "properties": { "method": true, "source": { "$ref": "#/$defs/source" },
+            "product_code": { "type": "string" },
+            "properties": { "type": "object", "additionalProperties": { "type": "string" } },
+            "scope": { "enum": ["machine", "user"] } } } },
+        { "if": { "properties": { "method": { "const": "exe" } } }, "then": {
+          "additionalProperties": false, "required": ["source"],
+          "properties": { "method": true, "source": { "$ref": "#/$defs/source" }, "args": { "$ref": "#/$defs/args" } } } },
+        { "if": { "properties": { "method": { "const": "pkg" } } }, "then": {
+          "additionalProperties": false, "required": ["source", "package_id"],
+          "properties": { "method": true, "source": { "$ref": "#/$defs/source" }, "package_id": { "type": "string" } } } },
+        { "if": { "properties": { "method": { "const": "dmg" } } }, "then": {
+          "additionalProperties": false, "required": ["source", "app"],
+          "properties": { "method": true, "source": { "$ref": "#/$defs/source" }, "app": { "type": "string", "pattern": "\\.app$" } } } },
+        { "if": { "properties": { "method": { "const": "files" } } }, "then": {
+          "additionalProperties": false, "required": ["files"],
+          "properties": { "method": true, "files": { "type": "array", "minItems": 1, "items": {
+            "type": "object", "additionalProperties": false, "required": ["source", "destination"],
+            "properties": {
+              "source": { "type": "string", "pattern": "^payload/" },
+              "destination": { "type": "string", "pattern": "^\\{(app|bin|data)\\}(/|$)" },
+              "executable": { "type": "boolean" } } } } } } },
+        { "if": { "properties": { "method": { "const": "script" } } }, "then": {
+          "additionalProperties": false, "required": ["script"],
+          "properties": { "method": true, "script": { "type": "string", "pattern": "^scripts/" }, "args": { "$ref": "#/$defs/args" } } } }
+      ]
+    },
+    "remove": {
+      "type": "object",
+      "required": ["method"],
+      "properties": { "method": { "enum": ["package_manager", "deb", "msi", "exe", "pkg", "app", "files", "script"] } },
+      "allOf": [
+        { "if": { "properties": { "method": { "const": "package_manager" } } }, "then": {
+          "additionalProperties": false, "required": ["manager", "packages"],
+          "properties": { "method": true, "manager": { "$ref": "#/$defs/manager" },
+            "packages": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/nativePackage" } } } } },
+        { "if": { "properties": { "method": { "const": "deb" } } }, "then": {
+          "additionalProperties": false, "required": ["package"],
+          "properties": { "method": true, "package": { "$ref": "#/$defs/nativePackage" } } } },
+        { "if": { "properties": { "method": { "const": "msi" } } }, "then": {
+          "additionalProperties": false, "required": ["product_code"],
+          "properties": { "method": true, "product_code": { "type": "string" } } } },
+        { "if": { "properties": { "method": { "const": "exe" } } }, "then": {
+          "additionalProperties": false, "required": ["path"],
+          "properties": { "method": true, "path": { "type": "string" }, "args": { "$ref": "#/$defs/args" } } } },
+        { "if": { "properties": { "method": { "const": "pkg" } } }, "then": {
+          "additionalProperties": false, "required": ["package_id"],
+          "properties": { "method": true, "package_id": { "type": "string" },
+            "paths": { "type": "array", "items": { "type": "string", "pattern": "^/Applications/" } } } } },
+        { "if": { "properties": { "method": { "const": "app" } } }, "then": {
+          "additionalProperties": false, "required": ["app"],
+          "properties": { "method": true, "app": { "type": "string" } } } },
+        { "if": { "properties": { "method": { "const": "files" } } }, "then": {
+          "additionalProperties": false, "properties": { "method": true } } },
+        { "if": { "properties": { "method": { "const": "script" } } }, "then": {
+          "additionalProperties": false, "required": ["script"],
+          "properties": { "method": true, "script": { "type": "string", "pattern": "^scripts/" }, "args": { "$ref": "#/$defs/args" } } } }
+      ]
+    },
+    "detect": {
+      "type": "object",
+      "required": ["method"],
+      "properties": { "method": { "enum": ["package_manager", "msi", "pkg", "app", "files"] } },
+      "allOf": [
+        { "if": { "properties": { "method": { "const": "package_manager" } } }, "then": {
+          "additionalProperties": false, "required": ["manager", "package"],
+          "properties": { "method": true, "manager": { "$ref": "#/$defs/manager" }, "package": { "$ref": "#/$defs/nativePackage" } } } },
+        { "if": { "properties": { "method": { "const": "msi" } } }, "then": {
+          "additionalProperties": false, "required": ["product_code"], "properties": { "method": true, "product_code": { "type": "string" } } } },
+        { "if": { "properties": { "method": { "const": "pkg" } } }, "then": {
+          "additionalProperties": false, "required": ["package_id"], "properties": { "method": true, "package_id": { "type": "string" } } } },
+        { "if": { "properties": { "method": { "const": "app" } } }, "then": {
+          "additionalProperties": false, "required": ["app"], "properties": { "method": true, "app": { "type": "string" } } } },
+        { "if": { "properties": { "method": { "const": "files" } } }, "then": {
+          "additionalProperties": false, "required": ["paths"],
+          "properties": { "method": true, "paths": { "type": "array", "minItems": 1, "items": { "type": "string" } } } } }
+      ]
+    },
+    "target": {
+      "type": "object", "additionalProperties": false,
+      "required": ["name", "platform", "architectures", "mode", "install"],
+      "properties": {
+        "name": { "type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{0,31}$" },
+        "platform": { "enum": ["linux", "windows", "macos"] },
+        "distributions": { "type": "array", "uniqueItems": true,
+          "items": { "enum": ["debian", "ubuntu", "auxinuxos", "virtuaos", "windows", "macos"] } },
+        "os_version": { "type": "string", "maxLength": 128 },
+        "architectures": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "enum": ["x86_64", "arm64", "any"] } },
+        "mode": { "enum": ["native", "remote", "embedded"] },
+        "privileges": { "enum": ["user", "admin"] },
+        "install": { "$ref": "#/$defs/install" },
+        "remove": { "$ref": "#/$defs/remove" },
+        "upgrade": { "type": "object", "additionalProperties": false,
+          "properties": { "strategy": { "enum": ["in_place", "remove_then_install"] } } },
+        "reboot": { "enum": ["none", "recommended", "required"] },
+        "success_codes": { "type": "array", "minItems": 1, "items": { "type": "integer" } },
+        "reboot_codes": { "type": "array", "items": { "type": "integer" } },
+        "scripts": { "type": "object", "additionalProperties": false,
+          "properties": {
+            "pre_install": { "type": "string", "pattern": "^scripts/" },
+            "post_install": { "type": "string", "pattern": "^scripts/" },
+            "pre_remove": { "type": "string", "pattern": "^scripts/" },
+            "post_remove": { "type": "string", "pattern": "^scripts/" } } },
+        "permissions": { "type": "array", "uniqueItems": true,
+          "items": { "enum": ["network", "system_files", "user_files", "services", "autostart", "drivers", "firewall"] } },
+        "native_dependencies": { "type": "array", "items": { "$ref": "#/$defs/nativePackage" } },
+        "detect": { "$ref": "#/$defs/detect" },
+        "timeout_seconds": { "type": "integer", "minimum": 1, "maximum": 86400 }
+      }
+    }
+  }
+}
