@@ -618,7 +618,24 @@ targets:
         let dir = tempfile::tempdir().unwrap();
         let p = raw(dir.path(), vec![(ArchiveEntry::new_file("payload/a"), Some(b"x".to_vec()))]);
         assert!(matches!(inspect(&p, &Limits::default()), Err(ApakError::MissingManifest)));
-        let p = raw(dir.path(), vec![manifest_entry(), (ArchiveEntry::new_file("payload/bin/hello"), Some(b"x".to_vec()))]);
+        let manifest = MANIFEST.replace(
+            "targets:",
+            &format!(
+                "contents:\n  - path: payload/bin/hello\n    sha256: \"{}\"\n    size: 1\ntargets:",
+                crate::hash::sha256_hex(b"x")
+            ),
+        );
+        let p = raw(
+            dir.path(),
+            vec![
+                (ArchiveEntry::new_file(MANIFEST_FILE), Some(manifest.clone().into_bytes())),
+                (ArchiveEntry::new_file("payload/bin/hello"), Some(b"x".to_vec())),
+                (ArchiveEntry::new_file("payload/smuggled"), Some(b"y".to_vec())),
+            ],
+        );
+        assert!(matches!(inspect(&p, &Limits::default()), Err(ApakError::Contents(_))));
+        // Fichier déclaré mais absent.
+        let p = raw(dir.path(), vec![(ArchiveEntry::new_file(MANIFEST_FILE), Some(manifest.into_bytes()))]);
         assert!(matches!(inspect(&p, &Limits::default()), Err(ApakError::Contents(_))));
     }
 

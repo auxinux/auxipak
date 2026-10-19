@@ -431,6 +431,7 @@ pub mod tests {
         while let Some(c) = s.next().await {
             if c.is_err() {
                 failed = true;
+                break;
             }
         }
         assert!(failed, "une cible falsifiée doit être rejetée");

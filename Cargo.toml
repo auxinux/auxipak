@@ -33,3 +33,11 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json"]
 jsonschema = { version = "0.59", default-features = false }
 regex = "1"
 futures = "0.3"
+
+[profile.dev.package."*"]
+opt-level = 2
+
+[profile.release]
+lto = "thin"
+codegen-units = 4
+strip = true
