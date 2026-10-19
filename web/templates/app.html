@@ -12,7 +12,7 @@
     <p>{{ m.badge(app.status, tr) }}</p>
     <p class="meta">{{ tr['status_' ~ app.status ~ '_desc'] }}</p>
     {% if app.status_note %}<p><strong>{{ tr.reservations }} :</strong> {{ app.status_note }}</p>{% endif %}
-    {% if app.evaluated_at %}<p class="meta">{{ tr.evaluated_on }} {{ app.evaluated_at|date }}</p>{% endif %}
+    {% if app.evaluated_at and app.status != 'unreviewed' %}<p class="meta">{{ tr.evaluated_on }} {{ app.evaluated_at|date }}</p>{% endif %}
     <p class="meta"><a href="/values">{{ tr.nav_values }}</a></p>
   </section>
   <section class="card">
