@@ -195,20 +195,24 @@ Le serveur publie `/install.sh`, `/uninstall.sh`, `/install.ps1` et
 dépôt officiel) ainsi que `/downloads/` : les archives du client d'une
 release, lues dans `deploy/downloads/` (monté en lecture seule).
 
-1. Créer une release : pousser une étiquette `v1.0.0` ; le workflow
-   « Release » prépare un brouillon (archives, `SHA256SUMS`, attestations) ;
-   le relire puis le publier sur GitHub.
+1. Créer une release : pousser une étiquette `v1.0.0` (ou lancer le workflow
+   « Release » à la main avec l'étiquette en paramètre). Il prépare un
+   brouillon de release (archives, `SHA256SUMS`) et copie les archives dans
+   la branche `client-dist` du dépôt.
 2. Sur le serveur :
 
    ```console
    $ cd ~/auxipak/deploy
+   $ git -C ~/auxipak pull
    $ ./scripts/fetch-client.sh v1.0.0      # ou un dossier : ./scripts/fetch-client.sh ~/release
-   $ GITHUB_TOKEN=github_pat_… ./scripts/fetch-client.sh v1.0.0   # dépôt privé
    $ curl -fsS https://auxipak.auxinux.ca/downloads/SHA256SUMS
    ```
 
-Le script vérifie chaque empreinte (et les attestations de provenance si
-`gh` est installé) puis remplace les binaires publiés. Aucun redémarrage
+Le script lit la branche `client-dist` avec l'accès git déjà configuré pour
+le dépôt (clé SSH : aucun jeton d'API), à défaut la release GitHub publiée
+(ou l'API GitHub si `GITHUB_TOKEN` est défini). Il vérifie chaque empreinte
+SHA-256 (et les attestations avec `AUXIPAK_VERIFY_ATTESTATIONS=1`) puis
+remplace les binaires publiés. Aucun redémarrage
 n'est nécessaire. Installation native (systemd) : déposer les fichiers dans
 `AUXIPAK_DOWNLOADS_DIR` (par défaut `$AUXIPAK_DATA_DIR/downloads`).
 

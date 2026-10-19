@@ -1,0 +1,45 @@
+# Copie les binaires du client d'une release (même en brouillon) dans la
+# branche « client-dist » (un seul commit, réécrit à chaque version) : un
+# serveur qui a déjà accès au dépôt par git (clé SSH) les récupère avec
+# deploy/scripts/fetch-client.sh, sans jeton d'API.
+name: Client dist
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Étiquette de la release (ex. v1.0.0)"
+        required: true
+  workflow_call:
+    inputs:
+      tag:
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  push:
+    name: Branche client-dist
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Récupération et vérification des archives de la release
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          AUXIPAK_GITHUB_REPO: ${{ github.repository }}
+          AUXIPAK_DOWNLOADS_HOST_DIR: ${{ runner.temp }}/client-dist
+          TAG: ${{ inputs.tag }}
+        run: deploy/scripts/fetch-client.sh "$TAG"
+      - name: Publication dans la branche client-dist
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          cd "$RUNNER_TEMP/client-dist"
+          git init -q -b client-dist
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -qm "Client AuxiPak $TAG"
+          git push -fq "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" client-dist

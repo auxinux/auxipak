@@ -2,8 +2,9 @@
 # Publie les binaires du client sur ce serveur (servis par /downloads/ et
 # utilisés par install.sh / install.ps1).
 #
-#   ./fetch-client.sh v1.0.0          # depuis une release GitHub publiée
-#   GITHUB_TOKEN=… ./fetch-client.sh v1.0.0   # dépôt privé ou brouillon
+#   ./fetch-client.sh v1.0.0          # branche client-dist (git, clé SSH du dépôt),
+#                                     # sinon release GitHub publiée
+#   GITHUB_TOKEN=… ./fetch-client.sh v1.0.0   # API GitHub (dépôt privé, brouillon)
 #   ./fetch-client.sh ~/release-dir   # depuis un dossier (archives + SHA256SUMS)
 #   AUXIPAK_VERIFY_ATTESTATIONS=1 …   # vérifie aussi les attestations (gh requis)
 #
@@ -13,6 +14,7 @@ set -euo pipefail
 SRC="${1:?étiquette (ex. v1.0.0) ou dossier requis}"
 REPO="${AUXIPAK_GITHUB_REPO:-auxinux/auxipak}"
 DEST="${AUXIPAK_DOWNLOADS_HOST_DIR:-$(cd "$(dirname "$0")/.." && pwd)/downloads}"
+REPO_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 die() { echo "erreur : $*" >&2; exit 1; }
 
 tmp=$(mktemp -d)
@@ -44,6 +46,11 @@ PY
     curl -fsSL --retry 3 "${auth[@]}" -H "Accept: application/octet-stream" \
       -o "$tmp/$1" "https://api.github.com/repos/$REPO/releases/assets/$id"
   }
+elif [[ "$SRC" =~ ^v[0-9A-Za-z._-]+$ ]] && git -C "$REPO_DIR" fetch -q --depth 1 origin client-dist 2>/dev/null; then
+  # Branche client-dist, avec l'accès git déjà configuré pour ce dépôt.
+  rev=$(git -C "$REPO_DIR" rev-parse FETCH_HEAD)
+  echo "Binaires lus dans la branche client-dist (${rev:0:12})"
+  get() { git -C "$REPO_DIR" cat-file -e "$rev:$1" 2>/dev/null && git -C "$REPO_DIR" show "$rev:$1" > "$tmp/$1"; }
 else
   [[ "$SRC" =~ ^v[0-9A-Za-z._-]+$ ]] || die "étiquette invalide : $SRC"
   base="https://github.com/$REPO/releases/download/$SRC"
@@ -54,7 +61,11 @@ get SHA256SUMS || die "SHA256SUMS introuvable (release publiée ? dépôt privé
 awk '{ f = $2; sub(/^\*/, "", f)
        if ($1 ~ /^[0-9a-fA-F]{64}$/ && f ~ /^auxipak-[A-Za-z0-9._-]+\.(tar\.gz|zip)$/) print $1 "  " f }' \
   "$tmp/SHA256SUMS" > "$tmp/SUMS"
-[[ -s "$tmp/SUMS" ]] || die "aucune archive du client dans SHA256SUMS"
+if [[ ! -d "$SRC" ]]; then
+  grep -F "  auxipak-$SRC-" "$tmp/SUMS" > "$tmp/SUMS.tag" || true
+  mv "$tmp/SUMS.tag" "$tmp/SUMS"
+fi
+[[ -s "$tmp/SUMS" ]] || die "aucune archive du client $SRC dans SHA256SUMS"
 
 while read -r _ f; do
   echo "Téléchargement de $f"

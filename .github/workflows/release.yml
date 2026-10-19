@@ -108,3 +108,12 @@ jobs:
             1. vérifier les attestations si elles existent : `gh attestation verify <fichier> --repo ${{ github.repository }}` ;
             2. vérifier SHA256SUMS ;
             3. relecture humaine des notes de version (CHANGELOG.md).
+
+  client-dist:
+    name: Binaires du client (branche client-dist)
+    needs: [publish]
+    permissions:
+      contents: write
+    uses: ./.github/workflows/client-dist.yml
+    with:
+      tag: ${{ inputs.tag || github.ref_name }}
