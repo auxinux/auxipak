@@ -1,6 +1,46 @@
 [package]
-name = "tmp-client"
+name = "auxipak"
+description = "Client AuxiPak : recherche, installation, mise à niveau et désinstallation d'applications"
 version.workspace = true
 edition.workspace = true
-[lib]
-path = "src/lib.rs"
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "auxipak"
+path = "src/main.rs"
+
+[dependencies]
+auxipak-core = { path = "../shared" }
+anyhow.workspace = true
+thiserror.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+clap.workspace = true
+tokio.workspace = true
+reqwest.workspace = true
+url.workspace = true
+tough = { workspace = true, features = ["http"] }
+futures.workspace = true
+tempfile.workspace = true
+sha2.workspace = true
+hex.workspace = true
+toml = "0.9"
+fs4 = { version = "0.13", features = ["sync"] }
+os_info = { version = "3", default-features = false }
+uuid = { version = "1", features = ["v4", "serde"] }
+jiff = "0.2"
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_UI_Shell", "Win32_Foundation"] }
+
+[dev-dependencies]
+assert_cmd = "2"
+predicates = "3"
