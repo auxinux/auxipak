@@ -296,10 +296,10 @@ fn to_web_user(a: &Actor) -> WebUser {
 }
 
 /// Session obligatoire ; redirige vers la page de connexion sinon.
-async fn require_session(st: &AppState, jar: &CookieJar) -> Result<Actor, Response> {
+async fn require_session(st: &AppState, jar: &CookieJar) -> Result<Actor, Box<Response>> {
     session_actor(st, jar)
         .await
-        .ok_or_else(|| Redirect::to("/admin/login").into_response())
+        .ok_or_else(|| Box::new(Redirect::to("/admin/login").into_response()))
 }
 
 fn check_csrf(actor: &Actor, token: &str) -> ApiResult<()> {
@@ -388,7 +388,7 @@ macro_rules! session {
     ($st:expr, $jar:expr) => {
         match require_session(&$st, &$jar).await {
             Ok(a) => a,
-            Err(r) => return r,
+            Err(r) => return *r,
         }
     };
 }

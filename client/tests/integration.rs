@@ -495,7 +495,8 @@ fn admin_privileges_are_required_when_declared() {
     f.publish();
     f.ok(&["update"]);
     let out = f.fails(&["install", "priv"]);
-    assert!(out.contains("droits d'administration") && out.contains("sudo"), "{out}");
+    let hint = if cfg!(windows) { "administrateur" } else { "sudo" };
+    assert!(out.contains("droits d'administration") && out.contains(hint), "{out}");
     assert!(!f.installed_bin("priv").exists());
 }
 

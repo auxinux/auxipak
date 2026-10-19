@@ -393,6 +393,7 @@ pub mod tests {
         out
     }
 
+    #[allow(clippy::result_large_err)] // type d'erreur de la bibliothèque tough
     async fn load(repo: &Path, root: &[u8], datastore: &Path) -> tough::error::Result<tough::Repository> {
         let meta = url::Url::from_directory_path(repo.join("metadata")).unwrap();
         let targets = url::Url::from_directory_path(repo.join("targets")).unwrap();
