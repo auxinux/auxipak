@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% import "macros.html" as m %}
+{% block title %}{{ tr.values_title }}{% endblock %}
+{% block content %}
+<h1>{{ tr.values_title }}</h1>
+<p>{{ tr.values_intro }}</p>
+<ol class="card">
+  {% for i in range(1, 8) %}<li>{{ tr['value_' ~ i] }}</li>{% endfor %}
+</ol>
+<h2>{{ tr.values_statuses }}</h2>
+<div class="grid">
+  {% for s in ['verified', 'compatible', 'unreviewed'] %}
+  <div class="card">{{ m.badge(s, tr) }}<p>{{ tr['status_' ~ s ~ '_desc'] }}</p></div>
+  {% endfor %}
+</div>
+<p class="warning">{{ tr.values_rule }}</p>
+{% endblock %}

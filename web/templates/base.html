@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="{{ lang }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}AuxiPak{% endblock %} — AuxiPak</title>
+  <link rel="stylesheet" href="/static/themes/auxinux.css">
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/">AuxiPak<small>{{ tr.site_tagline }}</small></a>
+    <nav class="main" aria-label="Navigation">
+      <a href="/">{{ tr.nav_catalog }}</a>
+      <a href="/values">{{ tr.nav_values }}</a>
+      <a href="/docs">{{ tr.nav_docs }}</a>
+      <a href="/admin">{{ tr.nav_admin }}</a>
+    </nav>
+    {% if user %}
+    <form class="inline" method="post" action="/admin/logout">
+      <input type="hidden" name="csrf" value="{{ user.csrf }}">
+      <span class="meta">{{ user.username }} ({{ user.role }})</span>
+      <button class="secondary small" type="submit">{{ tr.logout }}</button>
+    </form>
+    {% endif %}
+    <a class="lang" href="/lang/{{ tr.other_lang_code }}" hreflang="{{ tr.other_lang_code }}">{{ tr.other_lang }}</a>
+  </div>
+</header>
+<main class="wrap">
+{% block content %}{% endblock %}
+</main>
+<footer class="site"><div class="wrap">{{ tr.footer }} · <a href="/index">/index</a> · <a href="/api/v1/openapi.yaml">API</a></div></footer>
+</body>
+</html>

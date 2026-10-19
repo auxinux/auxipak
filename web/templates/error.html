@@ -1,0 +1,6 @@
+{% extends "base.html" %}
+{% block title %}{{ tr.error }} {{ status }}{% endblock %}
+{% block content %}
+<h1>{{ tr.error }} {{ status }}</h1>
+<div class="card"><p>{{ message }}</p><p><a href="/">{{ tr.back_home }}</a></p></div>
+{% endblock %}

@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}{{ tr.dashboard }}{% endblock %}
+{% block content %}
+{% include "admin/nav.html" %}
+<h1>{{ tr.dashboard }}</h1>
+<div class="stats">
+  <a class="card stat" href="/admin/submissions?status=pending"><b>{{ c.pending }}</b><span>{{ tr.pending }}</span></a>
+  <div class="card stat"><b>{{ c.published }}</b><span>{{ tr.releases }}</span></div>
+  <div class="card stat"><b>{{ c.apps }}</b><span>{{ tr.apps_count }}</span></div>
+  <div class="card stat"><b>{{ c.verified }}</b><span>{{ tr.verified_count }}</span></div>
+  <div class="card stat"><b>{{ c.revoked }}</b><span>{{ tr.revoked_count }}</span></div>
+</div>
+<section class="card">
+  <dl class="kv"><dt>{{ tr.signing_key }}</dt><dd class="mono">{{ signing_key or tr.signing_key_missing }}</dd></dl>
+</section>
+<h2>{{ tr.repositories }}</h2>
+<div class="table-wrap"><table>
+  <thead><tr><th>{{ tr.name }}</th><th>{{ tr.official }}</th><th>{{ tr.generation }}</th><th>{{ tr.last_publication }}</th></tr></thead>
+  <tbody>{% for r in repos %}<tr><td>{{ r.name }} — {{ r.title }}</td><td>{{ tr.yes if r.official else tr.no }}</td><td>{{ r.generation }}</td><td>{{ (r.published_at or '')|date }}</td></tr>{% endfor %}</tbody>
+</table></div>
+{% endblock %}

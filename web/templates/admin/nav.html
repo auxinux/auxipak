@@ -1,0 +1,10 @@
+<nav class="admin-nav" aria-label="Administration">
+  <a href="/admin">{{ tr.dashboard }}</a>
+  <a href="/admin/submissions?status=pending">{{ tr.submissions }}</a>
+  <a href="/admin/upload">{{ tr.upload }}</a>
+  <a href="/admin/releases">{{ tr.releases }}</a>
+  <a href="/admin/apps">{{ tr.apps }}</a>
+  <a href="/admin/repositories">{{ tr.repositories }}</a>
+  <a href="/admin/tokens">{{ tr.tokens }}</a>
+  {% if user.is_admin %}<a href="/admin/users">{{ tr.users }}</a><a href="/admin/audit">{{ tr.audit }}</a>{% endif %}
+</nav>

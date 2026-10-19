@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% import "macros.html" as m %}
+{% block title %}{{ d.app.name }}{% endblock %}
+{% block content %}
+{% set app = d.app %}
+{% set latest = d.releases|selectattr('state', 'equalto', 'published')|first %}
+<h1>{{ app.name }} <span class="meta mono">{{ app.id }}</span></h1>
+<p>{{ app.summary }}</p>
+<div class="grid">
+  <section class="card">
+    <h2>{{ tr.status }}</h2>
+    <p>{{ m.badge(app.status, tr) }}</p>
+    <p class="meta">{{ tr['status_' ~ app.status ~ '_desc'] }}</p>
+    {% if app.status_note %}<p><strong>{{ tr.reservations }} :</strong> {{ app.status_note }}</p>{% endif %}
+    {% if app.evaluated_at %}<p class="meta">{{ tr.evaluated_on }} {{ app.evaluated_at|date }}</p>{% endif %}
+    <p class="meta"><a href="/values">{{ tr.nav_values }}</a></p>
+  </section>
+  <section class="card">
+    <dl class="kv">
+      <dt>{{ tr.publisher }}</dt><dd>{{ app.publisher }}</dd>
+      <dt>{{ tr.license }}</dt><dd>{{ app.license }}</dd>
+      {% if app.homepage %}<dt>{{ tr.homepage }}</dt><dd><a href="{{ app.homepage }}" rel="noopener nofollow">{{ app.homepage }}</a></dd>{% endif %}
+      {% if latest %}
+      <dt>{{ tr.version }}</dt><dd>{{ latest.version }}</dd>
+      <dt>{{ tr.languages }}</dt><dd>{{ latest.languages|join(', ') }}</dd>
+      <dt>{{ tr.platforms }}</dt><dd>{% for t in latest.manifest.targets %}{{ t.platform }}{% if t.distributions %} ({{ t.distributions|join(', ') }}){% endif %} [{{ t.architectures|join(', ') }}]{% if not loop.last %}<br>{% endif %}{% endfor %}</dd>
+      {% endif %}
+    </dl>
+  </section>
+</div>
+{% if app.description %}<section class="card"><h2>{{ tr.description }}</h2><p>{{ app.description }}</p></section>{% endif %}
+{% if latest %}
+<section class="card">
+  <h2>{{ tr.install_title }}</h2>
+  <p>{{ tr.install_help }}</p>
+  <pre>auxipak install {{ app.id }}</pre>
+  {% if latest.uses_scripts %}<p class="warning">{{ tr.scripts_warning }}</p>{% endif %}
+  <dl class="kv">
+    <dt>{{ tr.download }}</dt><dd><a href="/repos/{{ latest.repository }}/targets/packages/{{ app.id }}/{{ latest.version }}/{{ latest.file_name }}">{{ latest.file_name }}</a> ({{ latest.size|filesize }})</dd>
+    <dt>{{ tr.signature }}</dt><dd><a href="/repos/{{ latest.repository }}/targets/packages/{{ app.id }}/{{ latest.version }}/{{ latest.file_name }}.sig">{{ latest.file_name }}.sig</a> — <span class="mono">{{ latest.signature_key_id }}</span></dd>
+    <dt>{{ tr.sha256 }}</dt><dd class="mono">{{ latest.sha256 }}</dd>
+    <dt>{{ tr.repository }}</dt><dd>{{ latest.repository }}</dd>
+  </dl>
+</section>
+{% endif %}
+<section>
+  <h2>{{ tr.history }}</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th>{{ tr.version }}</th><th>{{ tr.published }}</th><th>{{ tr.languages }}</th><th>{{ tr.size }}</th><th>{{ tr.repository }}</th><th>{{ tr.state }}</th></tr></thead>
+    <tbody>
+    {% for r in d.releases %}
+      <tr><td>{{ r.version }}</td><td>{{ r.published_at|date }}</td><td>{{ r.languages|join(', ') }}</td><td>{{ r.size|filesize }}</td><td>{{ r.repository }}</td>
+      <td>{{ m.state(r.state, tr) }}{% if r.state == 'revoked' and r.state_reason %}<div class="meta">{{ tr.revoked_reason }} : {{ r.state_reason }}</div>{% endif %}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</section>
+{% endblock %}

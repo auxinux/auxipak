@@ -1,6 +1,51 @@
 [package]
-name = "tmp-server"
+name = "auxipak-server"
+description = "Serveur AuxiPak : API REST, dépôts TUF, publication, classification et interface Web"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "auxipak-server"
+path = "src/main.rs"
+
 [lib]
 path = "src/lib.rs"
+
+[dependencies]
+auxipak-core = { path = "../shared" }
+anyhow.workspace = true
+thiserror.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+serde_yaml_ng.workspace = true
+chrono.workspace = true
+clap.workspace = true
+tokio.workspace = true
+url.workspace = true
+tempfile.workspace = true
+sha2.workspace = true
+hex.workspace = true
+base64.workspace = true
+rand.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+futures.workspace = true
+sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "postgres", "migrate", "chrono", "uuid", "json", "macros"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+axum = { version = "0.8", features = ["multipart"] }
+axum-extra = { version = "0.12", features = ["cookie"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["trace", "limit", "set-header"] }
+argon2 = "0.5"
+time = "0.3"
+minijinja = { version = "2", features = ["loader", "json"] }
+rust-embed = "8"
+mime_guess = "2"
+tokio-util = { version = "0.7", features = ["io"] }
+tough.workspace = true
+
+[dev-dependencies]
+reqwest = { workspace = true }

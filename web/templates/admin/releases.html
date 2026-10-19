@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% import "macros.html" as m %}
+{% block title %}{{ tr.releases }}{% endblock %}
+{% block content %}
+{% include "admin/nav.html" %}
+<h1>{{ tr.releases }}</h1>
+{{ m.flash(msg, tr) }}
+<div class="table-wrap"><table>
+  <thead><tr><th>Application</th><th>{{ tr.version }}</th><th>{{ tr.repository }}</th><th>{{ tr.signature }}</th><th>{{ tr.state }}</th><th>{{ tr.published }}</th>{% if user.can_review %}<th>{{ tr.actions }}</th>{% endif %}</tr></thead>
+  <tbody>
+  {% for r in list %}
+    <tr>
+      <td><a href="/apps/{{ r.app_id }}">{{ r.app_id }}</a><div class="meta">{{ r.file_name }}</div></td>
+      <td>{{ r.version }}{% if r.uses_scripts %} <span class="badge compatible">scripts</span>{% endif %}</td>
+      <td>{{ r.repository }}</td>
+      <td class="mono">{{ r.signature_key_id|short }}</td>
+      <td>{{ m.state(r.state, tr) }}{% if r.state_reason %}<div class="meta">{{ r.state_reason }}</div>{% endif %}</td>
+      <td>{{ r.published_at|date }}<div class="meta">{{ r.published_by or '' }}</div></td>
+      {% if user.can_review %}<td class="stack">
+        {% if r.state == 'published' %}
+        <form method="post" action="/admin/releases/{{ r.id }}/state" class="row">
+          <input type="hidden" name="csrf" value="{{ user.csrf }}"><input type="hidden" name="state" value="unpublished">
+          <button class="secondary small" type="submit">{{ tr.unpublish }}</button>
+        </form>
+        {% elif r.state == 'unpublished' %}
+        <form method="post" action="/admin/releases/{{ r.id }}/state" class="row">
+          <input type="hidden" name="csrf" value="{{ user.csrf }}"><input type="hidden" name="state" value="published">
+          <button class="secondary small" type="submit">{{ tr.republish }}</button>
+        </form>
+        {% endif %}
+        {% if r.state != 'revoked' %}
+        <form method="post" action="/admin/releases/{{ r.id }}/state" class="row" data-confirm="{{ tr.revoke_confirm }}">
+          <input type="hidden" name="csrf" value="{{ user.csrf }}"><input type="hidden" name="state" value="revoked">
+          <input type="text" name="reason" placeholder="{{ tr.reason }}" required>
+          <button class="danger small" type="submit">{{ tr.revoke }}</button>
+        </form>
+        {% endif %}
+      </td>{% endif %}
+    </tr>
+  {% else %}<tr><td colspan="7">—</td></tr>{% endfor %}
+  </tbody>
+</table></div>
+{% endblock %}

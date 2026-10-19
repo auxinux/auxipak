@@ -1,0 +1,13 @@
+{% macro badge(status, tr) -%}
+<span class="badge {{ status }}" title="{{ tr['status_' ~ status ~ '_desc'] }}">{{ tr['status_' ~ status] }}</span>
+{%- endmacro %}
+{% macro flash(msg, tr) -%}
+{% if msg %}
+  {% if msg in ['ok', 'approved', 'rejected'] %}<div class="flash ok" role="status">{{ tr[msg ~ '_msg'] }}</div>
+  {% elif msg in ['invalid', 'throttled'] %}<div class="flash err" role="alert">{{ tr['login_' ~ msg] }}</div>
+  {% else %}<div class="flash err" role="alert">{{ msg }}</div>{% endif %}
+{% endif %}
+{%- endmacro %}
+{% macro state(s, tr) -%}
+<span class="badge {{ 'verified' if s == 'published' else ('revoked' if s == 'revoked' else 'neutral') }}">{{ tr['state_' ~ s] }}</span>
+{%- endmacro %}

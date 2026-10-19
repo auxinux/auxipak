@@ -1,0 +1,44 @@
+/* Thème AuxiNux (par défaut).
+   Pour créer un thème : copier ce fichier, ajuster les variables, puis
+   référencer le nouveau fichier dans templates/base.html. Aucun logo officiel
+   n'est fourni : le nom « AuxiPak » est affiché en texte. */
+:root {
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", sans-serif;
+  --mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --text: #1c2430;
+  --muted: #5d6878;
+  --border: #dde2e9;
+  --accent: #1f5fae;
+  --accent-contrast: #ffffff;
+  --verified: #1d7a46;
+  --verified-bg: #e3f4ea;
+  --compatible: #8a5a00;
+  --compatible-bg: #fdf1d8;
+  --unreviewed: #56606e;
+  --unreviewed-bg: #eceff3;
+  --danger: #b42318;
+  --danger-bg: #fdecea;
+  --radius: 10px;
+  --shadow: 0 1px 2px rgba(16, 24, 40, .06);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #12161c;
+    --surface: #1a2029;
+    --text: #e6eaf0;
+    --muted: #9aa5b4;
+    --border: #2c3542;
+    --accent: #6ea8ff;
+    --accent-contrast: #0b1220;
+    --verified: #5fd38f;
+    --verified-bg: #143222;
+    --compatible: #f2c060;
+    --compatible-bg: #3a2c0f;
+    --unreviewed: #aab4c2;
+    --unreviewed-bg: #262d38;
+    --danger: #ff8a80;
+    --danger-bg: #3d1714;
+  }
+}

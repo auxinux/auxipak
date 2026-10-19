@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% import "macros.html" as m %}
+{% block title %}{{ tr.repositories }}{% endblock %}
+{% block content %}
+{% include "admin/nav.html" %}
+<h1>{{ tr.repositories }}</h1>
+{{ m.flash(msg, tr) }}
+<div class="table-wrap"><table>
+  <thead><tr><th>{{ tr.name }}</th><th>URL</th><th>{{ tr.official }}</th><th>{{ tr.generation }}</th><th>{{ tr.last_publication }}</th>{% if user.is_admin %}<th></th>{% endif %}</tr></thead>
+  <tbody>
+  {% for r in repos %}
+  <tr><td>{{ r.name }}<div class="meta">{{ r.title }}</div></td><td class="mono">{{ base }}repos/{{ r.name }}/</td>
+    <td>{{ tr.yes if r.official else tr.no }}</td><td>{{ r.generation }}</td><td>{{ (r.published_at or '')|date }}</td>
+    {% if user.is_admin %}<td><form method="post" action="/admin/repositories/{{ r.name }}/regenerate"><input type="hidden" name="csrf" value="{{ user.csrf }}"><button class="secondary small" type="submit">{{ tr.regenerate }}</button></form></td>{% endif %}
+  </tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+{% if user.is_admin %}
+<h2>{{ tr.create }}</h2>
+<form class="card stack" method="post" action="/admin/repositories">
+  <input type="hidden" name="csrf" value="{{ user.csrf }}">
+  <div class="row"><input name="name" placeholder="{{ tr.name }} (ex. community)" required pattern="[a-z0-9][a-z0-9_-]{0,31}"><input name="title" placeholder="{{ tr.title }}" required></div>
+  <textarea name="description" placeholder="{{ tr.description }}"></textarea>
+  <label><input type="checkbox" name="official" value="1"> {{ tr.official }}</label>
+  <button type="submit">{{ tr.create }}</button>
+</form>
+{% endif %}
+{% endblock %}

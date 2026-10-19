@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% import "macros.html" as m %}
+{% block title %}{{ tr.upload }}{% endblock %}
+{% block content %}
+{% include "admin/nav.html" %}
+<h1>{{ tr.upload }}</h1>
+{{ m.flash(msg, tr) }}
+<p>{{ tr.upload_help }}</p>
+<form class="card stack" method="post" action="/admin/upload" enctype="multipart/form-data">
+  <input type="hidden" name="csrf" value="{{ user.csrf }}">
+  <label>{{ tr.repository }}
+    <select name="repository">{% for r in repos %}{% if r.enabled %}<option value="{{ r.name }}">{{ r.name }} — {{ r.title }}</option>{% endif %}{% endfor %}</select>
+  </label>
+  <label>{{ tr.note }} <textarea name="note"></textarea></label>
+  <label>{{ tr.file }} <input type="file" name="file" accept=".apak" required></label>
+  <button type="submit">{{ tr.send }}</button>
+</form>
+{% endblock %}

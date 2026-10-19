@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}{{ tr.docs_title }}{% endblock %}
+{% block content %}
+<h1>{{ tr.docs_title }}</h1>
+<section class="card">
+  <h2>{{ tr.docs_client }}</h2>
+  <p>{{ tr.docs_client_text }}</p>
+  <h2>{{ tr.docs_commands }}</h2>
+<pre>auxipak update                  # synchroniser les index / sync indexes
+auxipak search firefox
+auxipak info firefox
+auxipak install firefox
+auxipak install Firefox-150.1-fr
+auxipak list
+auxipak upgrade                 # toutes les applications / all applications
+auxipak remove firefox
+auxipak verify fichier.apak
+auxipak repo list</pre>
+</section>
+<section class="card">
+  <h2>{{ tr.docs_repo }}</h2>
+  <p>{{ tr.docs_repo_text }}</p>
+  <pre>auxipak repo add {{ base }}repos/NOM/ --name NOM --root root.json --keys package-keys.json</pre>
+  <p class="meta">{{ tr.docs_more }}</p>
+</section>
+{% endblock %}

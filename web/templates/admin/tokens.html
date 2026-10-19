@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% import "macros.html" as m %}
+{% block title %}{{ tr.tokens }}{% endblock %}
+{% block content %}
+{% include "admin/nav.html" %}
+<h1>{{ tr.tokens }}</h1>
+{{ m.flash(msg, tr) }}
+{% if new_token %}<div class="flash ok"><p>{{ tr.new_token }}</p><pre id="newtok">{{ new_token }}</pre><button type="button" class="small" data-copy="newtok">📋</button></div>{% endif %}
+<div class="table-wrap"><table>
+  <thead><tr><th>{{ tr.name }}</th><th>{{ tr.owner }}</th><th>{{ tr.token_kind }}</th><th>{{ tr.scopes }}</th><th>{{ tr.expires }}</th><th>{{ tr.state }}</th><th></th></tr></thead>
+  <tbody>
+  {% for t in tokens %}
+  <tr><td>{{ t.name }}{% if t.provider %}<div class="meta">{{ t.provider }}</div>{% endif %}</td><td>{{ t.username }}</td><td><span class="badge neutral">{{ t.kind }}</span></td>
+    <td>{{ t.scopes|join(', ') }}</td><td>{{ (t.expires_at or '')|date }}</td><td>{{ tr.revoked if t.revoked else tr.active }}</td>
+    <td>{% if not t.revoked %}<form method="post" action="/admin/tokens/{{ t.id }}/revoke"><input type="hidden" name="csrf" value="{{ user.csrf }}"><button class="danger small" type="submit">{{ tr.revoke_token }}</button></form>{% endif %}</td></tr>
+  {% else %}<tr><td colspan="7">—</td></tr>{% endfor %}
+  </tbody>
+</table></div>
+<h2>{{ tr.create }}</h2>
+<form class="card stack" method="post" action="/admin/tokens">
+  <input type="hidden" name="csrf" value="{{ user.csrf }}">
+  <div class="row">
+    <input name="name" placeholder="{{ tr.name }}" required>
+    <select name="kind"><option value="human">human</option><option value="ci">ci</option><option value="agent">agent</option></select>
+    <input name="provider" placeholder="{{ tr.provider }}">
+    <input type="number" name="expires_days" value="90" min="1" max="366" aria-label="jours">
+    {% if users %}<select name="user_id">{% for u in users %}<option value="{{ u.id }}" {% if u.username == user.username %}selected{% endif %}>{{ u.username }} ({{ u.role }})</option>{% endfor %}</select>{% endif %}
+  </div>
+  <div class="row">{{ tr.scopes }} :
+    {% for s in ['read', 'build', 'submit', 'review', 'evaluate', 'admin'] %}<label><input type="checkbox" name="scope_{{ s }}" value="1"> {{ s }}</label>{% endfor %}
+  </div>
+  <p class="meta">{{ tr.token_kind_help }}</p>
+  <button type="submit">{{ tr.create }}</button>
+</form>
+{% endblock %}

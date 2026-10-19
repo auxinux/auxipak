@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}{{ tr.audit }}{% endblock %}
+{% block content %}
+{% include "admin/nav.html" %}
+<h1>{{ tr.audit }}</h1>
+<div class="table-wrap"><table>
+  <thead><tr><th>{{ tr.when }}</th><th>{{ tr.actor }}</th><th>{{ tr.action }}</th><th>{{ tr.target }}</th><th>{{ tr.details }}</th></tr></thead>
+  <tbody>{% for r in rows %}<tr><td>{{ r.at|date }}</td><td>{{ r.actor_name }} <span class="badge neutral">{{ r.actor_kind }}</span>{% if r.ip %}<div class="meta">{{ r.ip }}</div>{% endif %}</td><td>{{ r.action }}</td><td>{{ r.target }}</td><td class="mono">{{ r.details|tojson }}</td></tr>{% endfor %}</tbody>
+</table></div>
+{% if next %}<p><a href="/admin/audit?before_id={{ next }}">{{ tr.older }} →</a></p>{% endif %}
+{% endblock %}

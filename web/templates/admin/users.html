@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% import "macros.html" as m %}
+{% block title %}{{ tr.users }}{% endblock %}
+{% block content %}
+{% include "admin/nav.html" %}
+<h1>{{ tr.users }}</h1>
+{{ m.flash(msg, tr) }}
+<div class="table-wrap"><table>
+  <thead><tr><th>{{ tr.username }}</th><th>{{ tr.role }}</th><th>{{ tr.active }}</th><th>{{ tr.last_login }}</th><th>{{ tr.actions }}</th></tr></thead>
+  <tbody>
+  {% for u in users %}
+  <tr><td>{{ u.username }}<div class="meta">{{ u.display_name }}</div></td><td>{{ u.role }}</td><td>{{ tr.yes if u.active else tr.no }}</td><td>{{ (u.last_login_at or '')|date }}</td>
+    <td><form method="post" action="/admin/users/{{ u.id }}" class="row">
+      <input type="hidden" name="csrf" value="{{ user.csrf }}">
+      <select name="role"><option value="">—</option>{% for r in ['publisher', 'reviewer', 'admin'] %}<option value="{{ r }}">{{ r }}</option>{% endfor %}</select>
+      <select name="active"><option value="">—</option><option value="1">{{ tr.enable }}</option><option value="0">{{ tr.disable }}</option></select>
+      <input type="password" name="password" placeholder="{{ tr.new_password }}" autocomplete="new-password">
+      <button class="small" type="submit">{{ tr.save }}</button>
+    </form></td></tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+<h2>{{ tr.create }}</h2>
+<form class="card row" method="post" action="/admin/users">
+  <input type="hidden" name="csrf" value="{{ user.csrf }}">
+  <input name="username" placeholder="{{ tr.username }}" required>
+  <input name="display_name" placeholder="{{ tr.name }}">
+  <input type="password" name="password" placeholder="{{ tr.password }}" required minlength="12" autocomplete="new-password">
+  <select name="role">{% for r in ['publisher', 'reviewer', 'admin'] %}<option value="{{ r }}">{{ r }}</option>{% endfor %}</select>
+  <button type="submit">{{ tr.create }}</button>
+</form>
+{% endblock %}

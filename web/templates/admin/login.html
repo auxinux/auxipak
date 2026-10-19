@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% import "macros.html" as m %}
+{% block title %}{{ tr.admin_login }}{% endblock %}
+{% block content %}
+<div class="card login">
+  <h1>{{ tr.admin_login }}</h1>
+  {{ m.flash(msg, tr) }}
+  <form method="post" action="/admin/login">
+    <label for="u">{{ tr.username }}</label><input id="u" name="username" autocomplete="username" required>
+    <label for="p">{{ tr.password }}</label><input id="p" type="password" name="password" autocomplete="current-password" required>
+    <p><button type="submit">{{ tr.login }}</button></p>
+  </form>
+</div>
+{% endblock %}

@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% import "macros.html" as m %}
+{% block title %}{{ tr.apps }}{% endblock %}
+{% block content %}
+{% include "admin/nav.html" %}
+<h1>{{ tr.apps }}</h1>
+{{ m.flash(msg, tr) }}
+<p class="meta">{{ tr.eval_help }}</p>
+<div class="table-wrap"><table>
+  <thead><tr><th>Application</th><th>{{ tr.license }}</th><th>{{ tr.status }}</th><th>{{ tr.evaluated_by }}</th>{% if user.can_review %}<th>{{ tr.evaluate }}</th>{% endif %}</tr></thead>
+  <tbody>
+  {% for a in apps %}
+    <tr>
+      <td><a href="/apps/{{ a.id }}">{{ a.name }}</a><div class="meta">{{ a.publisher }}</div></td>
+      <td>{{ a.license }}</td>
+      <td>{{ m.badge(a.status, tr) }}{% if a.note %}<div class="meta">{{ a.note }}</div>{% endif %}</td>
+      <td>{{ a.evaluated_by or '—' }}<div class="meta">{{ (a.evaluated_at or '')|date }}</div></td>
+      {% if user.can_review %}<td>
+        <form method="post" action="/admin/apps/{{ a.id }}/evaluation" class="stack">
+          <input type="hidden" name="csrf" value="{{ user.csrf }}">
+          <select name="status">{% for s in ['verified', 'compatible', 'unreviewed'] %}<option value="{{ s }}" {% if a.status == s %}selected{% endif %}>{{ tr['status_' ~ s] }}</option>{% endfor %}</select>
+          <textarea name="note" placeholder="{{ tr.reservations }}">{{ a.note or '' }}</textarea>
+          <button class="small" type="submit">{{ tr.save }}</button>
+        </form>
+      </td>{% endif %}
+    </tr>
+  {% else %}<tr><td colspan="5">—</td></tr>{% endfor %}
+  </tbody>
+</table></div>
+{% endblock %}

@@ -1,0 +1,531 @@
+openapi: 3.1.0
+info:
+  title: AuxiPak Server API
+  version: "1.0.0"
+  description: |
+    API REST du serveur AuxiPak (https://pak.auxinux.ca).
+
+    **Authentification** : jeton Bearer (`Authorization: Bearer apk_…`) ou cookie
+    de session (interface Web ; les requêtes non sûres exigent alors l'en-tête
+    `X-CSRF-Token`).
+
+    **Portées** : `read`, `build`, `submit`, `review`, `evaluate`, `admin`.
+    Les portées `review`, `evaluate` et `admin` sont réservées aux humains : un
+    jeton `agent` (automatisation, IA) ou `ci` ne peut jamais approuver une
+    publication, classer une application ou administrer le serveur.
+
+    **Publication** : une soumission crée toujours une *demande*. Seule
+    l'approbation par un relecteur humain (distinct de l'auteur par défaut)
+    publie le paquet.
+
+    Les erreurs ont la forme `{"error": "<code>", "message": "<texte>"}`.
+  license:
+    name: GPL-3.0-or-later
+servers:
+  - url: https://pak.auxinux.ca
+  - url: http://127.0.0.1:8080
+    description: Développement local
+tags:
+  - name: public
+  - name: auth
+  - name: submissions
+  - name: builder
+  - name: admin
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+    session:
+      type: apiKey
+      in: cookie
+      name: auxipak_session
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+  schemas:
+    Error:
+      type: object
+      properties:
+        error: { type: string }
+        message: { type: string }
+    Status:
+      type: string
+      enum: [verified, compatible, unreviewed]
+    Submission:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        repository: { type: string }
+        file_name: { type: string }
+        size: { type: integer }
+        sha256: { type: string }
+        app_id: { type: [string, "null"] }
+        version: { type: [string, "null"] }
+        validation: { type: object }
+        has_signature: { type: boolean }
+        status: { type: string, enum: [invalid, pending, approved, rejected, published, failed] }
+        submitter: { type: [string, "null"] }
+        submitter_kind: { type: string, enum: [session, human, ci, agent] }
+        note: { type: string }
+        created_at: { type: string, format: date-time }
+    TokenRequest:
+      type: object
+      required: [name, kind, scopes]
+      properties:
+        name: { type: string }
+        kind: { type: string, enum: [human, ci, agent] }
+        scopes: { type: array, items: { type: string, enum: [read, build, submit, review, evaluate, admin] } }
+        provider: { type: string, description: "Fournisseur de l'agent (ex. claude) — informatif" }
+        expires_days: { type: integer, minimum: 1, maximum: 366 }
+        user_id: { type: string, format: uuid, description: "Administration : propriétaire du jeton" }
+    Project:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        manifest_yaml: { type: string }
+        last_build: { type: [object, "null"] }
+        files:
+          type: array
+          items: { type: object, properties: { path: { type: string }, size: { type: integer }, sha256: { type: string } } }
+  responses:
+    Error:
+      description: Erreur
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+security:
+  - bearer: []
+  - session: []
+paths:
+  /index:
+    get:
+      tags: [public]
+      security: []
+      summary: Catalogue des dépôts disponibles (document de découverte)
+      description: L'authenticité de chaque dépôt repose sur ses métadonnées TUF (`/repos/{repo}/metadata/`).
+      responses:
+        "200": { description: Catalogue, content: { application/json: { schema: { type: object } } } }
+  /repos/{repo}/{path}:
+    get:
+      tags: [public]
+      security: []
+      summary: Fichiers du dépôt publié (métadonnées TUF, index, paquets, signatures, clés publiques)
+      description: |
+        `path` commence par `metadata/` (root/timestamp/snapshot/targets), `targets/`
+        (index.json, apps.json, revocations.json, channels/…, packages/…) ou `keys/`
+        (package-keys.json). L'en-tête `Range: bytes=N-` permet la reprise des téléchargements.
+      parameters:
+        - { name: repo, in: path, required: true, schema: { type: string } }
+        - { name: path, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Fichier }
+        "206": { description: Contenu partiel }
+        "404": { $ref: "#/components/responses/Error" }
+  /api/v1/health:
+    get:
+      tags: [public]
+      security: []
+      summary: État du service (base de données, version)
+      responses:
+        "200": { description: OK }
+        "503": { description: Service dégradé }
+  /api/v1/openapi.yaml:
+    get:
+      tags: [public]
+      security: []
+      summary: Ce document
+      responses:
+        "200": { description: Spécification OpenAPI }
+  /api/v1/repositories:
+    get:
+      tags: [public]
+      security: []
+      summary: Dépôts actifs
+      responses:
+        "200": { description: Liste }
+  /api/v1/apps:
+    get:
+      tags: [public]
+      security: []
+      summary: Recherche d'applications publiées
+      parameters:
+        - { name: q, in: query, schema: { type: string } }
+        - { name: repository, in: query, schema: { type: string } }
+        - { name: status, in: query, schema: { $ref: "#/components/schemas/Status" } }
+      responses:
+        "200": { description: Liste }
+  /api/v1/apps/{id}:
+    get:
+      tags: [public]
+      security: []
+      summary: Fiche d'une application (évaluation et versions)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Fiche }
+        "404": { $ref: "#/components/responses/Error" }
+  /api/v1/auth/login:
+    post:
+      tags: [auth]
+      security: []
+      summary: Ouvrir une session (cookie HttpOnly) ; limitation des tentatives
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [username, password], properties: { username: { type: string }, password: { type: string } } }
+      responses:
+        "200": { description: "Session ouverte ; retourne le jeton CSRF" }
+        "401": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+  /api/v1/auth/logout:
+    post:
+      tags: [auth]
+      summary: Fermer la session
+      responses:
+        "200": { description: OK }
+  /api/v1/auth/me:
+    get:
+      tags: [auth]
+      summary: Identité et portées effectives de l'appelant
+      responses:
+        "200": { description: OK }
+        "401": { $ref: "#/components/responses/Error" }
+  /api/v1/tokens:
+    get:
+      tags: [auth]
+      summary: Mes jetons
+      responses:
+        "200": { description: Liste }
+    post:
+      tags: [auth]
+      summary: Créer un jeton personnel (humain uniquement ; portées bornées par le rôle)
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/TokenRequest" } } }
+      responses:
+        "200": { description: "Jeton créé (affiché une seule fois)" }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+  /api/v1/tokens/{id}:
+    delete:
+      tags: [auth]
+      summary: Révoquer un de mes jetons
+      parameters: [ { $ref: "#/components/parameters/Id" } ]
+      responses:
+        "200": { description: OK }
+  /api/v1/submissions:
+    get:
+      tags: [submissions]
+      summary: Demandes de publication (les miennes ; toutes avec la portée review)
+      parameters:
+        - { name: status, in: query, schema: { type: string } }
+      responses:
+        "200": { description: Liste }
+    post:
+      tags: [submissions]
+      summary: Soumettre un paquet .apak (portée submit) — crée une demande, ne publie jamais
+      parameters:
+        - { name: repository, in: query, schema: { type: string, default: official } }
+        - { name: file_name, in: query, schema: { type: string } }
+        - { name: note, in: query, schema: { type: string } }
+      requestBody:
+        required: true
+        content: { application/octet-stream: { schema: { type: string, format: binary } } }
+      responses:
+        "200": { description: Demande créée, content: { application/json: { schema: { $ref: "#/components/schemas/Submission" } } } }
+        "403": { $ref: "#/components/responses/Error" }
+        "413": { $ref: "#/components/responses/Error" }
+  /api/v1/submissions/{id}:
+    get:
+      tags: [submissions]
+      summary: Détail d'une demande (résultats de validation)
+      parameters: [ { $ref: "#/components/parameters/Id" } ]
+      responses:
+        "200": { description: Demande, content: { application/json: { schema: { $ref: "#/components/schemas/Submission" } } } }
+  /api/v1/submissions/{id}/signature:
+    put:
+      tags: [submissions]
+      summary: Joindre une signature détachée (vérifiée immédiatement)
+      parameters: [ { $ref: "#/components/parameters/Id" } ]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object } } }
+      responses:
+        "200": { description: Signature acceptée }
+        "400": { $ref: "#/components/responses/Error" }
+  /api/v1/submissions/{id}/approve:
+    post:
+      tags: [submissions]
+      summary: Approuver et publier (portée review, humain, distinct de l'auteur)
+      parameters: [ { $ref: "#/components/parameters/Id" } ]
+      requestBody:
+        content: { application/json: { schema: { type: object, properties: { note: { type: string } } } } }
+      responses:
+        "200": { description: Publié ; index et métadonnées TUF régénérés }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /api/v1/submissions/{id}/reject:
+    post:
+      tags: [submissions]
+      summary: Rejeter (portée review, motif obligatoire)
+      parameters: [ { $ref: "#/components/parameters/Id" } ]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [note], properties: { note: { type: string } } } } }
+      responses:
+        "200": { description: Rejetée }
+  /api/v1/builder/projects:
+    get:
+      tags: [builder]
+      summary: Mes projets de paquets (portée build)
+      responses:
+        "200": { description: Liste }
+    post:
+      tags: [builder]
+      summary: Créer un projet (manifeste fourni ou modèle généré)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+                manifest: { type: string, description: Manifeste YAML }
+                id: { type: string }
+                version: { type: string }
+                publisher: { type: string }
+                language: { type: string }
+                license: { type: string }
+      responses:
+        "200": { description: Projet, content: { application/json: { schema: { $ref: "#/components/schemas/Project" } } } }
+  /api/v1/builder/projects/{id}:
+    get:
+      tags: [builder]
+      summary: Détail d'un projet
+      parameters: [ { $ref: "#/components/parameters/Id" } ]
+      responses:
+        "200": { description: Projet, content: { application/json: { schema: { $ref: "#/components/schemas/Project" } } } }
+    delete:
+      tags: [builder]
+      summary: Supprimer un projet
+      parameters: [ { $ref: "#/components/parameters/Id" } ]
+      responses:
+        "200": { description: OK }
+  /api/v1/builder/projects/{id}/manifest:
+    put:
+      tags: [builder]
+      summary: Remplacer le manifeste (YAML)
+      parameters: [ { $ref: "#/components/parameters/Id" } ]
+      requestBody:
+        required: true
+        content: { text/yaml: { schema: { type: string } } }
+      responses:
+        "200": { description: Projet }
+    patch:
+      tags: [builder]
+      summary: Modifier le manifeste par fusion JSON (RFC 7386) — métadonnées, plateformes, dépendances, instructions
+      parameters: [ { $ref: "#/components/parameters/Id" } ]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object } } }
+      responses:
+        "200": { description: Projet }
+  /api/v1/builder/projects/{id}/files/{path}:
+    put:
+      tags: [builder]
+      summary: Importer un fichier (payload/… ou scripts/…)
+      parameters:
+        - { $ref: "#/components/parameters/Id" }
+        - { name: path, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content: { application/octet-stream: { schema: { type: string, format: binary } } }
+      responses:
+        "200": { description: Fichier enregistré (taille, SHA-256) }
+    delete:
+      tags: [builder]
+      summary: Supprimer un fichier
+      parameters:
+        - { $ref: "#/components/parameters/Id" }
+        - { name: path, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: OK }
+  /api/v1/builder/projects/{id}/validate:
+    post:
+      tags: [builder]
+      summary: Valider le manifeste (schéma et règles sémantiques)
+      parameters: [ { $ref: "#/components/parameters/Id" } ]
+      responses:
+        "200": { description: Résultat }
+  /api/v1/builder/projects/{id}/build:
+    post:
+      tags: [builder]
+      summary: Construire l'archive .apak (aucune exécution de code tiers)
+      parameters: [ { $ref: "#/components/parameters/Id" } ]
+      responses:
+        "200": { description: Résultat de construction }
+  /api/v1/builder/projects/{id}/test:
+    post:
+      tags: [builder]
+      summary: Tests statiques de la dernière construction
+      parameters: [ { $ref: "#/components/parameters/Id" } ]
+      responses:
+        "200": { description: Résultats }
+  /api/v1/builder/projects/{id}/artifact:
+    get:
+      tags: [builder]
+      summary: Télécharger la dernière construction
+      parameters: [ { $ref: "#/components/parameters/Id" } ]
+      responses:
+        "200": { description: Archive .apak }
+  /api/v1/builder/projects/{id}/submit:
+    post:
+      tags: [builder]
+      summary: Soumettre la dernière construction (crée une demande de publication)
+      parameters: [ { $ref: "#/components/parameters/Id" } ]
+      requestBody:
+        content: { application/json: { schema: { type: object, properties: { repository: { type: string }, note: { type: string } } } } }
+      responses:
+        "200": { description: Demande créée }
+  /api/v1/admin/users:
+    get:
+      tags: [admin]
+      summary: Comptes (admin)
+      responses:
+        "200": { description: Liste }
+    post:
+      tags: [admin]
+      summary: Créer un compte (admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password, role]
+              properties:
+                username: { type: string }
+                display_name: { type: string }
+                password: { type: string, minLength: 12 }
+                role: { type: string, enum: [admin, reviewer, publisher] }
+      responses:
+        "200": { description: Créé }
+  /api/v1/admin/users/{id}:
+    patch:
+      tags: [admin]
+      summary: Modifier un compte (rôle, activation, mot de passe) ; un changement de rôle révoque ses jetons
+      parameters: [ { $ref: "#/components/parameters/Id" } ]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object } } }
+      responses:
+        "200": { description: OK }
+  /api/v1/admin/tokens:
+    get:
+      tags: [admin]
+      summary: Tous les jetons (admin)
+      responses:
+        "200": { description: Liste }
+    post:
+      tags: [admin]
+      summary: Créer un jeton pour un utilisateur (admin)
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/TokenRequest" } } }
+      responses:
+        "200": { description: Jeton créé }
+  /api/v1/admin/tokens/{id}:
+    delete:
+      tags: [admin]
+      summary: Révoquer un jeton (admin)
+      parameters: [ { $ref: "#/components/parameters/Id" } ]
+      responses:
+        "200": { description: OK }
+  /api/v1/admin/repositories:
+    get:
+      tags: [admin]
+      summary: Tous les dépôts (portée read)
+      responses:
+        "200": { description: Liste }
+    post:
+      tags: [admin]
+      summary: Créer un dépôt hébergé (admin)
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [name, title], properties: { name: { type: string }, title: { type: string }, description: { type: string }, official: { type: boolean } } } } }
+      responses:
+        "200": { description: Créé }
+  /api/v1/admin/repositories/{name}:
+    patch:
+      tags: [admin]
+      summary: Modifier un dépôt (admin)
+      parameters:
+        - { name: name, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object } } }
+      responses:
+        "200": { description: OK }
+  /api/v1/admin/repositories/{name}/regenerate:
+    post:
+      tags: [admin]
+      summary: Régénérer index et métadonnées TUF (admin)
+      parameters:
+        - { name: name, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Nouvelle génération }
+  /api/v1/admin/releases:
+    get:
+      tags: [admin]
+      summary: Versions (tous états)
+      parameters:
+        - { name: repository, in: query, schema: { type: string } }
+        - { name: app_id, in: query, schema: { type: string } }
+      responses:
+        "200": { description: Liste }
+  /api/v1/admin/releases/{id}/state:
+    post:
+      tags: [admin]
+      summary: Dépublier, republier ou révoquer (portée review ; motif obligatoire pour une révocation, définitive)
+      parameters: [ { $ref: "#/components/parameters/Id" } ]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [state], properties: { state: { type: string, enum: [published, unpublished, revoked] }, reason: { type: string } } } } }
+      responses:
+        "200": { description: OK }
+  /api/v1/admin/apps/{id}/evaluation:
+    put:
+      tags: [admin]
+      summary: Classification officielle AuxiNux (portée evaluate, humain uniquement)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status: { $ref: "#/components/schemas/Status" }
+                note: { type: string, description: "Obligatoire pour « compatible » (réserves)" }
+                criteria: { type: object }
+      responses:
+        "200": { description: OK }
+  /api/v1/admin/audit:
+    get:
+      tags: [admin]
+      summary: Journal d'audit (admin)
+      parameters:
+        - { name: limit, in: query, schema: { type: integer } }
+        - { name: before_id, in: query, schema: { type: integer } }
+      responses:
+        "200": { description: Entrées }

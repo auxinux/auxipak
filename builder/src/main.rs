@@ -6,9 +6,9 @@
 //! approuvée par un relecteur autorisé.
 
 use anyhow::{anyhow, bail, Context, Result};
-use auxipak_core::archive::{self, BuildFile, Limits};
-use auxipak_core::manifest::{Install, Manifest, MANIFEST_FILE};
-use auxipak_core::platform::{Arch, Distribution, Os, SystemProfile};
+use auxipak_core::archive::{self, Limits};
+use auxipak_core::manifest::{Manifest, MANIFEST_FILE};
+use auxipak_core::project;
 use auxipak_core::signature::{KeyPurpose, PackageRef, PackageSignature, PackageSigner, TrustedKeys};
 use auxipak_core::tuf;
 use clap::{Parser, Subcommand};
@@ -132,27 +132,7 @@ async fn main() -> ExitCode {
 }
 
 fn write_private(path: &Path, data: &str) -> Result<()> {
-    if path.exists() {
-        bail!("{} existe déjà : refus d'écraser une clé", path.display());
-    }
-    if let Some(p) = path.parent() {
-        std::fs::create_dir_all(p)?;
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(p, std::fs::Permissions::from_mode(0o700))?;
-        }
-    }
-    let mut o = std::fs::OpenOptions::new();
-    o.write(true).create_new(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        o.mode(0o600);
-    }
-    use std::io::Write;
-    o.open(path)?.write_all(data.as_bytes())?;
-    Ok(())
+    auxipak_core::keyset::write_secret(path, data)
 }
 
 async fn run(cli: Cli) -> Result<()> {
@@ -206,30 +186,6 @@ async fn run(cli: Cli) -> Result<()> {
     }
 }
 
-const MANIFEST_TEMPLATE: &str = r#"# Manifeste AuxiPak — voir docs/MANIFEST_SPEC.md
-format: 1
-id: {id}
-name: "{name}"
-version: "{version}"
-publisher: "{publisher}"
-summary: "Description courte de l'application"
-license: "{license}"
-languages: [{language}]
-targets:
-  # Exemple : copie de fichiers (fonctionne sans privilèges).
-  - name: linux
-    platform: linux
-    distributions: [debian, ubuntu, auxinuxos, virtuaos]
-    architectures: [any]
-    mode: embedded
-    install:
-      method: files
-      files:
-        - source: payload/bin/{id}
-          destination: "{bin}/{id}"
-          executable: true
-"#;
-
 fn init(dir: &Path, id: &str, name: &str, version: &str, publisher: &str, language: &str, license: &str) -> Result<()> {
     if !auxipak_core::ids::is_valid_app_id(id) {
         bail!("identifiant invalide : {id}");
@@ -239,13 +195,7 @@ fn init(dir: &Path, id: &str, name: &str, version: &str, publisher: &str, langua
     }
     std::fs::create_dir_all(dir.join("payload/bin"))?;
     std::fs::create_dir_all(dir.join("scripts"))?;
-    let m = MANIFEST_TEMPLATE
-        .replace("{id}", id)
-        .replace("{name}", &name.replace('"', ""))
-        .replace("{version}", version)
-        .replace("{publisher}", &publisher.replace('"', ""))
-        .replace("{license}", &license.replace('"', ""))
-        .replace("{language}", language);
+    let m = project::render_template(id, name, version, publisher, language, license);
     std::fs::write(dir.join(MANIFEST_FILE), m)?;
     let placeholder = dir.join("payload/bin").join(id);
     std::fs::write(&placeholder, format!("#!/bin/sh\necho \"{name} {version}\"\n"))?;
@@ -258,89 +208,16 @@ fn init(dir: &Path, id: &str, name: &str, version: &str, publisher: &str, langua
     Ok(())
 }
 
-/// Fichiers d'un projet : tout ce qui se trouve sous payload/ et scripts/.
-fn project_files(dir: &Path) -> Result<Vec<BuildFile>> {
-    let mut out = Vec::new();
-    for top in ["payload", "scripts"] {
-        let base = dir.join(top);
-        if base.is_dir() {
-            walk(&base, &format!("{top}/"), &mut out)?;
-        }
-    }
-    Ok(out)
-}
-
-fn walk(dir: &Path, prefix: &str, out: &mut Vec<BuildFile>) -> Result<()> {
-    let mut entries: Vec<_> = std::fs::read_dir(dir)?.collect::<std::io::Result<_>>()?;
-    entries.sort_by_key(|e| e.file_name());
-    for e in entries {
-        let name = e.file_name().to_string_lossy().into_owned();
-        if name.starts_with('.') {
-            continue;
-        }
-        let ft = e.file_type()?;
-        let rel = format!("{prefix}{name}");
-        if ft.is_symlink() {
-            bail!("lien symbolique refusé dans le projet : {rel}");
-        } else if ft.is_dir() {
-            walk(&e.path(), &format!("{rel}/"), out)?;
-        } else if ft.is_file() {
-            out.push(BuildFile { archive_path: rel, source: e.path(), executable: false });
-        }
-    }
-    Ok(())
-}
-
-/// Charge le manifeste source d'un projet. La section `contents` est
-/// (re)calculée à partir des fichiers réels de payload/ et scripts/.
-fn load_project_manifest(dir: &Path) -> Result<Manifest> {
-    let path = dir.join(MANIFEST_FILE);
-    let text = std::fs::read_to_string(&path).with_context(|| format!("{MANIFEST_FILE} introuvable dans {}", dir.display()))?;
-    let mut value = auxipak_core::manifest::parse_yaml_value(&text).map_err(|e| anyhow!("{e}"))?;
-    let declared_exec: Vec<String> = value
-        .get("contents")
-        .and_then(|c| c.as_array())
-        .map(|a| {
-            a.iter()
-                .filter(|e| e.get("executable").and_then(|x| x.as_bool()).unwrap_or(false))
-                .filter_map(|e| e.get("path").and_then(|p| p.as_str()).map(String::from))
-                .collect()
-        })
-        .unwrap_or_default();
-    let mut contents = Vec::new();
-    for f in project_files(dir)? {
-        let (sha256, size) = auxipak_core::hash::sha256_file(&f.source)?;
-        let mut entry = serde_json::json!({"path": f.archive_path, "sha256": sha256, "size": size});
-        if declared_exec.contains(&f.archive_path) {
-            entry["executable"] = serde_json::Value::Bool(true);
-        }
-        contents.push(entry);
-    }
-    if let Some(obj) = value.as_object_mut() {
-        if contents.is_empty() {
-            obj.remove("contents");
-        } else {
-            obj.insert("contents".into(), serde_json::Value::Array(contents));
-        }
-    }
-    let (m, warnings) = Manifest::from_value(value).map_err(|e| anyhow!("{e}"))?;
+fn build(dir: &Path, output: Option<&Path>) -> Result<(PathBuf, archive::Inspection)> {
+    let (m, warnings) = project::load_manifest(dir)?;
     for w in warnings {
         eprintln!("{w}");
     }
-    Ok(m)
-}
-
-fn build(dir: &Path, output: Option<&Path>) -> Result<(PathBuf, archive::Inspection)> {
-    let m = load_project_manifest(dir)?;
-    let files = project_files(dir)?;
     let out = match output {
         Some(o) => o.to_path_buf(),
         None => PathBuf::from(m.suggested_file_name()),
     };
-    if out.extension().and_then(|e| e.to_str()) != Some(archive::APAK_EXTENSION) {
-        bail!("le fichier de sortie doit porter l'extension .apak");
-    }
-    let (_, insp) = archive::build(&m, &files, &out).map_err(|e| anyhow!("{e}"))?;
+    let (_, insp) = project::build(dir, &out)?;
     for w in &insp.warnings {
         eprintln!("{w}");
     }
@@ -349,12 +226,9 @@ fn build(dir: &Path, output: Option<&Path>) -> Result<(PathBuf, archive::Inspect
 
 fn validate(path: &Path, json: bool) -> Result<()> {
     let (manifest, warnings, kind) = if path.is_dir() {
-        let m = load_project_manifest(path)?;
         // Vérification complète avec les fichiers réels, dans un emplacement temporaire.
         let tmp = tempfile::tempdir()?;
-        let out = tmp.path().join("check.apak");
-        let files = project_files(path)?;
-        let (m2, insp) = archive::build(&m, &files, &out).map_err(|e| anyhow!("{e}"))?;
+        let (m2, insp) = project::build(path, &tmp.path().join("check.apak"))?;
         (m2, insp.warnings, "projet")
     } else if path.extension().and_then(|e| e.to_str()) == Some("apak") {
         let insp = archive::inspect(path, &Limits::default()).map_err(|e| anyhow!("{e}"))?;
@@ -380,84 +254,14 @@ fn validate(path: &Path, json: bool) -> Result<()> {
     Ok(())
 }
 
-/// Profils de référence pour les tests de sélection de variante.
-fn reference_profiles() -> Vec<SystemProfile> {
-    let p = |os, d, v: &str, a| SystemProfile {
-        os,
-        distribution: d,
-        version: v.into(),
-        arch: a,
-        raw_id: d.as_str().into(),
-        pretty_name: format!("{} {}", d, v),
-        immutable: matches!(d, Distribution::Auxinuxos | Distribution::Virtuaos),
-    };
-    use Arch::*;
-    vec![
-        p(Os::Linux, Distribution::Debian, "12", X86_64),
-        p(Os::Linux, Distribution::Debian, "13", X86_64),
-        p(Os::Linux, Distribution::Debian, "13", Arm64),
-        p(Os::Linux, Distribution::Ubuntu, "22.04", X86_64),
-        p(Os::Linux, Distribution::Ubuntu, "24.04", X86_64),
-        p(Os::Linux, Distribution::Ubuntu, "24.04", Arm64),
-        p(Os::Linux, Distribution::Auxinuxos, "1.0", X86_64),
-        p(Os::Linux, Distribution::Virtuaos, "1.0", X86_64),
-        p(Os::Windows, Distribution::Windows, "10.0.19045", X86_64),
-        p(Os::Windows, Distribution::Windows, "10.0.22631", Arm64),
-        p(Os::Macos, Distribution::Macos, "13.6", X86_64),
-        p(Os::Macos, Distribution::Macos, "14.5", Arm64),
-    ]
-}
-
 fn test(file: &Path, json: bool) -> Result<()> {
-    let mut report = Vec::<(String, bool, String)>::new();
-    let insp = archive::inspect(file, &Limits::default()).map_err(|e| anyhow!("structure : {e}"))?;
-    report.push(("structure et manifeste".into(), true, format!("{} entrées", insp.entries.len())));
-    // Extraction complète dans un répertoire isolé (vérifie chaque empreinte).
-    let tmp = tempfile::tempdir()?;
-    archive::extract(file, tmp.path(), &Limits::default()).map_err(|e| anyhow!("extraction : {e}"))?;
-    report.push(("extraction et empreintes".into(), true, format!("{} octets", insp.total_unpacked)));
-    let m = &insp.manifest;
-    // Sélection des variantes sur la matrice de référence.
-    for p in reference_profiles() {
-        let r = m.select_target(&p);
-        report.push((
-            format!("variante pour {} {} {}", p.distribution, p.version, p.arch),
-            true,
-            match r {
-                Ok(t) => format!("→ {}", t.name),
-                Err(_) => "aucune (non pris en charge)".into(),
-            },
-        ));
-    }
-    // Vérifications statiques des fichiers intégrés.
-    for t in &m.targets {
-        if let Install::Deb { package, source } = &t.install {
-            if let Some(f) = &source.file {
-                let path = tmp.path().join(f);
-                match std::process::Command::new("dpkg-deb").arg("--field").arg(&path).arg("Package").output() {
-                    Ok(o) if o.status.success() => {
-                        let actual = String::from_utf8_lossy(&o.stdout).trim().to_string();
-                        let ok = &actual == package;
-                        report.push((format!("{} : nom du paquet .deb", t.name), ok, format!("control: {actual}, manifeste: {package}")));
-                    }
-                    _ => report.push((format!("{} : contrôle .deb", t.name), true, "dpkg-deb indisponible : non vérifié".into())),
-                }
-            }
-        }
-        for (_, script) in t.scripts.all() {
-            report.push(check_script_syntax(tmp.path(), script, t.name.as_str()));
-        }
-        if let Install::Script { script, .. } = &t.install {
-            report.push(check_script_syntax(tmp.path(), script, t.name.as_str()));
-        }
-    }
-    let ok = report.iter().all(|(_, ok, _)| *ok);
+    let report = project::static_tests(file, true)?;
+    let ok = report.iter().all(|c| c.ok);
     if json {
-        let v: Vec<_> = report.iter().map(|(n, ok, d)| serde_json::json!({"check": n, "ok": ok, "detail": d})).collect();
-        println!("{}", serde_json::to_string_pretty(&serde_json::json!({"ok": ok, "checks": v}))?);
+        println!("{}", serde_json::to_string_pretty(&serde_json::json!({"ok": ok, "checks": report}))?);
     } else {
-        for (n, ok, d) in &report {
-            println!("[{}] {n} : {d}", if *ok { " OK " } else { "ÉCHEC" });
+        for c in &report {
+            println!("[{}] {} : {}", if c.ok { " OK " } else { "ÉCHEC" }, c.check, c.detail);
         }
         println!("Remarque : tests statiques uniquement ; aucun installateur ni script n'a été exécuté.");
     }
@@ -465,23 +269,6 @@ fn test(file: &Path, json: bool) -> Result<()> {
         bail!("des tests ont échoué");
     }
     Ok(())
-}
-
-fn check_script_syntax(root: &Path, script: &str, target: &str) -> (String, bool, String) {
-    let path = root.join(script);
-    if script.ends_with(".sh") {
-        // `bash -n` analyse la syntaxe sans rien exécuter.
-        match std::process::Command::new("bash").arg("-n").arg(&path).output() {
-            Ok(o) => (
-                format!("{target} : syntaxe de {script}"),
-                o.status.success(),
-                String::from_utf8_lossy(&o.stderr).trim().to_string(),
-            ),
-            Err(_) => (format!("{target} : syntaxe de {script}"), true, "bash indisponible : non vérifié".into()),
-        }
-    } else {
-        (format!("{target} : {script}"), true, "PowerShell : analyse non effectuée sur cet hôte".into())
-    }
 }
 
 async fn keys(cmd: KeysCmd) -> Result<()> {
@@ -496,38 +283,13 @@ async fn keys(cmd: KeysCmd) -> Result<()> {
             Ok(())
         }
         KeysCmd::InitRepository { out, owner, root_days, dev } => {
-            if out.exists() && std::fs::read_dir(&out)?.next().is_some() {
-                bail!("{} n'est pas vide", out.display());
-            }
-            let root_pem = tuf::generate_key_pem();
-            let targets = tuf::generate_key_pem();
-            let snapshot = tuf::generate_key_pem();
-            let timestamp = tuf::generate_key_pem();
-            let root_json = tuf::create_root(tuf::RootSpec {
-                root_keys: vec![root_pem.clone()],
-                root_threshold: 1,
-                targets_keys: vec![tuf::public_tuf_key(&targets)?.1],
-                snapshot_keys: vec![tuf::public_tuf_key(&snapshot)?.1],
-                timestamp_keys: vec![tuf::public_tuf_key(&timestamp)?.1],
-                version: 1,
-                expires: chrono::Utc::now() + chrono::Duration::days(root_days),
-            })
-            .await?;
-            let pkg = PackageSigner::generate();
-            std::fs::create_dir_all(out.join("public"))?;
-            std::fs::write(out.join("public/root.json"), &root_json)?;
-            let trust = TrustedKeys::new(vec![pkg.public_info(&owner, KeyPurpose::PackageSigning)]);
-            std::fs::write(out.join("public/package-keys.json"), serde_json::to_string_pretty(&trust)?)?;
-            write_private(&out.join("online/targets.pem"), &targets)?;
-            write_private(&out.join("online/snapshot.pem"), &snapshot)?;
-            write_private(&out.join("online/timestamp.pem"), &timestamp)?;
-            write_private(&out.join("online/package-signing.pem"), &pkg.to_pem())?;
-            write_private(&out.join("offline/root.pem"), &root_pem)?;
+            let summary = auxipak_core::keyset::generate(&out, &owner, root_days).await?;
             println!("Racine de confiance créée dans {}", out.display());
             println!("  public/root.json, public/package-keys.json : à distribuer (client, serveur)");
             println!("  online/*.pem  : secrets du serveur (montés en lecture seule, jamais dans Git ni dans une image)");
             println!("  offline/root.pem : CLÉ RACINE — à déplacer immédiatement sur un support hors ligne chiffré");
-            println!("  empreinte root.json : {}", auxipak_core::hash::sha256_hex(&root_json));
+            println!("  empreinte root.json : {}", summary.root_sha256);
+            println!("  clé de signature des paquets : {}", summary.package_key_id);
             if !dev {
                 println!("Procédure complète : docs/SIGNING.md (cérémonie de clés de production)");
             }
