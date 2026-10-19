@@ -37,7 +37,8 @@ jobs:
       - name: Schéma JSON valide
         run: python3 -c "import json; json.load(open('schemas/instruction.auxipak.schema.json'))"
       - name: Scripts shell (syntaxe)
-        run: for f in deploy/scripts/*.sh tests/e2e/*.sh examples/auxipak-demo/build.sh scripts/*.sh; do bash -n "$f"; done
+        run: |
+          for f in deploy/scripts/*.sh tests/e2e/*.sh examples/auxipak-demo/build.sh scripts/*.sh; do bash -n "$f"; done
           for f in server/install/*.sh; do sh -n "$f"; done
       - uses: dtolnay/rust-toolchain@stable
         with:
