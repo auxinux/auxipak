@@ -10,3 +10,5 @@
 secrets/
 keys/
 *.key
+/deploy/downloads/*
+!/deploy/downloads/.gitkeep

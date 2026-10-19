@@ -38,6 +38,7 @@ jobs:
         run: python3 -c "import json; json.load(open('schemas/instruction.auxipak.schema.json'))"
       - name: Scripts shell (syntaxe)
         run: for f in deploy/scripts/*.sh tests/e2e/*.sh examples/auxipak-demo/build.sh scripts/*.sh; do bash -n "$f"; done
+          for f in server/install/*.sh; do sh -n "$f"; done
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
@@ -155,6 +156,63 @@ jobs:
           name: auxipak-${{ matrix.name }}
           path: dist/
           retention-days: 14
+
+  install-scripts:
+    name: Scripts d'installation du client (${{ matrix.name }})
+    needs: [build]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: linux-x86_64, os: ubuntu-24.04 }
+          - { name: macos-arm64, os: macos-14 }
+          - { name: windows-x86_64, os: windows-latest }
+          - { name: windows-arm64, os: windows-11-arm }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@v4
+        with:
+          name: auxipak-${{ matrix.name }}
+          path: artifact
+      - name: install.sh / uninstall.sh (utilisateur non root + sudo)
+        if: runner.os != 'Windows'
+        run: |
+          python tests/install/serve-fixture.py ${{ matrix.name }} artifact &
+          for _ in $(seq 1 30); do curl -fsS http://127.0.0.1:8765/install.sh >/dev/null 2>&1 && break; sleep 1; done
+          curl -fsSL http://127.0.0.1:8765/install.sh | sh -s -- --with-builder
+          auxipak --version
+          auxipak-builder --version
+          grep -q 'url = "http://127.0.0.1:8765/repos/official/"' /etc/auxipak/config.toml
+          test -f /etc/auxipak/trust/official/root.json
+          curl -fsSL http://127.0.0.1:8765/install.sh | sh | grep "Configuration existante conservée" >/dev/null
+          curl -fsSL http://127.0.0.1:8765/uninstall.sh | sh -s -- --purge
+          test ! -e /usr/local/bin/auxipak && test ! -e /usr/local/bin/auxipak-builder
+          test ! -e /etc/auxipak
+      - name: install.ps1 / uninstall.ps1 (Windows PowerShell 5.1, administrateur)
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          Start-Process python -ArgumentList 'tests/install/serve-fixture.py','${{ matrix.name }}','artifact' -WindowStyle Hidden
+          for ($i = 0; $i -lt 30; $i++) { try { Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8765/install.ps1 | Out-Null; break } catch { Start-Sleep 1 } }
+          $env:AUXIPAK_WITH_BUILDER = '1'
+          irm http://127.0.0.1:8765/install.ps1 | iex
+          $bin = Join-Path $env:ProgramFiles 'AuxiPak\bin'
+          & "$bin\auxipak.exe" --version; if ($LASTEXITCODE -ne 0) { throw "auxipak.exe" }
+          & "$bin\auxipak-builder.exe" --version; if ($LASTEXITCODE -ne 0) { throw "auxipak-builder.exe" }
+          auxipak --version
+          if ([Environment]::GetEnvironmentVariable('Path', 'Machine') -notlike "*$bin*") { throw "PATH" }
+          $cfg = Join-Path $env:ProgramData 'AuxiPak\config\config.toml'
+          if (-not (Select-String -LiteralPath $cfg -SimpleMatch 'url = "http://127.0.0.1:8765/repos/official/"' -Quiet)) { throw "config.toml" }
+          irm http://127.0.0.1:8765/install.ps1 | iex
+          $env:AUXIPAK_PURGE = '1'
+          irm http://127.0.0.1:8765/uninstall.ps1 | iex
+          if (Test-Path -LiteralPath "$bin\auxipak.exe") { throw "auxipak.exe toujours present" }
+          if ([Environment]::GetEnvironmentVariable('Path', 'Machine') -like "*$bin*") { throw "PATH non nettoye" }
+          if (Test-Path -LiteralPath $cfg) { throw "configuration non purgee" }
 
   docker:
     name: Image Docker du serveur

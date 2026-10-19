@@ -26,6 +26,9 @@ pub struct Config {
     /// Clés : `root.json`, `package-keys.json` (publics), `targets.pem`,
     /// `snapshot.pem`, `timestamp.pem`, `package-signing.pem` (secrets).
     pub keys_dir: PathBuf,
+    /// Binaires du client distribués par `/downloads/` et les scripts
+    /// d'installation (archives d'une release et `SHA256SUMS`).
+    pub downloads_dir: PathBuf,
     pub cookie_secure: bool,
     /// L'approbateur d'une demande doit être différent du soumissionnaire.
     pub require_distinct_approver: bool,
@@ -74,6 +77,9 @@ impl Config {
         .context("AUXIPAK_PUBLIC_URL est obligatoire en production (ex. https://pak.auxinux.ca)")?;
         let data_dir = PathBuf::from(var("AUXIPAK_DATA_DIR").unwrap_or_else(|| "/var/lib/auxipak-server".into()));
         let keys_dir = PathBuf::from(var("AUXIPAK_KEYS_DIR").unwrap_or_else(|| "/etc/auxipak-server/keys".into()));
+        let downloads_dir = var("AUXIPAK_DOWNLOADS_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| data_dir.join("downloads"));
         let cfg = Config {
             mode,
             database_url,
@@ -92,6 +98,7 @@ impl Config {
             public_url,
             data_dir,
             keys_dir,
+            downloads_dir,
         };
         cfg.check()?;
         Ok(cfg)
@@ -148,6 +155,7 @@ impl Config {
             database_url: database_url.into(),
             bind: "127.0.0.1:0".parse().unwrap(),
             public_url: url::Url::parse("http://127.0.0.1").unwrap(),
+            downloads_dir: data_dir.join("downloads"),
             data_dir,
             keys_dir,
             cookie_secure: false,

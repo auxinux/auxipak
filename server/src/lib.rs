@@ -6,6 +6,7 @@ pub mod audit;
 pub mod auth;
 pub mod config;
 pub mod error;
+pub mod install;
 pub mod keys;
 pub mod publisher;
 pub mod state;
@@ -67,6 +68,7 @@ pub fn app(state: AppState) -> Router {
     Router::new()
         .merge(api::router())
         .merge(web::router())
+        .merge(install::router())
         .layer(DefaultBodyLimit::max(2 * 1024 * 1024))
         .layer(SetResponseHeaderLayer::if_not_present(header::X_CONTENT_TYPE_OPTIONS, HeaderValue::from_static("nosniff")))
         .layer(SetResponseHeaderLayer::if_not_present(header::X_FRAME_OPTIONS, HeaderValue::from_static("DENY")))

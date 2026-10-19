@@ -188,6 +188,29 @@ WantedBy=multi-user.target
 Côté mandataire : protocole HTTP, port 8080, délai de réponse 3 600 s et
 taille de corps 8 Gio (envoi des paquets).
 
+### 3.8 Binaires du client et scripts d'installation
+
+Le serveur publie `/install.sh`, `/uninstall.sh`, `/install.ps1` et
+`/uninstall.ps1` (générés avec `AUXIPAK_PUBLIC_URL` et les ancres publiques du
+dépôt officiel) ainsi que `/downloads/` : les archives du client d'une
+release, lues dans `deploy/downloads/` (monté en lecture seule).
+
+1. Créer une release : pousser une étiquette `v1.0.0` ; le workflow
+   « Release » prépare un brouillon (archives, `SHA256SUMS`, attestations) ;
+   le relire puis le publier sur GitHub.
+2. Sur le serveur :
+
+   ```console
+   $ cd ~/auxipak/deploy
+   $ ./scripts/fetch-client.sh v1.0.0      # ou un dossier : ./scripts/fetch-client.sh ~/release
+   $ curl -fsS https://auxipak.auxinux.ca/downloads/SHA256SUMS
+   ```
+
+Le script vérifie chaque empreinte (et les attestations de provenance si
+`gh` est installé) puis remplace les binaires publiés. Aucun redémarrage
+n'est nécessaire. Installation native (systemd) : déposer les fichiers dans
+`AUXIPAK_DOWNLOADS_DIR` (par défaut `$AUXIPAK_DATA_DIR/downloads`).
+
 ## 4. Exploitation
 
 ### 4.1 Healthcheck

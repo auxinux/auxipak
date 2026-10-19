@@ -60,6 +60,39 @@ d'applications sur ces systèmes reste à valider.
 
 ## 3. Installation du client
 
+### 3.0 Installation en une commande (recommandée)
+
+Le serveur publie des scripts d'installation qui téléchargent le client
+correspondant à la plateforme, vérifient son empreinte SHA-256, installent les
+ancres de confiance du dépôt officiel et créent la configuration :
+
+| Système | Installation | Désinstallation |
+|---|---|---|
+| Linux, macOS | `curl -fsSL https://auxipak.auxinux.ca/install.sh \| sh` | `curl -fsSL https://auxipak.auxinux.ca/uninstall.sh \| sh` |
+| Windows (PowerShell) | `irm https://auxipak.auxinux.ca/install.ps1 \| iex` | `irm https://auxipak.auxinux.ca/uninstall.ps1 \| iex` |
+
+Options :
+
+- Linux/macOS : `… | sh -s -- --with-builder` installe aussi
+  `auxipak-builder` ; `uninstall.sh` accepte `--purge` (configuration,
+  registre, cache et journaux).
+- Windows : `$env:AUXIPAK_WITH_BUILDER = "1"` avant l'installation ;
+  `$env:AUXIPAK_PURGE = "1"` avant la désinstallation.
+
+Emplacements : `/usr/local/bin` et `/etc/auxipak` (Linux, macOS, via `sudo`) ;
+sous Windows, `C:\Program Files\AuxiPak\bin` et
+`C:\ProgramData\AuxiPak\config` depuis une console administrateur, sinon
+`%LOCALAPPDATA%\AuxiPak` pour l'utilisateur courant (PATH mis à jour).
+Les applications installées par AuxiPak ne sont jamais supprimées par les
+scripts de désinstallation.
+
+Le script affiche l'empreinte de `root.json` : comparez-la à celle publiée par
+AuxiNux par un autre canal. Côté serveur, les binaires proviennent d'une
+release (`deploy/scripts/fetch-client.sh`, voir
+[DEPLOYMENT.md](DEPLOYMENT.md#38-binaires-du-client-et-scripts-dinstallation)).
+
+Les sections suivantes décrivent l'installation manuelle.
+
 ### 3.1 Linux (Debian, Ubuntu, AuxiNuxOS, VirtuaOS)
 
 ```console

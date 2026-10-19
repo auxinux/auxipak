@@ -884,3 +884,55 @@ async fn web_admin_requires_session_and_csrf() {
         .contains("default-src 'self'"));
     assert_eq!(r.headers().get("x-frame-options").unwrap(), "DENY");
 }
+
+#[tokio::test]
+#[ignore = "requiert PostgreSQL (AUXIPAK_TEST_DATABASE_URL)"]
+async fn install_scripts_and_downloads() {
+    let s = start().await;
+    let root = String::from_utf8(s.state.keys.root_json.clone()).unwrap();
+    for (p, needle) in [
+        ("/install.sh", root.trim()),
+        ("/uninstall.sh", "--purge"),
+        ("/install.ps1", "FromBase64String"),
+        ("/uninstall.ps1", "AUXIPAK_PURGE"),
+    ] {
+        let r = s.http.get(s.url(p)).send().await.unwrap();
+        assert_eq!(r.status(), StatusCode::OK, "{p}");
+        assert!(r.headers()["content-type"].to_str().unwrap().starts_with("text/plain"));
+        let body = r.text().await.unwrap();
+        assert!(!body.contains("@@"), "{p} : gabarit incomplet");
+        assert!(body.contains("http://127.0.0.1"), "{p} : URL publique absente");
+        assert!(body.contains(needle), "{p}");
+    }
+    // Aucun client publié : 404 ; fichiers hors liste et traversée refusés.
+    assert_eq!(
+        s.http.get(s.url("/downloads/SHA256SUMS")).send().await.unwrap().status(),
+        StatusCode::NOT_FOUND
+    );
+    let dl = &s.state.config.downloads_dir;
+    std::fs::create_dir_all(dl).unwrap();
+    std::fs::write(dl.join("SHA256SUMS"), "x").unwrap();
+    std::fs::write(dl.join(".secret"), "x").unwrap();
+    assert_eq!(
+        s.http
+            .get(s.url("/downloads/SHA256SUMS"))
+            .send()
+            .await
+            .unwrap()
+            .text()
+            .await
+            .unwrap(),
+        "x"
+    );
+    for p in [
+        "/downloads/.secret",
+        "/downloads/..%2F..%2Fkeys%2Froot.json",
+        "/downloads/a%20b",
+    ] {
+        assert_eq!(
+            s.http.get(s.url(p)).send().await.unwrap().status(),
+            StatusCode::NOT_FOUND,
+            "{p}"
+        );
+    }
+}

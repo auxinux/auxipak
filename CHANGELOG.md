@@ -5,6 +5,17 @@ le projet applique le [versionnage sémantique](https://semver.org/lang/fr/).
 
 ## [Non publié]
 
+### Ajouté
+
+- Installation du client en une commande : le serveur publie `/install.sh`,
+  `/uninstall.sh` (Linux, macOS) et `/install.ps1`, `/uninstall.ps1`
+  (Windows), qui vérifient l'empreinte SHA-256 du client et installent les
+  ancres de confiance du dépôt officiel ; binaires servis par `/downloads/`
+  et publiés avec `deploy/scripts/fetch-client.sh`. Scripts testés en CI
+  sur Linux, macOS et Windows (PowerShell 5.1).
+- Déploiement derrière un mandataire HTTPS distant : `AUXIPAK_BIND` et
+  `AUXIPAK_TRUSTED_PROXIES` dans `deploy/.env`.
+
 ## [1.0.0] — 2026-10-19
 
 Première version d'AuxiPak.

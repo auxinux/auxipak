@@ -54,6 +54,18 @@ Les dépôts ajoutés par l'utilisateur sont toujours affichés comme
 Tout est écrit en Rust : binaires autonomes, une seule bibliothèque de
 validation partagée par le client, le constructeur et le serveur.
 
+## Installation du client
+
+```sh
+curl -fsSL https://auxipak.auxinux.ca/install.sh | sh      # Linux, macOS
+```
+
+```powershell
+irm https://auxipak.auxinux.ca/install.ps1 | iex           # Windows
+```
+
+Détails et désinstallation : [docs/INSTALLATION.md](docs/INSTALLATION.md).
+
 ## Démarrage rapide (développement)
 
 Prérequis : Rust ≥ 1.89, Docker (ou PostgreSQL local).

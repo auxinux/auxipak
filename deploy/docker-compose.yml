@@ -43,9 +43,12 @@ services:
       AUXIPAK_MAX_UPLOAD_BYTES: ${AUXIPAK_MAX_UPLOAD_BYTES:-8589934592}
       AUXIPAK_TRUSTED_PROXIES: ${AUXIPAK_TRUSTED_PROXIES:-172.30.0.1}
       AUXIPAK_LOG: ${AUXIPAK_LOG:-info}
+      AUXIPAK_DOWNLOADS_DIR: /srv/auxipak-downloads
     volumes:
       - server-data:/var/lib/auxipak-server
       - ${AUXIPAK_KEYS_HOST_DIR:?définir AUXIPAK_KEYS_HOST_DIR}:/etc/auxipak-server/keys:ro
+      # Binaires du client (scripts/fetch-client.sh) servis par /downloads/.
+      - ${AUXIPAK_DOWNLOADS_HOST_DIR:-./downloads}:/srv/auxipak-downloads:ro
     # Par défaut, publié uniquement sur la boucle locale : Nginx (hôte) assure
     # HTTPS. AUXIPAK_BIND=0.0.0.0 si le mandataire HTTPS est sur une autre
     # machine (filtrer alors le port 8080 au pare-feu, voir DEPLOYMENT.md).
