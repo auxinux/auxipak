@@ -173,6 +173,10 @@ pub fn resolve<'a>(repos: &'a [RepoData], spec: &str, sel: &Selector, default_la
         }
     };
     if pool.is_empty() {
+        let revoked = revoked_versions(repos, &spec_l, sel);
+        if !revoked.is_empty() {
+            bail!("« {spec} » : version(s) {} révoquée(s) : installation refusée", revoked.join(", "));
+        }
         bail!("aucune application « {spec} » n'est disponible pour ce système (essayez « auxipak search {spec} »)");
     }
     let ids: std::collections::BTreeSet<_> = pool.iter().map(|c| (&c.repo.config.name, &c.release.id)).collect();
@@ -185,21 +189,36 @@ pub fn resolve<'a>(repos: &'a [RepoData], spec: &str, sel: &Selector, default_la
             );
         }
     }
-    let revoked_only = pool.iter().all(|c| c.is_revoked());
-    let mut ok: Vec<&Candidate> = pool
+    let matching: Vec<&Candidate> = pool
         .into_iter()
-        .filter(|c| !c.is_revoked())
         .filter(|c| sel.version.as_ref().map(|r| r.matches(&c.release.version)).unwrap_or(true))
         .filter(|c| sel.language.as_ref().map(|l| lang_score(c.release, l) > 0).unwrap_or(true))
         .collect();
+    let revoked: Vec<String> = matching.iter().filter(|c| c.is_revoked()).map(|c| c.release.version.clone()).collect();
+    let mut ok: Vec<&Candidate> = matching.into_iter().filter(|c| !c.is_revoked()).collect();
     if ok.is_empty() {
-        if revoked_only {
-            bail!("« {spec} » : toutes les versions disponibles ont été révoquées");
+        let mut revoked = revoked;
+        revoked.extend(revoked_versions(repos, &spec_l, sel));
+        revoked.sort();
+        revoked.dedup();
+        if !revoked.is_empty() {
+            bail!("« {spec} » : version(s) {} révoquée(s) : installation refusée", revoked.join(", "));
         }
         bail!("« {spec} » : aucune version ne correspond aux critères demandés");
     }
     ok.sort_by(|a, b| better(b, a, lang));
     Ok(*ok[0])
+}
+
+/// Versions révoquées (liste de révocation authentifiée) correspondant à la demande.
+fn revoked_versions(repos: &[RepoData], id: &str, sel: &Selector) -> Vec<String> {
+    repos
+        .iter()
+        .filter(|r| sel.repo.as_ref().map(|n| &r.config.name == n).unwrap_or(true))
+        .flat_map(|r| r.revocations.revoked.iter())
+        .filter(|rv| rv.id == id && sel.version.as_ref().map(|v| v.matches(&rv.version)).unwrap_or(true))
+        .map(|rv| rv.version.clone())
+        .collect()
 }
 
 /// Meilleure mise à jour disponible pour une application installée.

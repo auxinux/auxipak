@@ -251,11 +251,12 @@ async fn run(cli: Cli, paths: Paths) -> Result<()> {
             } else if hits.is_empty() {
                 println!("Aucun résultat.");
             } else {
-                println!("{:<24} {:<12} {:<8} {:<12} {:<9} DESCRIPTION", "NOM (ID)", "VERSION", "LANGUE", "STATUT", "PLATEF.");
+                println!("{:<22} {:<20} {:<12} {:<8} {:<12} {:<9} DESCRIPTION", "ID", "NOM", "VERSION", "LANGUE", "STATUT", "PLATEF.");
                 for c in hits {
                     println!(
-                        "{:<24} {:<12} {:<8} {:<12} {:<9} {}{}",
-                        truncate(&format!("{} ({})", c.name(), c.release.id), 24),
+                        "{:<22} {:<20} {:<12} {:<8} {:<12} {:<9} {}{}",
+                        c.release.id,
+                        truncate(c.name(), 20),
                         truncate(&c.release.version, 12),
                         truncate(&c.release.languages.join(","), 8),
                         c.status().short(),

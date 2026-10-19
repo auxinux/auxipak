@@ -1,0 +1,61 @@
+# Manifeste de l'application de démonstration AuxiPak.
+format: 1
+id: auxipak-demo
+name: "AuxiPak Demo"
+version: "@VERSION@"
+publisher: "AuxiNux"
+summary: "Application de démonstration inoffensive pour valider le parcours AuxiPak"
+description: |
+  Petite application de test développée pour le projet AuxiPak. Elle affiche
+  sa version et ne fait rien d'autre : aucune donnée collectée, aucun accès réseau.
+license: "GPL-3.0-or-later"
+homepage: "https://pak.auxinux.ca"
+languages: [fr, en]
+categories: [utilities]
+privacy:
+  telemetry: none
+  details: "Aucune télémétrie, aucune donnée collectée."
+targets:
+  # Debian / Ubuntu : paquet .deb intégré, installé par APT (dépendances natives résolues par APT).
+  - name: debian
+    platform: linux
+    distributions: [debian, ubuntu]
+    os_version: ">=12"
+    architectures: [any]
+    mode: embedded
+    install:
+      method: deb
+      package: auxipak-demo
+      source:
+        file: payload/auxipak-demo_@VERSION@_all.deb
+  # AuxiNuxOS / VirtuaOS : système immuable, APT bloqué → copie de fichiers dans l'espace AuxiPak.
+  - name: immutable
+    platform: linux
+    distributions: [auxinuxos, virtuaos]
+    architectures: [any]
+    mode: embedded
+    install:
+      method: files
+      files:
+        - source: payload/bin/auxipak-demo
+          destination: "{bin}/auxipak-demo"
+          executable: true
+  - name: macos
+    platform: macos
+    architectures: [x86_64, arm64]
+    mode: embedded
+    install:
+      method: files
+      files:
+        - source: payload/bin/auxipak-demo
+          destination: "{bin}/auxipak-demo"
+          executable: true
+  - name: windows
+    platform: windows
+    architectures: [x86_64, arm64]
+    mode: embedded
+    install:
+      method: files
+      files:
+        - source: payload/windows/auxipak-demo.cmd
+          destination: "{bin}/auxipak-demo.cmd"
