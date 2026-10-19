@@ -4,3 +4,4 @@
 /.env
 *.pem
 !deploy/**/*.example.pem
+/.dev

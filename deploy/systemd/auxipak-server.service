@@ -1,0 +1,37 @@
+# Déploiement natif (sans Docker) sur Debian 13.
+# /etc/systemd/system/auxipak-server.service
+[Unit]
+Description=AuxiPak Server
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=auxipak
+Group=auxipak
+EnvironmentFile=/etc/auxipak-server/server.env
+ExecStartPre=/usr/local/bin/auxipak-server migrate
+ExecStart=/usr/local/bin/auxipak-server serve
+Restart=on-failure
+RestartSec=5
+# Durcissement
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+ReadWritePaths=/var/lib/auxipak-server
+ReadOnlyPaths=/etc/auxipak-server
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,34 @@
+# Environnement de DÉVELOPPEMENT local, démarrable immédiatement :
+#   docker compose -f deploy/docker-compose.dev.yml up --build
+#   docker compose -f deploy/docker-compose.dev.yml exec server auxipak-server create-admin --username admin
+# Les clés sont générées automatiquement (clés de TEST, jamais en production).
+name: auxipak-dev
+
+services:
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: auxipak
+      POSTGRES_USER: auxipak
+      POSTGRES_PASSWORD: dev-only-password
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U auxipak -d auxipak"]
+      interval: 5s
+      retries: 20
+
+  server:
+    build:
+      context: ..
+      dockerfile: deploy/docker/Dockerfile
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      AUXIPAK_ENV: development
+      AUXIPAK_DATABASE_URL: postgres://auxipak:dev-only-password@db:5432/auxipak
+      AUXIPAK_PUBLIC_URL: http://127.0.0.1:8080
+      AUXIPAK_DEV_AUTO_KEYS: "1"
+      AUXIPAK_KEYS_DIR: /var/lib/auxipak-server/dev-keys
+      AUXIPAK_REQUIRE_DISTINCT_APPROVER: "false"
+    ports:
+      - "127.0.0.1:8080:8080"

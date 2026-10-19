@@ -48,4 +48,4 @@ tokio-util = { version = "0.7", features = ["io"] }
 tough.workspace = true
 
 [dev-dependencies]
-reqwest = { workspace = true }
+reqwest = { workspace = true, features = ["form"] }

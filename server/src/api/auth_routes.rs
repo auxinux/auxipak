@@ -155,6 +155,19 @@ pub async fn issue_token(st: &AppState, actor: &Actor, owner: Uuid, owner_role: 
     if !actor.is_human() {
         return Err(forbidden("seul un humain peut créer des jetons"));
     }
+    // Un jeton ne peut jamais servir à obtenir davantage de droits : seule une
+    // session interactive, ou un jeton humain de portée « admin », peut émettre
+    // un jeton, et uniquement avec des portées que l'émetteur détient lui-même.
+    if let Via::Token { .. } = &actor.via {
+        if !actor.has(Scope::Admin) {
+            return Err(forbidden("la création de jetons exige une session ou un jeton administrateur"));
+        }
+        for s in &req.scopes {
+            if !Scope::parse(s).map(|sc| actor.has(sc)).unwrap_or(false) {
+                return Err(forbidden(format!("portée « {s} » non détenue par le jeton émetteur")));
+            }
+        }
+    }
     let name = req.name.trim();
     if name.is_empty() || name.len() > 64 {
         return Err(bad("nom de jeton invalide"));

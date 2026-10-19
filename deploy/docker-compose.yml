@@ -1,0 +1,67 @@
+# Déploiement de production d'AuxiPak Server (Debian 13, derrière Nginx).
+#
+#   cp .env.example .env    # puis renseigner TOUTES les valeurs
+#   docker compose --env-file .env up -d --build
+#
+# Les clés (root.json, package-keys.json, targets.pem, snapshot.pem,
+# timestamp.pem, package-signing.pem) sont lues depuis ${AUXIPAK_KEYS_HOST_DIR}
+# (propriétaire uid 10001, droits 0600) et ne sont jamais copiées dans l'image.
+name: auxipak
+
+services:
+  db:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: auxipak
+      POSTGRES_USER: auxipak
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?définir POSTGRES_PASSWORD}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    networks: [backend]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U auxipak -d auxipak"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  server:
+    build:
+      context: ..
+      dockerfile: deploy/docker/Dockerfile
+    image: auxipak-server:1.0.0
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      AUXIPAK_ENV: production
+      AUXIPAK_DATABASE_URL: postgres://auxipak:${POSTGRES_PASSWORD}@db:5432/auxipak
+      AUXIPAK_PUBLIC_URL: ${AUXIPAK_PUBLIC_URL:?définir AUXIPAK_PUBLIC_URL}
+      AUXIPAK_COOKIE_SECURE: "true"
+      AUXIPAK_REQUIRE_DISTINCT_APPROVER: ${AUXIPAK_REQUIRE_DISTINCT_APPROVER:-true}
+      AUXIPAK_MAX_UPLOAD_BYTES: ${AUXIPAK_MAX_UPLOAD_BYTES:-8589934592}
+      AUXIPAK_TRUSTED_PROXIES: 172.30.0.1
+      AUXIPAK_LOG: ${AUXIPAK_LOG:-info}
+    volumes:
+      - server-data:/var/lib/auxipak-server
+      - ${AUXIPAK_KEYS_HOST_DIR:?définir AUXIPAK_KEYS_HOST_DIR}:/etc/auxipak-server/keys:ro
+    # Publié uniquement sur la boucle locale : Nginx (hôte) assure HTTPS.
+    ports:
+      - "127.0.0.1:8080:8080"
+    networks: [backend]
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+
+volumes:
+  db-data:
+  server-data:
+
+networks:
+  backend:
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
+          gateway: 172.30.0.1
