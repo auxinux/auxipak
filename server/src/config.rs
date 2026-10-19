@@ -60,9 +60,16 @@ impl Config {
         };
         let dev = mode == Mode::Development;
         let database_url = var("AUXIPAK_DATABASE_URL").context("AUXIPAK_DATABASE_URL est obligatoire")?;
-        let bind = var("AUXIPAK_BIND").unwrap_or_else(|| "127.0.0.1:8080".into()).parse().context("AUXIPAK_BIND invalide")?;
+        let bind = var("AUXIPAK_BIND")
+            .unwrap_or_else(|| "127.0.0.1:8080".into())
+            .parse()
+            .context("AUXIPAK_BIND invalide")?;
         let public_url = url::Url::parse(&var("AUXIPAK_PUBLIC_URL").unwrap_or_else(|| {
-            if dev { "http://127.0.0.1:8080".into() } else { String::new() }
+            if dev {
+                "http://127.0.0.1:8080".into()
+            } else {
+                String::new()
+            }
         }))
         .context("AUXIPAK_PUBLIC_URL est obligatoire en production (ex. https://pak.auxinux.ca)")?;
         let data_dir = PathBuf::from(var("AUXIPAK_DATA_DIR").unwrap_or_else(|| "/var/lib/auxipak-server".into()));
@@ -73,7 +80,10 @@ impl Config {
             bind,
             cookie_secure: flag("AUXIPAK_COOKIE_SECURE", !dev)?,
             require_distinct_approver: flag("AUXIPAK_REQUIRE_DISTINCT_APPROVER", true)?,
-            max_upload_bytes: var("AUXIPAK_MAX_UPLOAD_BYTES").map(|v| v.parse()).transpose()?.unwrap_or(8 * 1024 * 1024 * 1024),
+            max_upload_bytes: var("AUXIPAK_MAX_UPLOAD_BYTES")
+                .map(|v| v.parse())
+                .transpose()?
+                .unwrap_or(8 * 1024 * 1024 * 1024),
             dev_auto_keys: flag("AUXIPAK_DEV_AUTO_KEYS", false)?,
             timestamp_hours: var("AUXIPAK_TIMESTAMP_HOURS").map(|v| v.parse()).transpose()?.unwrap_or(24),
             trusted_proxies: var("AUXIPAK_TRUSTED_PROXIES")

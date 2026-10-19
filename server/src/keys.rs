@@ -27,7 +27,10 @@ pub struct Keys {
 
 impl Keys {
     pub fn tuf_sources(&self) -> Vec<Box<dyn KeySource>> {
-        self.tuf.iter().map(|p| Box::new(PemKeySource { path: p.clone() }) as Box<dyn KeySource>).collect()
+        self.tuf
+            .iter()
+            .map(|p| Box::new(PemKeySource { path: p.clone() }) as Box<dyn KeySource>)
+            .collect()
     }
 
     pub async fn load(cfg: &Config) -> Result<Keys> {
@@ -67,21 +70,34 @@ impl Keys {
             }
         }
         if dir.join("root.pem").exists() && cfg.mode == Mode::Production {
-            bail!("la clé racine TUF ne doit jamais se trouver sur le serveur ({})", dir.join("root.pem").display());
+            bail!(
+                "la clé racine TUF ne doit jamais se trouver sur le serveur ({})",
+                dir.join("root.pem").display()
+            );
         }
         let sp = dir.join("package-signing.pem");
         let signer = if sp.exists() {
             check_secret_permissions(&sp)?;
             let s = PackageSigner::load(&sp)?;
             if package_keys.find(s.key_id()).is_none() {
-                bail!("la clé package-signing.pem ({}) n'est pas listée dans package-keys.json", s.key_id());
+                bail!(
+                    "la clé package-signing.pem ({}) n'est pas listée dans package-keys.json",
+                    s.key_id()
+                );
             }
             Some(s)
         } else {
             tracing::warn!("aucune clé de signature de paquets : seuls les paquets déjà signés pourront être publiés");
             None
         };
-        Ok(Keys { root_path, root_json, package_keys, package_keys_json, signer, tuf })
+        Ok(Keys {
+            root_path,
+            root_json,
+            package_keys,
+            package_keys_json,
+            signer,
+            tuf,
+        })
     }
 }
 
@@ -91,7 +107,11 @@ fn check_secret_permissions(p: &std::path::Path) -> Result<()> {
         use std::os::unix::fs::PermissionsExt;
         let mode = std::fs::metadata(p)?.permissions().mode();
         if mode & 0o077 != 0 {
-            bail!("{} est lisible par d'autres utilisateurs (droits {:o}) : chmod 600", p.display(), mode & 0o777);
+            bail!(
+                "{} est lisible par d'autres utilisateurs (droits {:o}) : chmod 600",
+                p.display(),
+                mode & 0o777
+            );
         }
     }
     let _ = p;
@@ -99,7 +119,10 @@ fn check_secret_permissions(p: &std::path::Path) -> Result<()> {
 }
 
 async fn generate_dev_keys(cfg: &Config) -> Result<()> {
-    tracing::warn!("MODE DÉVELOPPEMENT : génération de clés de TEST dans {}", cfg.keys_dir.display());
+    tracing::warn!(
+        "MODE DÉVELOPPEMENT : génération de clés de TEST dans {}",
+        cfg.keys_dir.display()
+    );
     eprintln!(
         "ATTENTION : clés de développement générées dans {} — ne jamais les utiliser en production",
         cfg.keys_dir.display()
@@ -114,6 +137,9 @@ async fn generate_dev_keys(cfg: &Config) -> Result<()> {
     for f in ["targets.pem", "snapshot.pem", "timestamp.pem", "package-signing.pem"] {
         auxipak_core::keyset::write_secret(&cfg.keys_dir.join(f), &std::fs::read_to_string(set.join("online").join(f))?)?;
     }
-    auxipak_core::keyset::write_secret(&cfg.keys_dir.join("dev-root.pem"), &std::fs::read_to_string(set.join("offline/root.pem"))?)?;
+    auxipak_core::keyset::write_secret(
+        &cfg.keys_dir.join("dev-root.pem"),
+        &std::fs::read_to_string(set.join("offline/root.pem"))?,
+    )?;
     Ok(())
 }

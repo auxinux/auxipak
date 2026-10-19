@@ -58,7 +58,14 @@ impl Role {
         match self {
             Role::Publisher => &[Scope::Read, Scope::Build, Scope::Submit],
             Role::Reviewer => &[Scope::Read, Scope::Build, Scope::Submit, Scope::Review, Scope::Evaluate],
-            Role::Admin => &[Scope::Read, Scope::Build, Scope::Submit, Scope::Review, Scope::Evaluate, Scope::Admin],
+            Role::Admin => &[
+                Scope::Read,
+                Scope::Build,
+                Scope::Submit,
+                Scope::Review,
+                Scope::Evaluate,
+                Scope::Admin,
+            ],
         }
     }
 }
@@ -131,8 +138,16 @@ impl TokenKind {
 /// Mode d'authentification de l'acteur.
 #[derive(Debug, Clone)]
 pub enum Via {
-    Session { csrf: String, token_hash: String },
-    Token { id: Uuid, kind: TokenKind, scopes: Vec<Scope>, provider: Option<String> },
+    Session {
+        csrf: String,
+        token_hash: String,
+    },
+    Token {
+        id: Uuid,
+        kind: TokenKind,
+        scopes: Vec<Scope>,
+        provider: Option<String>,
+    },
 }
 
 /// Acteur authentifié.
@@ -155,7 +170,14 @@ impl Actor {
     }
 
     pub fn is_human(&self) -> bool {
-        matches!(self.via, Via::Session { .. } | Via::Token { kind: TokenKind::Human, .. })
+        matches!(
+            self.via,
+            Via::Session { .. }
+                | Via::Token {
+                    kind: TokenKind::Human,
+                    ..
+                }
+        )
     }
 
     pub fn token_id(&self) -> Option<Uuid> {
@@ -199,7 +221,11 @@ impl Actor {
             Err(ApiError::Forbidden(format!(
                 "droits insuffisants : la portée « {} » est requise{}",
                 scope.as_str(),
-                if scope.human_only() && !self.is_human() { " (réservée à un humain)" } else { "" }
+                if scope.human_only() && !self.is_human() {
+                    " (réservée à un humain)"
+                } else {
+                    ""
+                }
             )))
         }
     }
@@ -297,14 +323,22 @@ pub async fn authenticate(state: &AppState, parts: &Parts) -> ApiResult<Option<A
         if row.expires_at.map(|e| e < Utc::now()).unwrap_or(false) {
             return Err(ApiError::Unauthorized);
         }
-        sqlx::query("UPDATE api_tokens SET last_used_at = now() WHERE id = $1").bind(row.id).execute(&state.db).await?;
+        sqlx::query("UPDATE api_tokens SET last_used_at = now() WHERE id = $1")
+            .bind(row.id)
+            .execute(&state.db)
+            .await?;
         let role = Role::parse(&row.role).ok_or(ApiError::Unauthorized)?;
         let kind = TokenKind::parse(&row.kind).ok_or(ApiError::Unauthorized)?;
         return Ok(Some(Actor {
             user_id: row.user_id,
             username: row.username,
             role,
-            via: Via::Token { id: row.id, kind, scopes: row.scopes.iter().filter_map(|s| Scope::parse(s)).collect(), provider: row.provider },
+            via: Via::Token {
+                id: row.id,
+                kind,
+                scopes: row.scopes.iter().filter_map(|s| Scope::parse(s)).collect(),
+                provider: row.provider,
+            },
             ip,
         }));
     }
@@ -324,7 +358,10 @@ pub async fn authenticate(state: &AppState, parts: &Parts) -> ApiResult<Option<A
                 user_id: r.user_id,
                 username: r.username,
                 role,
-                via: Via::Session { csrf: r.csrf_token, token_hash: th },
+                via: Via::Session {
+                    csrf: r.csrf_token,
+                    token_hash: th,
+                },
                 ip,
             }));
         }
@@ -364,8 +401,13 @@ pub async fn create_session(state: &AppState, user_id: Uuid, ip: Option<String>)
         .bind(ip)
         .execute(&state.db)
         .await?;
-    sqlx::query("UPDATE users SET last_login_at = now() WHERE id = $1").bind(user_id).execute(&state.db).await?;
-    sqlx::query("DELETE FROM sessions WHERE expires_at < now()").execute(&state.db).await?;
+    sqlx::query("UPDATE users SET last_login_at = now() WHERE id = $1")
+        .bind(user_id)
+        .execute(&state.db)
+        .await?;
+    sqlx::query("DELETE FROM sessions WHERE expires_at < now()")
+        .execute(&state.db)
+        .await?;
     Ok((token, csrf))
 }
 
@@ -388,7 +430,12 @@ impl LoginThrottle {
     }
 
     pub fn fail(&self, key: &str) {
-        self.attempts.lock().unwrap().entry(key.to_string()).or_default().push(Utc::now());
+        self.attempts
+            .lock()
+            .unwrap()
+            .entry(key.to_string())
+            .or_default()
+            .push(Utc::now());
     }
 
     pub fn success(&self, key: &str) {
@@ -403,7 +450,11 @@ pub fn validate_token_request(owner_role: Role, kind: TokenKind, scopes: &[Scope
     }
     for s in scopes {
         if !owner_role.allowed_scopes().contains(s) {
-            return Err(format!("portée « {} » non autorisée pour le rôle {}", s.as_str(), owner_role.as_str()));
+            return Err(format!(
+                "portée « {} » non autorisée pour le rôle {}",
+                s.as_str(),
+                owner_role.as_str()
+            ));
         }
         if s.human_only() && kind != TokenKind::Human {
             return Err(format!("portée « {} » interdite pour un jeton {}", s.as_str(), kind.as_str()));
@@ -412,12 +463,34 @@ pub fn validate_token_request(owner_role: Role, kind: TokenKind, scopes: &[Scope
     Ok(())
 }
 
+/// Adresse du pair TCP (si le serveur a été lancé avec `ConnectInfo`).
+pub struct Peer(pub Option<std::net::SocketAddr>);
+
+impl<S: Send + Sync> FromRequestParts<S> for Peer {
+    type Rejection = std::convert::Infallible;
+
+    async fn from_request_parts(parts: &mut Parts, _: &S) -> Result<Self, Self::Rejection> {
+        Ok(Peer(
+            parts
+                .extensions
+                .get::<axum::extract::ConnectInfo<std::net::SocketAddr>>()
+                .map(|c| c.0),
+        ))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn actor(role: Role, via: Via) -> Actor {
-        Actor { user_id: Uuid::nil(), username: "x".into(), role, via, ip: None }
+        Actor {
+            user_id: Uuid::nil(),
+            username: "x".into(),
+            role,
+            via,
+            ip: None,
+        }
     }
 
     #[test]
@@ -453,11 +526,23 @@ mod tests {
 
     #[test]
     fn role_bounds_scopes() {
-        let publisher = actor(Role::Publisher, Via::Session { csrf: String::new(), token_hash: String::new() });
+        let publisher = actor(
+            Role::Publisher,
+            Via::Session {
+                csrf: String::new(),
+                token_hash: String::new(),
+            },
+        );
         assert!(publisher.has(Scope::Submit));
         assert!(!publisher.has(Scope::Review));
         assert!(validate_token_request(Role::Publisher, TokenKind::Human, &[Scope::Review]).is_err());
-        let reviewer = actor(Role::Reviewer, Via::Session { csrf: String::new(), token_hash: String::new() });
+        let reviewer = actor(
+            Role::Reviewer,
+            Via::Session {
+                csrf: String::new(),
+                token_hash: String::new(),
+            },
+        );
         assert!(reviewer.has(Scope::Review));
         assert!(!reviewer.has(Scope::Admin));
     }
@@ -472,16 +557,5 @@ mod tests {
         assert!(!t.check("k"));
         t.success("k");
         assert!(t.check("k"));
-    }
-}
-
-/// Adresse du pair TCP (si le serveur a été lancé avec `ConnectInfo`).
-pub struct Peer(pub Option<std::net::SocketAddr>);
-
-impl<S: Send + Sync> FromRequestParts<S> for Peer {
-    type Rejection = std::convert::Infallible;
-
-    async fn from_request_parts(parts: &mut Parts, _: &S) -> Result<Self, Self::Rejection> {
-        Ok(Peer(parts.extensions.get::<axum::extract::ConnectInfo<std::net::SocketAddr>>().map(|c| c.0)))
     }
 }

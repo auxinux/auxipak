@@ -31,7 +31,10 @@ pub fn router() -> Router<AppState> {
         .route("/api/v1/auth/login", post(auth_routes::login))
         .route("/api/v1/auth/logout", post(auth_routes::logout))
         .route("/api/v1/auth/me", get(auth_routes::me))
-        .route("/api/v1/tokens", get(auth_routes::list_own_tokens).post(auth_routes::create_own_token))
+        .route(
+            "/api/v1/tokens",
+            get(auth_routes::list_own_tokens).post(auth_routes::create_own_token),
+        )
         .route("/api/v1/tokens/{id}", delete(auth_routes::revoke_own_token))
         // Soumissions
         .route("/api/v1/submissions", get(submissions::list).post(submissions::create))
@@ -41,9 +44,18 @@ pub fn router() -> Router<AppState> {
         .route("/api/v1/submissions/{id}/reject", post(submissions::reject))
         // Builder
         .route("/api/v1/builder/projects", get(builder::list).post(builder::create))
-        .route("/api/v1/builder/projects/{id}", get(builder::get_one).delete(builder::delete_project))
-        .route("/api/v1/builder/projects/{id}/manifest", put(builder::put_manifest).patch(builder::patch_manifest))
-        .route("/api/v1/builder/projects/{id}/files/{*path}", put(builder::put_file).delete(builder::delete_file))
+        .route(
+            "/api/v1/builder/projects/{id}",
+            get(builder::get_one).delete(builder::delete_project),
+        )
+        .route(
+            "/api/v1/builder/projects/{id}/manifest",
+            put(builder::put_manifest).patch(builder::patch_manifest),
+        )
+        .route(
+            "/api/v1/builder/projects/{id}/files/{*path}",
+            put(builder::put_file).delete(builder::delete_file),
+        )
         .route("/api/v1/builder/projects/{id}/validate", post(builder::validate))
         .route("/api/v1/builder/projects/{id}/build", post(builder::build))
         .route("/api/v1/builder/projects/{id}/test", post(builder::test))
@@ -54,7 +66,10 @@ pub fn router() -> Router<AppState> {
         .route("/api/v1/admin/users/{id}", patch(admin::update_user))
         .route("/api/v1/admin/tokens", get(admin::list_tokens).post(admin::create_token))
         .route("/api/v1/admin/tokens/{id}", delete(admin::revoke_token))
-        .route("/api/v1/admin/repositories", get(admin::list_repositories).post(admin::create_repository))
+        .route(
+            "/api/v1/admin/repositories",
+            get(admin::list_repositories).post(admin::create_repository),
+        )
         .route("/api/v1/admin/repositories/{name}", patch(admin::update_repository))
         .route("/api/v1/admin/repositories/{name}/regenerate", post(admin::regenerate))
         .route("/api/v1/admin/releases", get(admin::list_releases))

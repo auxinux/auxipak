@@ -99,7 +99,10 @@ pub fn router() -> Router<AppState> {
         .route("/admin/submissions/{id}", get(submission_page))
         .route("/admin/submissions/{id}/approve", post(submission_approve))
         .route("/admin/submissions/{id}/reject", post(submission_reject))
-        .route("/admin/upload", get(upload_page).post(upload_post).layer(DefaultBodyLimit::disable()))
+        .route(
+            "/admin/upload",
+            get(upload_page).post(upload_post).layer(DefaultBodyLimit::disable()),
+        )
         .route("/admin/releases", get(releases_page))
         .route("/admin/releases/{id}/state", post(release_state))
         .route("/admin/apps", get(apps_page))
@@ -114,7 +117,10 @@ pub fn router() -> Router<AppState> {
 }
 
 fn lang_of(st: &AppState, jar: &CookieJar) -> String {
-    jar.get("lang").map(|c| c.value().to_string()).filter(|l| st.web.has_lang(l)).unwrap_or_else(|| "fr".into())
+    jar.get("lang")
+        .map(|c| c.value().to_string())
+        .filter(|l| st.web.has_lang(l))
+        .unwrap_or_else(|| "fr".into())
 }
 
 fn page(st: &AppState, jar: &CookieJar, name: &str, ctx: Value) -> Response {
@@ -123,7 +129,12 @@ fn page(st: &AppState, jar: &CookieJar, name: &str, ctx: Value) -> Response {
 
 fn error_page(st: &AppState, jar: &CookieJar, e: ApiError) -> Response {
     let code = e.status();
-    let mut r = page(st, jar, "error.html", context! { status => code.as_u16(), message => e.to_string() });
+    let mut r = page(
+        st,
+        jar,
+        "error.html",
+        context! { status => code.as_u16(), message => e.to_string() },
+    );
     *r.status_mut() = code;
     r
 }
@@ -135,7 +146,13 @@ async fn static_file(Path(file): Path<String>) -> Response {
     match Assets::get(&format!("static/{file}")) {
         Some(f) => {
             let mime = mime_guess::from_path(&file).first_or_octet_stream();
-            ([(header::CONTENT_TYPE, mime.to_string()), (header::CACHE_CONTROL, "public, max-age=3600".into())], f.data.into_owned())
+            (
+                [
+                    (header::CONTENT_TYPE, mime.to_string()),
+                    (header::CACHE_CONTROL, "public, max-age=3600".into()),
+                ],
+                f.data.into_owned(),
+            )
                 .into_response()
         }
         None => StatusCode::NOT_FOUND.into_response(),
@@ -150,8 +167,15 @@ struct LangQuery {
 async fn set_lang(State(st): State<AppState>, Path(lang): Path<String>, Query(q): Query<LangQuery>, jar: CookieJar) -> Response {
     let lang = if st.web.has_lang(&lang) { lang } else { "fr".into() };
     // Redirection locale uniquement (pas de redirection ouverte).
-    let next = q.next.filter(|n| n.starts_with('/') && !n.starts_with("//") && !n.contains('\\')).unwrap_or_else(|| "/".into());
-    let c = Cookie::build(("lang", lang)).path("/").same_site(SameSite::Lax).max_age(time::Duration::days(365)).build();
+    let next = q
+        .next
+        .filter(|n| n.starts_with('/') && !n.starts_with("//") && !n.contains('\\'))
+        .unwrap_or_else(|| "/".into());
+    let c = Cookie::build(("lang", lang))
+        .path("/")
+        .same_site(SameSite::Lax)
+        .max_age(time::Duration::days(365))
+        .build();
     (jar.add(c), Redirect::to(&next)).into_response()
 }
 
@@ -164,10 +188,22 @@ struct SearchQuery {
 }
 
 async fn home(State(st): State<AppState>, jar: CookieJar, Query(q): Query<SearchQuery>) -> Response {
-    let status = q.status.clone().filter(|s| matches!(s.as_str(), "verified" | "compatible" | "unreviewed"));
-    let aq = public::AppsQuery { q: q.q.clone(), repository: None, status: status.clone() };
+    let status = q
+        .status
+        .clone()
+        .filter(|s| matches!(s.as_str(), "verified" | "compatible" | "unreviewed"));
+    let aq = public::AppsQuery {
+        q: q.q.clone(),
+        repository: None,
+        status: status.clone(),
+    };
     match public::search_apps(&st, &aq).await {
-        Ok(apps) => page(&st, &jar, "index.html", context! { apps => apps, q => q.q.unwrap_or_default(), status => status, user => web_user(&st, &jar).await }),
+        Ok(apps) => page(
+            &st,
+            &jar,
+            "index.html",
+            context! { apps => apps, q => q.q.unwrap_or_default(), status => status, user => web_user(&st, &jar).await },
+        ),
         Err(e) => error_page(&st, &jar, e),
     }
 }
@@ -176,7 +212,12 @@ async fn app_page(State(st): State<AppState>, jar: CookieJar, Path(id): Path<Str
     match public::load_app(&st, &id).await {
         Ok(detail) => {
             let base = st.config.public_url.to_string();
-            page(&st, &jar, "app.html", context! { d => detail, base => base, user => web_user(&st, &jar).await })
+            page(
+                &st,
+                &jar,
+                "app.html",
+                context! { d => detail, base => base, user => web_user(&st, &jar).await },
+            )
         }
         Err(e) => error_page(&st, &jar, e),
     }
@@ -188,7 +229,12 @@ async fn values(State(st): State<AppState>, jar: CookieJar) -> Response {
 
 async fn docs(State(st): State<AppState>, jar: CookieJar) -> Response {
     let base = st.config.public_url.to_string();
-    page(&st, &jar, "docs.html", context! { base => base, user => web_user(&st, &jar).await })
+    page(
+        &st,
+        &jar,
+        "docs.html",
+        context! { base => base, user => web_user(&st, &jar).await },
+    )
 }
 
 // ---------- Authentification Web ----------
@@ -224,7 +270,10 @@ async fn session_actor(st: &AppState, jar: &CookieJar) -> Option<Actor> {
         user_id: r.user_id,
         username: r.username,
         role: Role::parse(&r.role)?,
-        via: Via::Session { csrf: r.csrf_token, token_hash: th },
+        via: Via::Session {
+            csrf: r.csrf_token,
+            token_hash: th,
+        },
         ip: None,
     })
 }
@@ -248,7 +297,9 @@ fn to_web_user(a: &Actor) -> WebUser {
 
 /// Session obligatoire ; redirige vers la page de connexion sinon.
 async fn require_session(st: &AppState, jar: &CookieJar) -> Result<Actor, Response> {
-    session_actor(st, jar).await.ok_or_else(|| Redirect::to("/admin/login").into_response())
+    session_actor(st, jar)
+        .await
+        .ok_or_else(|| Redirect::to("/admin/login").into_response())
 }
 
 fn check_csrf(actor: &Actor, token: &str) -> ApiResult<()> {
@@ -295,7 +346,14 @@ async fn login_post(
     match auth_routes::check_credentials(&st, &f.username, &f.password, &ip).await {
         Ok((uid, _)) => match auth::create_session(&st, uid, Some(ip.clone())).await {
             Ok((token, _)) => {
-                crate::audit::log(&st.db, None, "auth.login", &f.username, serde_json::json!({"ip": ip, "via": "web"})).await;
+                crate::audit::log(
+                    &st.db,
+                    None,
+                    "auth.login",
+                    &f.username,
+                    serde_json::json!({"ip": ip, "via": "web"}),
+                )
+                .await;
                 (jar.add(auth_routes::session_cookie(&st, token)), Redirect::to("/admin")).into_response()
             }
             Err(e) => error_page(&st, &jar, ApiError::Internal(e)),
@@ -314,7 +372,10 @@ async fn logout(State(st): State<AppState>, jar: CookieJar, Form(f): Form<CsrfFo
     if let Some(a) = session_actor(&st, &jar).await {
         if check_csrf(&a, &f.csrf).is_ok() {
             if let Via::Session { token_hash, .. } = &a.via {
-                let _ = sqlx::query("DELETE FROM sessions WHERE token_hash = $1").bind(token_hash).execute(&st.db).await;
+                let _ = sqlx::query("DELETE FROM sessions WHERE token_hash = $1")
+                    .bind(token_hash)
+                    .execute(&st.db)
+                    .await;
             }
         }
     }
@@ -367,24 +428,44 @@ async fn dashboard(State(st): State<AppState>, jar: CookieJar) -> Response {
     );
     let repos = tryp!(st, jar, admin::repositories(&st).await);
     let key = st.keys.signer.as_ref().map(|s| s.key_id().to_string());
-    page(&st, &jar, "admin/dashboard.html", context! { user => to_web_user(&a), c => c, repos => repos, signing_key => key })
+    page(
+        &st,
+        &jar,
+        "admin/dashboard.html",
+        context! { user => to_web_user(&a), c => c, repos => repos, signing_key => key },
+    )
 }
 
 async fn submissions_page(State(st): State<AppState>, jar: CookieJar, Query(q): Query<MsgQuery>) -> Response {
     let a = session!(st, jar);
     let status = q.status.clone().filter(|s| !s.is_empty());
     let list = tryp!(st, jar, submissions::list_for(&st, &a, status.as_deref()).await);
-    page(&st, &jar, "admin/submissions.html", context! { user => to_web_user(&a), list => list, msg => q.msg, status => status })
+    page(
+        &st,
+        &jar,
+        "admin/submissions.html",
+        context! { user => to_web_user(&a), list => list, msg => q.msg, status => status },
+    )
 }
 
-async fn submission_page(State(st): State<AppState>, jar: CookieJar, Path(id): Path<Uuid>, Query(q): Query<MsgQuery>) -> Response {
+async fn submission_page(
+    State(st): State<AppState>,
+    jar: CookieJar,
+    Path(id): Path<Uuid>,
+    Query(q): Query<MsgQuery>,
+) -> Response {
     let a = session!(st, jar);
     let s = tryp!(st, jar, submissions::load(&st, id).await);
     if !a.has(Scope::Review) && s.submitter.as_deref() != Some(a.username.as_str()) {
         return error_page(&st, &jar, ApiError::NotFound);
     }
     let manifest_yaml = s.manifest.as_ref().and_then(|m| serde_yaml_ng::to_string(m).ok());
-    page(&st, &jar, "admin/submission.html", context! { user => to_web_user(&a), s => s, manifest_yaml => manifest_yaml, msg => q.msg })
+    page(
+        &st,
+        &jar,
+        "admin/submission.html",
+        context! { user => to_web_user(&a), s => s, manifest_yaml => manifest_yaml, msg => q.msg },
+    )
 }
 
 #[derive(Deserialize)]
@@ -429,7 +510,12 @@ async fn submission_reject(
 async fn upload_page(State(st): State<AppState>, jar: CookieJar, Query(q): Query<MsgQuery>) -> Response {
     let a = session!(st, jar);
     let repos = tryp!(st, jar, admin::repositories(&st).await);
-    page(&st, &jar, "admin/upload.html", context! { user => to_web_user(&a), repos => repos, msg => q.msg })
+    page(
+        &st,
+        &jar,
+        "admin/upload.html",
+        context! { user => to_web_user(&a), repos => repos, msg => q.msg },
+    )
 }
 
 /// Import d'un fichier `.apak` depuis l'interface (crée une demande de publication).
@@ -494,7 +580,9 @@ async fn upload_post(
         }
     }
     tryp!(st, jar, check_csrf(&a, &csrf));
-    let Some((tmp, sha, size, name)) = file else { return back("/admin/upload", "aucun fichier") };
+    let Some((tmp, sha, size, name)) = file else {
+        return back("/admin/upload", "aucun fichier");
+    };
     let r = submissions::create_from_file(&st, &a, &repo, Some(&name), &note, &tmp, sha, size).await;
     let _ = std::fs::remove_file(&tmp);
     match r {
@@ -512,8 +600,22 @@ struct ReleasesQuery {
 
 async fn releases_page(State(st): State<AppState>, jar: CookieJar, Query(q): Query<ReleasesQuery>) -> Response {
     let a = session!(st, jar);
-    let list = tryp!(st, jar, admin::releases(&st, q.repository.as_deref().filter(|s| !s.is_empty()), q.app_id.as_deref().filter(|s| !s.is_empty())).await);
-    page(&st, &jar, "admin/releases.html", context! { user => to_web_user(&a), list => list, msg => q.msg })
+    let list = tryp!(
+        st,
+        jar,
+        admin::releases(
+            &st,
+            q.repository.as_deref().filter(|s| !s.is_empty()),
+            q.app_id.as_deref().filter(|s| !s.is_empty())
+        )
+        .await
+    );
+    page(
+        &st,
+        &jar,
+        "admin/releases.html",
+        context! { user => to_web_user(&a), list => list, msg => q.msg },
+    )
 }
 
 #[derive(Deserialize)]
@@ -565,7 +667,12 @@ async fn apps_page(State(st): State<AppState>, jar: CookieJar, Query(q): Query<M
         .await
         .map_err(ApiError::from)
     );
-    page(&st, &jar, "admin/apps.html", context! { user => to_web_user(&a), apps => rows, msg => q.msg })
+    page(
+        &st,
+        &jar,
+        "admin/apps.html",
+        context! { user => to_web_user(&a), apps => rows, msg => q.msg },
+    )
 }
 
 #[derive(Deserialize)]
@@ -601,7 +708,12 @@ async fn repos_page(State(st): State<AppState>, jar: CookieJar, Query(q): Query<
     let a = session!(st, jar);
     let repos = tryp!(st, jar, admin::repositories(&st).await);
     let base = st.config.public_url.to_string();
-    page(&st, &jar, "admin/repositories.html", context! { user => to_web_user(&a), repos => repos, base => base, msg => q.msg })
+    page(
+        &st,
+        &jar,
+        "admin/repositories.html",
+        context! { user => to_web_user(&a), repos => repos, base => base, msg => q.msg },
+    )
 }
 
 #[derive(Deserialize)]
@@ -618,14 +730,24 @@ struct RepoForm {
 async fn repo_create(State(st): State<AppState>, jar: CookieJar, Form(f): Form<RepoForm>) -> Response {
     let a = session!(st, jar);
     tryp!(st, jar, check_csrf(&a, &f.csrf));
-    let req = admin::RepoReq { name: f.name, title: f.title, description: f.description, official: f.official.is_some() };
+    let req = admin::RepoReq {
+        name: f.name,
+        title: f.title,
+        description: f.description,
+        official: f.official.is_some(),
+    };
     match admin::create_repository(State(st.clone()), a, axum::Json(req)).await {
         Ok(_) => back("/admin/repositories", "ok"),
         Err(e) => back("/admin/repositories", &e.to_string()),
     }
 }
 
-async fn repo_regenerate(State(st): State<AppState>, jar: CookieJar, Path(name): Path<String>, Form(f): Form<CsrfForm>) -> Response {
+async fn repo_regenerate(
+    State(st): State<AppState>,
+    jar: CookieJar,
+    Path(name): Path<String>,
+    Form(f): Form<CsrfForm>,
+) -> Response {
     let a = session!(st, jar);
     tryp!(st, jar, check_csrf(&a, &f.csrf));
     match admin::regenerate(State(st.clone()), a, Path(name)).await {
@@ -640,7 +762,12 @@ async fn users_page(State(st): State<AppState>, jar: CookieJar, Query(q): Query<
         return error_page(&st, &jar, ApiError::Forbidden("réservé aux administrateurs".into()));
     }
     let users = tryp!(st, jar, admin::users(&st).await);
-    page(&st, &jar, "admin/users.html", context! { user => to_web_user(&a), users => users, msg => q.msg })
+    page(
+        &st,
+        &jar,
+        "admin/users.html",
+        context! { user => to_web_user(&a), users => users, msg => q.msg },
+    )
 }
 
 #[derive(Deserialize)]
@@ -656,7 +783,12 @@ struct UserForm {
 async fn user_create(State(st): State<AppState>, jar: CookieJar, Form(f): Form<UserForm>) -> Response {
     let a = session!(st, jar);
     tryp!(st, jar, check_csrf(&a, &f.csrf));
-    let req = admin::CreateUserReq { username: f.username, display_name: f.display_name, password: f.password, role: f.role };
+    let req = admin::CreateUserReq {
+        username: f.username,
+        display_name: f.display_name,
+        password: f.password,
+        role: f.role,
+    };
     match admin::create_user(State(st.clone()), a, axum::Json(req)).await {
         Ok(_) => back("/admin/users", "ok"),
         Err(e) => back("/admin/users", &e.to_string()),
@@ -674,7 +806,12 @@ struct UserUpdateForm {
     password: Option<String>,
 }
 
-async fn user_update(State(st): State<AppState>, jar: CookieJar, Path(id): Path<Uuid>, Form(f): Form<UserUpdateForm>) -> Response {
+async fn user_update(
+    State(st): State<AppState>,
+    jar: CookieJar,
+    Path(id): Path<Uuid>,
+    Form(f): Form<UserUpdateForm>,
+) -> Response {
     let a = session!(st, jar);
     tryp!(st, jar, check_csrf(&a, &f.csrf));
     let req = admin::UpdateUserReq {
@@ -694,10 +831,23 @@ async fn tokens_page(State(st): State<AppState>, jar: CookieJar, Query(q): Query
     let list: Vec<auth_routes::TokenRow> = if a.has(Scope::Admin) {
         tryp!(st, jar, admin::tokens(&st).await)
     } else {
-        tryp!(st, jar, auth_routes::list_own_tokens(State(st.clone()), a.clone()).await.map(|j| j.0))
+        tryp!(
+            st,
+            jar,
+            auth_routes::list_own_tokens(State(st.clone()), a.clone()).await.map(|j| j.0)
+        )
     };
-    let users = if a.has(Scope::Admin) { tryp!(st, jar, admin::users(&st).await) } else { vec![] };
-    page(&st, &jar, "admin/tokens.html", context! { user => to_web_user(&a), tokens => list, users => users, msg => q.msg, new_token => Value::UNDEFINED })
+    let users = if a.has(Scope::Admin) {
+        tryp!(st, jar, admin::users(&st).await)
+    } else {
+        vec![]
+    };
+    page(
+        &st,
+        &jar,
+        "admin/tokens.html",
+        context! { user => to_web_user(&a), tokens => list, users => users, msg => q.msg, new_token => Value::UNDEFINED },
+    )
 }
 
 #[derive(Deserialize)]
@@ -741,9 +891,21 @@ async fn token_create(State(st): State<AppState>, jar: CookieJar, Form(f): Form<
             scopes.push(s.to_string());
         }
     }
-    let owner = f.user_id.as_deref().and_then(|u| Uuid::parse_str(u).ok()).filter(|_| a.has(Scope::Admin)).unwrap_or(a.user_id);
-    let owner_role: Option<(String,)> = sqlx::query_as("SELECT role FROM users WHERE id = $1").bind(owner).fetch_optional(&st.db).await.ok().flatten();
-    let Some(role) = owner_role.and_then(|r| Role::parse(&r.0)) else { return back("/admin/tokens", "utilisateur inconnu") };
+    let owner = f
+        .user_id
+        .as_deref()
+        .and_then(|u| Uuid::parse_str(u).ok())
+        .filter(|_| a.has(Scope::Admin))
+        .unwrap_or(a.user_id);
+    let owner_role: Option<(String,)> = sqlx::query_as("SELECT role FROM users WHERE id = $1")
+        .bind(owner)
+        .fetch_optional(&st.db)
+        .await
+        .ok()
+        .flatten();
+    let Some(role) = owner_role.and_then(|r| Role::parse(&r.0)) else {
+        return back("/admin/tokens", "utilisateur inconnu");
+    };
     let req = auth_routes::TokenReq {
         name: f.name,
         kind: f.kind,
@@ -754,9 +916,22 @@ async fn token_create(State(st): State<AppState>, jar: CookieJar, Form(f): Form<
     };
     match auth_routes::issue_token(&st, &a, owner, role, &req).await {
         Ok((_, token)) => {
-            let list = if a.has(Scope::Admin) { admin::tokens(&st).await.unwrap_or_default() } else { vec![] };
-            let users = if a.has(Scope::Admin) { admin::users(&st).await.unwrap_or_default() } else { vec![] };
-            page(&st, &jar, "admin/tokens.html", context! { user => to_web_user(&a), tokens => list, users => users, new_token => token })
+            let list = if a.has(Scope::Admin) {
+                admin::tokens(&st).await.unwrap_or_default()
+            } else {
+                vec![]
+            };
+            let users = if a.has(Scope::Admin) {
+                admin::users(&st).await.unwrap_or_default()
+            } else {
+                vec![]
+            };
+            page(
+                &st,
+                &jar,
+                "admin/tokens.html",
+                context! { user => to_web_user(&a), tokens => list, users => users, new_token => token },
+            )
         }
         Err(e) => back("/admin/tokens", &e.to_string()),
     }
@@ -768,7 +943,9 @@ async fn token_revoke(State(st): State<AppState>, jar: CookieJar, Path(id): Path
     let r = if a.has(Scope::Admin) {
         admin::revoke_token(State(st.clone()), a, Path(id)).await.map(|_| ())
     } else {
-        auth_routes::revoke_own_token(State(st.clone()), a, Path(id)).await.map(|_| ())
+        auth_routes::revoke_own_token(State(st.clone()), a, Path(id))
+            .await
+            .map(|_| ())
     };
     match r {
         Ok(()) => back("/admin/tokens", "ok"),
@@ -788,6 +965,10 @@ async fn audit_page(State(st): State<AppState>, jar: CookieJar, Query(q): Query<
     }
     let rows = tryp!(st, jar, admin::audit_rows(&st, 200, q.before_id).await);
     let next = rows.last().map(|r| r.id);
-    page(&st, &jar, "admin/audit.html", context! { user => to_web_user(&a), rows => rows, next => next })
+    page(
+        &st,
+        &jar,
+        "admin/audit.html",
+        context! { user => to_web_user(&a), rows => rows, next => next },
+    )
 }
-

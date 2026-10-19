@@ -89,7 +89,10 @@ pub struct Registry {
 
 impl Default for Registry {
     fn default() -> Self {
-        Registry { format: REGISTRY_FORMAT, apps: BTreeMap::new() }
+        Registry {
+            format: REGISTRY_FORMAT,
+            apps: BTreeMap::new(),
+        }
     }
 }
 
@@ -134,7 +137,10 @@ impl Registry {
 
     /// Applications installées qui dépendent de `id`.
     pub fn dependents(&self, id: &str) -> Vec<&InstalledApp> {
-        self.apps.values().filter(|a| a.id != id && a.dependencies.iter().any(|d| d == id)).collect()
+        self.apps
+            .values()
+            .filter(|a| a.id != id && a.dependencies.iter().any(|d| d == id))
+            .collect()
     }
 
     /// Dépendances installées automatiquement et plus requises par personne.
@@ -179,7 +185,10 @@ impl StateLock {
         match f.try_lock() {
             Ok(()) => Ok(StateLock { _file: f }),
             Err(std::fs::TryLockError::WouldBlock) => {
-                bail!("une autre instance d'auxipak est en cours d'exécution (verrou {})", paths.lock_file().display())
+                bail!(
+                    "une autre instance d'auxipak est en cours d'exécution (verrou {})",
+                    paths.lock_file().display()
+                )
             }
             Err(std::fs::TryLockError::Error(e)) => Err(e.into()),
         }
@@ -285,7 +294,10 @@ impl Transaction {
             if p.extension().and_then(|x| x.to_str()) != Some("json") {
                 continue;
             }
-            match std::fs::read(&p).ok().and_then(|b| serde_json::from_slice::<Transaction>(&b).ok()) {
+            match std::fs::read(&p)
+                .ok()
+                .and_then(|b| serde_json::from_slice::<Transaction>(&b).ok())
+            {
                 Some(mut t) => {
                     t.path = p;
                     v.push(t);

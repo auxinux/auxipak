@@ -1,0 +1,176 @@
+# Intégration continue AuxiPak : validation, lint, tests, analyse des
+# dépendances, démonstration de bout en bout et construction multiplateforme.
+name: CI
+
+on:
+  push:
+    branches: [main, "claude/**"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: "1"
+
+jobs:
+  validate:
+    name: Validation (secrets, formatage, schéma)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Aucun secret versionné
+        run: scripts/check-no-secrets.sh
+      - name: Messages de commit non vides
+        if: github.event_name == 'pull_request'
+        run: |
+          git log --format='%H %s' "${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}" \
+            | awk 'length($0) < 50 { print "message trop court : " $0; bad=1 } END { exit bad }'
+      - name: Schéma JSON valide
+        run: python3 -c "import json; json.load(open('schemas/instruction.auxipak.schema.json'))"
+      - name: Scripts shell (syntaxe)
+        run: for f in deploy/scripts/*.sh tests/e2e/*.sh examples/auxipak-demo/build.sh scripts/*.sh; do bash -n "$f"; done
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --all --check
+
+  lint:
+    name: Clippy
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+  test-linux:
+    name: Tests (Linux, PostgreSQL)
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: ci-only-password
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      AUXIPAK_TEST_DATABASE_URL: postgres://postgres:ci-only-password@127.0.0.1:5432/postgres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Tests unitaires et d'intégration (y compris ceux nécessitant PostgreSQL)
+        run: cargo test --workspace --locked -- --include-ignored
+
+  e2e:
+    name: Démonstration de bout en bout (Ubuntu, installation .deb réelle)
+    runs-on: ubuntu-24.04
+    needs: [test-linux]
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: ci-only-password
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: sudo apt-get update && sudo apt-get install -y postgresql-client jq
+      - run: cargo build --locked -p auxipak -p auxipak-builder -p auxipak-server
+      - name: Démonstration — mode natif (APT, root)
+        run: sudo -E env "PATH=$PATH" DEMO_MODE=native PG_ADMIN_URL=postgres://postgres:ci-only-password@127.0.0.1:5432/postgres tests/e2e/run-local.sh
+      - name: Démonstration — mode fichiers (profil AuxiNuxOS imposé, utilisateur non privilégié)
+        run: DEMO_MODE=files PG_ADMIN_URL=postgres://postgres:ci-only-password@127.0.0.1:5432/postgres tests/e2e/run-local.sh
+
+  audit:
+    name: Analyse des dépendances (RustSec)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+      - run: cargo audit
+
+  build:
+    name: Construction ${{ matrix.name }}
+    needs: [validate]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: linux-x86_64, os: ubuntu-24.04, target: x86_64-unknown-linux-gnu, test: true, server: true }
+          - { name: linux-arm64, os: ubuntu-24.04-arm, target: aarch64-unknown-linux-gnu, test: true, server: true }
+          - { name: windows-x86_64, os: windows-latest, target: x86_64-pc-windows-msvc, test: true, server: false }
+          - { name: windows-arm64, os: windows-11-arm, target: aarch64-pc-windows-msvc, test: true, server: false }
+          - { name: macos-arm64, os: macos-14, target: aarch64-apple-darwin, test: true, server: false }
+          - { name: macos-x86_64, os: macos-14, target: x86_64-apple-darwin, test: false, server: false }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+      - name: Tests natifs du client et de la bibliothèque (validation réelle sur cette plateforme)
+        if: matrix.test
+        run: cargo test --locked -p auxipak-core -p auxipak -p auxipak-builder
+      - name: Construction (release)
+        shell: bash
+        run: |
+          pkgs="-p auxipak -p auxipak-builder"
+          if [[ "${{ matrix.server }}" == "true" ]]; then pkgs="$pkgs -p auxipak-server"; fi
+          cargo build --release --locked --target ${{ matrix.target }} $pkgs
+      - name: Assemblage des artefacts
+        shell: bash
+        run: |
+          out="dist/auxipak-${{ matrix.name }}"
+          mkdir -p "$out"
+          ext=""; [[ "${{ runner.os }}" == "Windows" ]] && ext=".exe"
+          for b in auxipak auxipak-builder auxipak-server; do
+            f="target/${{ matrix.target }}/release/$b$ext"
+            [[ -f "$f" ]] && cp "$f" "$out/"
+          done
+          cp LICENSE README.md "$out/"
+          cd dist && (sha256sum auxipak-${{ matrix.name }}/* 2>/dev/null || shasum -a 256 auxipak-${{ matrix.name }}/*) > auxipak-${{ matrix.name }}.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: auxipak-${{ matrix.name }}
+          path: dist/
+          retention-days: 14
+
+  docker:
+    name: Image Docker du serveur
+    runs-on: ubuntu-24.04
+    needs: [validate]
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -f deploy/docker/Dockerfile -t auxipak-server:ci .
+      - name: Vérification de démarrage (refus sans configuration de production)
+        run: |
+          set +e
+          out=$(docker run --rm -e AUXIPAK_DATABASE_URL=postgres://x@127.0.0.1/x auxipak-server:ci check-config 2>&1)
+          echo "$out"
+          echo "$out" | grep -q "AUXIPAK_PUBLIC_URL"
+      - run: docker compose -f deploy/docker-compose.yml config -q
+        env:
+          POSTGRES_PASSWORD: ci
+          AUXIPAK_PUBLIC_URL: https://pak.example.org
+          AUXIPAK_KEYS_HOST_DIR: /tmp/keys

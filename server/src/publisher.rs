@@ -58,7 +58,9 @@ pub async fn approve(state: &AppState, actor: &Actor, id: Uuid, note: &str) -> A
     let (insp, report) = crate::validation::analyze(&path);
     let insp = insp.ok_or_else(|| bad(format!("paquet devenu invalide : {:?}", report.checks)))?;
     if insp.archive_sha256 != sub.sha256 {
-        return Err(ApiError::Internal(anyhow!("le fichier stocké ne correspond plus à la soumission")));
+        return Err(ApiError::Internal(anyhow!(
+            "le fichier stocké ne correspond plus à la soumission"
+        )));
     }
     let m = insp.manifest.clone();
     let exists: Option<(Uuid,)> = sqlx::query_as(
@@ -70,20 +72,26 @@ pub async fn approve(state: &AppState, actor: &Actor, id: Uuid, note: &str) -> A
     .fetch_optional(&state.db)
     .await?;
     if exists.is_some() {
-        return Err(ApiError::Conflict(format!("{} {} est déjà publié dans {}", m.id, m.version, sub.repository)));
+        return Err(ApiError::Conflict(format!(
+            "{} {} est déjà publié dans {}",
+            m.id, m.version, sub.repository
+        )));
     }
 
     // Signature : celle fournie si elle est valide, sinon signature par le serveur.
     let signature: PackageSignature = match &sub.signature {
         Some(v) => {
             let s: PackageSignature = serde_json::from_value(v.clone()).map_err(|e| bad(format!("signature : {e}")))?;
-            crate::validation::check_signature(&s, &insp, &state.keys.package_keys).map_err(|e| bad(format!("signature refusée : {e}")))?;
+            crate::validation::check_signature(&s, &insp, &state.keys.package_keys)
+                .map_err(|e| bad(format!("signature refusée : {e}")))?;
             s
         }
         None => {
-            let signer = state.keys.signer.as_ref().ok_or_else(|| {
-                bad("aucune signature fournie et aucune clé de signature disponible sur le serveur")
-            })?;
+            let signer = state
+                .keys
+                .signer
+                .as_ref()
+                .ok_or_else(|| bad("aucune signature fournie et aucune clé de signature disponible sur le serveur"))?;
             signer.sign(PackageRef {
                 id: m.id.clone(),
                 version: m.version.clone(),
@@ -157,12 +165,14 @@ pub async fn approve(state: &AppState, actor: &Actor, id: Uuid, note: &str) -> A
     .bind(actor.user_id)
     .execute(&mut *tx)
     .await?;
-    sqlx::query("UPDATE submissions SET status = 'published', reviewed_by = $2, reviewed_at = now(), review_note = $3 WHERE id = $1")
-        .bind(id)
-        .bind(actor.user_id)
-        .bind(note)
-        .execute(&mut *tx)
-        .await?;
+    sqlx::query(
+        "UPDATE submissions SET status = 'published', reviewed_by = $2, reviewed_at = now(), review_note = $3 WHERE id = $1",
+    )
+    .bind(id)
+    .bind(actor.user_id)
+    .bind(note)
+    .execute(&mut *tx)
+    .await?;
     tx.commit().await?;
     audit::log(
         &state.db,
@@ -227,7 +237,14 @@ pub async fn regenerate(state: &AppState, repo: &str, actor: Option<&Actor>) -> 
     let result = regenerate_locked(state, repo).await;
     sqlx::query("SELECT pg_advisory_unlock(717171)").execute(&mut *conn).await?;
     let generation = result?;
-    audit::log(&state.db, actor, "repository.regenerate", repo, serde_json::json!({"generation": generation})).await;
+    audit::log(
+        &state.db,
+        actor,
+        "repository.regenerate",
+        repo,
+        serde_json::json!({"generation": generation}),
+    )
+    .await;
     Ok(generation)
 }
 
@@ -320,7 +337,12 @@ async fn regenerate_locked(state: &AppState, repo: &str) -> Result<u64> {
         })
         .collect();
     let content = RepoContent {
-        info: RepositoryInfo { name: r.name.clone(), title: r.title.clone(), description: r.description.clone(), official: r.official },
+        info: RepositoryInfo {
+            name: r.name.clone(),
+            title: r.title.clone(),
+            description: r.description.clone(),
+            official: r.official,
+        },
         generation,
         packages,
         apps,
@@ -366,7 +388,9 @@ async fn regenerate_locked(state: &AppState, repo: &str) -> Result<u64> {
         .await?;
 
     // Conservation des deux générations précédentes (clients en cours de téléchargement).
-    let keep: BTreeSet<String> = (generation.saturating_sub(2)..=generation).map(|g| format!("gen-{g}")).collect();
+    let keep: BTreeSet<String> = (generation.saturating_sub(2)..=generation)
+        .map(|g| format!("gen-{g}"))
+        .collect();
     for e in std::fs::read_dir(&repo_dir)?.flatten() {
         let n = e.file_name().to_string_lossy().into_owned();
         if n.starts_with("gen-") && !keep.contains(&n) {
@@ -383,7 +407,10 @@ pub async fn refresh_loop(state: AppState) {
     loop {
         interval.tick().await;
         let repos: Vec<(String, Option<DateTime<Utc>>)> =
-            match sqlx::query_as("SELECT name, published_at FROM repositories WHERE enabled").fetch_all(&state.db).await {
+            match sqlx::query_as("SELECT name, published_at FROM repositories WHERE enabled")
+                .fetch_all(&state.db)
+                .await
+            {
                 Ok(r) => r,
                 Err(e) => {
                     tracing::error!(error = %e, "lecture des dépôts");

@@ -18,8 +18,7 @@ use crate::config::{Config, RepoConfig, TrustMaterial};
 use crate::paths::{atomic_write, Paths};
 use anyhow::{anyhow, bail, Context, Result};
 use auxipak_core::index::{
-    AppsIndex, ChannelIndex, RepoIndex, RevocationList, APPS_TARGET, INDEX_META_VERSION, REPO_INDEX_TARGET,
-    REVOCATIONS_TARGET,
+    AppsIndex, ChannelIndex, RepoIndex, RevocationList, APPS_TARGET, INDEX_META_VERSION, REPO_INDEX_TARGET, REVOCATIONS_TARGET,
 };
 use auxipak_core::platform::{Arch, Channel, SystemProfile};
 use chrono::{DateTime, Duration, Utc};
@@ -159,14 +158,18 @@ pub async fn sync(cfg: &RepoConfig, paths: &Paths, profile: &SystemProfile) -> R
         )
     })?;
 
-    let index_bytes = read_target(&repo, REPO_INDEX_TARGET).await?.context("index.json absent du dépôt")?;
+    let index_bytes = read_target(&repo, REPO_INDEX_TARGET)
+        .await?
+        .context("index.json absent du dépôt")?;
     let index: RepoIndex = serde_json::from_slice(&index_bytes).context("index.json invalide")?;
     if index.meta_version != INDEX_META_VERSION {
         bail!("version de métadonnées d'index non prise en charge : {}", index.meta_version);
     }
     let apps_bytes = read_target(&repo, &index.apps).await?.context("apps.json absent")?;
     let apps: AppsIndex = serde_json::from_slice(&apps_bytes).context("apps.json invalide")?;
-    let rev_bytes = read_target(&repo, &index.revocations).await?.context("revocations.json absent")?;
+    let rev_bytes = read_target(&repo, &index.revocations)
+        .await?
+        .context("revocations.json absent")?;
     let revocations: RevocationList = serde_json::from_slice(&rev_bytes).context("revocations.json invalide")?;
 
     let channel = profile.channel();
@@ -250,7 +253,14 @@ pub fn load_cached(cfg: &RepoConfig, paths: &Paths) -> Result<Option<RepoData>> 
         Ok(b) => Some(serde_json::from_slice(&b)?),
         Err(_) => None,
     };
-    Ok(Some(RepoData { config: cfg.clone(), state, index, apps, revocations, channel }))
+    Ok(Some(RepoData {
+        config: cfg.clone(),
+        state,
+        index,
+        apps,
+        revocations,
+        channel,
+    }))
 }
 
 /// Supprime le cache d'un dépôt (y compris l'état TUF).
@@ -287,10 +297,16 @@ pub async fn ensure(cfg: &RepoConfig, config: &Config, paths: &Paths, profile: &
         .map(|c| c.freshness(config.cache_ttl_seconds, profile) == Freshness::Fresh)
         .unwrap_or(false);
     if fresh && need != Need::Force {
-        return Loaded { data: cached, warning: None };
+        return Loaded {
+            data: cached,
+            warning: None,
+        };
     }
     match sync(cfg, paths, profile).await {
-        Ok(d) => Loaded { data: Some(d), warning: None },
+        Ok(d) => Loaded {
+            data: Some(d),
+            warning: None,
+        },
         Err(e) => {
             tracing::warn!(repo = %cfg.name, error = %e, "synchronisation échouée");
             match (need, cached) {
@@ -301,7 +317,10 @@ pub async fn ensure(cfg: &RepoConfig, config: &Config, paths: &Paths, profile: &
                         "dépôt « {} » : synchronisation impossible ({e:#}) ; utilisation du dernier index validé, vieux de {age} min",
                         cfg.name
                     );
-                    Loaded { data: usable.then_some(c), warning: Some(warning) }
+                    Loaded {
+                        data: usable.then_some(c),
+                        warning: Some(warning),
+                    }
                 }
                 _ => Loaded {
                     data: None,
@@ -360,13 +379,22 @@ mod tests {
 
     #[test]
     fn cache_younger_than_ttl_is_fresh() {
-        assert_eq!(freshness(&state(59 * 60, 86400), 3600, &profile(), Utc::now()), Freshness::Fresh);
+        assert_eq!(
+            freshness(&state(59 * 60, 86400), 3600, &profile(), Utc::now()),
+            Freshness::Fresh
+        );
     }
 
     #[test]
     fn cache_older_than_ttl_is_stale() {
-        assert!(matches!(freshness(&state(3601, 86400), 3600, &profile(), Utc::now()), Freshness::Stale(_)));
-        assert!(matches!(freshness(&state(3600, 86400), 3600, &profile(), Utc::now()), Freshness::Stale(_)));
+        assert!(matches!(
+            freshness(&state(3601, 86400), 3600, &profile(), Utc::now()),
+            Freshness::Stale(_)
+        ));
+        assert!(matches!(
+            freshness(&state(3600, 86400), 3600, &profile(), Utc::now()),
+            Freshness::Stale(_)
+        ));
     }
 
     #[test]
@@ -383,6 +411,9 @@ mod tests {
 
     #[test]
     fn clock_going_backwards_is_stale() {
-        assert!(matches!(freshness(&state(-600, 86400), 3600, &profile(), Utc::now()), Freshness::Stale(_)));
+        assert!(matches!(
+            freshness(&state(-600, 86400), 3600, &profile(), Utc::now()),
+            Freshness::Stale(_)
+        ));
     }
 }

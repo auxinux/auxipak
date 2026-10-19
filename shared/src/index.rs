@@ -220,9 +220,9 @@ pub struct RevocationList {
 
 impl RevocationList {
     pub fn is_revoked(&self, id: &str, version: &str, sha256: &str) -> Option<&Revocation> {
-        self.revoked.iter().find(|r| {
-            (r.id == id && r.version == version) || (!r.sha256.is_empty() && crate::hash::digest_eq(&r.sha256, sha256))
-        })
+        self.revoked
+            .iter()
+            .find(|r| (r.id == id && r.version == version) || (!r.sha256.is_empty() && crate::hash::digest_eq(&r.sha256, sha256)))
     }
 }
 

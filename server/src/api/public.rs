@@ -36,12 +36,22 @@ pub async fn catalog(State(st): State<AppState>) -> ApiResult<Json<ServerCatalog
     for r in repos {
         let idx_path = st.config.repos_dir().join(&r.name).join("current/targets/index.json");
         let channels = match tokio::fs::read(&idx_path).await {
-            Ok(b) => serde_json::from_slice::<RepoIndex>(&b).map(|i| i.channels).unwrap_or_default(),
+            Ok(b) => serde_json::from_slice::<RepoIndex>(&b)
+                .map(|i| i.channels)
+                .unwrap_or_default(),
             Err(_) => vec![],
         };
         out.push(CatalogRepository {
-            info: RepositoryInfo { name: r.name.clone(), title: r.title, description: r.description, official: r.official },
-            url: base.join(&format!("repos/{}/", r.name)).map(|u| u.to_string()).unwrap_or_default(),
+            info: RepositoryInfo {
+                name: r.name.clone(),
+                title: r.title,
+                description: r.description,
+                official: r.official,
+            },
+            url: base
+                .join(&format!("repos/{}/", r.name))
+                .map(|u| u.to_string())
+                .unwrap_or_default(),
             channels,
         });
     }
@@ -55,7 +65,11 @@ pub async fn catalog(State(st): State<AppState>) -> ApiResult<Json<ServerCatalog
 
 /// `GET /repos/{repo}/{*path}` : métadonnées TUF, cibles et clés publiques du
 /// dépôt actuellement publié. Prend en charge `Range: bytes=N-` (reprise).
-pub async fn repo_file(State(st): State<AppState>, Path((repo, path)): Path<(String, String)>, headers: HeaderMap) -> ApiResult<Response> {
+pub async fn repo_file(
+    State(st): State<AppState>,
+    Path((repo, path)): Path<(String, String)>,
+    headers: HeaderMap,
+) -> ApiResult<Response> {
     if !auxipak_core::ids::is_valid_repo_name(&repo) || !auxipak_core::ids::is_safe_relative_path(&path) {
         return Err(ApiError::NotFound);
     }
@@ -81,9 +95,17 @@ pub async fn repo_file(State(st): State<AppState>, Path((repo, path)): Path<(Str
         return Err(ApiError::NotFound);
     }
     let len = meta.len();
-    let ctype = if path.ends_with(".json") || path.ends_with(".sig") { "application/json" } else { "application/octet-stream" };
+    let ctype = if path.ends_with(".json") || path.ends_with(".sig") {
+        "application/json"
+    } else {
+        "application/octet-stream"
+    };
     // Les métadonnées changent à chaque génération : pas de cache côté client.
-    let cache = if top == "metadata" { "no-cache" } else { "public, max-age=300" };
+    let cache = if top == "metadata" {
+        "no-cache"
+    } else {
+        "public, max-age=300"
+    };
     let mut file = tokio::fs::File::open(&full_c).await?;
     let start = headers
         .get(header::RANGE)
@@ -94,7 +116,10 @@ pub async fn repo_file(State(st): State<AppState>, Path((repo, path)): Path<(Str
     let mut resp = match start {
         Some(s) if s >= len => {
             let mut r = StatusCode::RANGE_NOT_SATISFIABLE.into_response();
-            r.headers_mut().insert(header::CONTENT_RANGE, HeaderValue::from_str(&format!("bytes */{len}")).unwrap());
+            r.headers_mut().insert(
+                header::CONTENT_RANGE,
+                HeaderValue::from_str(&format!("bytes */{len}")).unwrap(),
+            );
             return Ok(r);
         }
         Some(s) => {
@@ -131,7 +156,11 @@ pub async fn health(State(st): State<AppState>) -> Response {
         "version": env!("CARGO_PKG_VERSION"),
         "package_signing_key": st.keys.signer.as_ref().map(|s| s.key_id().to_string()),
     });
-    let code = if db_ok { StatusCode::OK } else { StatusCode::SERVICE_UNAVAILABLE };
+    let code = if db_ok {
+        StatusCode::OK
+    } else {
+        StatusCode::SERVICE_UNAVAILABLE
+    };
     (code, Json(body)).into_response()
 }
 

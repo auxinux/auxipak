@@ -41,7 +41,12 @@ pub struct HashingWriter<W: Write> {
 
 impl<W: Write> HashingWriter<W> {
     pub fn new(inner: W, limit: u64) -> Self {
-        HashingWriter { inner, hasher: Sha256::new(), written: 0, limit }
+        HashingWriter {
+            inner,
+            hasher: Sha256::new(),
+            written: 0,
+            limit,
+        }
     }
 
     pub fn finish(self) -> (W, String, u64) {
@@ -56,10 +61,7 @@ impl<W: Write> HashingWriter<W> {
 impl<W: Write> Write for HashingWriter<W> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         if self.written + buf.len() as u64 > self.limit {
-            return Err(io::Error::other(format!(
-                "limite de taille dépassée ({} octets)",
-                self.limit
-            )));
+            return Err(io::Error::other(format!("limite de taille dépassée ({} octets)", self.limit)));
         }
         let n = self.inner.write(buf)?;
         self.hasher.update(&buf[..n]);
@@ -78,7 +80,10 @@ pub fn digest_eq(a: &str, b: &str) -> bool {
     if a.len() != b.len() {
         return false;
     }
-    a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x.to_ascii_lowercase() ^ y.to_ascii_lowercase())) == 0
+    a.iter()
+        .zip(b)
+        .fold(0u8, |acc, (x, y)| acc | (x.to_ascii_lowercase() ^ y.to_ascii_lowercase()))
+        == 0
 }
 
 #[cfg(test)]

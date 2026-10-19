@@ -76,11 +76,15 @@ async fn load(st: &AppState, actor: &Actor, id: Uuid) -> ApiResult<ProjectRow> {
 fn view(st: &AppState, p: ProjectRow) -> ApiResult<ProjectView> {
     let dir = project_dir(st, p.id);
     let files = project::project_files(&dir)
-        .map_err(|e| ApiError::Internal(e))?
+        .map_err(ApiError::Internal)?
         .into_iter()
         .map(|f| {
             let (sha256, size) = auxipak_core::hash::sha256_file(&f.source).unwrap_or_default();
-            FileInfo { path: f.archive_path, size, sha256 }
+            FileInfo {
+                path: f.archive_path,
+                size,
+                sha256,
+            }
         })
         .collect();
     Ok(ProjectView { project: p, files })
@@ -148,7 +152,14 @@ pub async fn create(State(st): State<AppState>, actor: Actor, Json(req): Json<Cr
         .bind(&manifest)
         .execute(&st.db)
         .await?;
-    audit::log(&st.db, Some(&actor), "builder.create", name, serde_json::json!({"project": id})).await;
+    audit::log(
+        &st.db,
+        Some(&actor),
+        "builder.create",
+        name,
+        serde_json::json!({"project": id}),
+    )
+    .await;
     let p = load(&st, &actor, id).await?;
     Ok(Json(view(&st, p)?))
 }
@@ -171,11 +182,25 @@ pub async fn get_one(State(st): State<AppState>, actor: Actor, Path(id): Path<Uu
     Ok(Json(view(&st, p)?))
 }
 
-pub async fn delete_project(State(st): State<AppState>, actor: Actor, Path(id): Path<Uuid>) -> ApiResult<Json<serde_json::Value>> {
+pub async fn delete_project(
+    State(st): State<AppState>,
+    actor: Actor,
+    Path(id): Path<Uuid>,
+) -> ApiResult<Json<serde_json::Value>> {
     let p = load(&st, &actor, id).await?;
-    sqlx::query("DELETE FROM builder_projects WHERE id = $1").bind(id).execute(&st.db).await?;
+    sqlx::query("DELETE FROM builder_projects WHERE id = $1")
+        .bind(id)
+        .execute(&st.db)
+        .await?;
     let _ = std::fs::remove_dir_all(st.config.builder_dir().join(id.to_string()));
-    audit::log(&st.db, Some(&actor), "builder.delete", &p.name, serde_json::json!({"project": id})).await;
+    audit::log(
+        &st.db,
+        Some(&actor),
+        "builder.delete",
+        &p.name,
+        serde_json::json!({"project": id}),
+    )
+    .await;
     Ok(Json(serde_json::json!({"ok": true})))
 }
 
@@ -193,7 +218,12 @@ async fn save_manifest(st: &AppState, id: Uuid, yaml: &str) -> ApiResult<()> {
 }
 
 /// Remplace le manifeste (corps : YAML).
-pub async fn put_manifest(State(st): State<AppState>, actor: Actor, Path(id): Path<Uuid>, body: String) -> ApiResult<Json<ProjectView>> {
+pub async fn put_manifest(
+    State(st): State<AppState>,
+    actor: Actor,
+    Path(id): Path<Uuid>,
+    body: String,
+) -> ApiResult<Json<ProjectView>> {
     load(&st, &actor, id).await?;
     save_manifest(&st, id, &body).await?;
     Ok(Json(view(&st, load(&st, &actor, id).await?)?))
@@ -227,7 +257,12 @@ fn file_path(st: &AppState, id: Uuid, path: &str) -> ApiResult<PathBuf> {
 }
 
 /// Importe un fichier (corps brut).
-pub async fn put_file(State(st): State<AppState>, actor: Actor, Path((id, path)): Path<(Uuid, String)>, body: Body) -> ApiResult<Json<FileInfo>> {
+pub async fn put_file(
+    State(st): State<AppState>,
+    actor: Actor,
+    Path((id, path)): Path<(Uuid, String)>,
+    body: Body,
+) -> ApiResult<Json<FileInfo>> {
     load(&st, &actor, id).await?;
     let dest = file_path(&st, id, &path)?;
     if let Some(parent) = dest.parent() {
@@ -239,12 +274,26 @@ pub async fn put_file(State(st): State<AppState>, actor: Actor, Path((id, path))
     let tmp = dest.with_file_name(format!(".upload-{}", Uuid::new_v4()));
     let (sha256, size) = crate::api::body_to_file(body, &tmp, MAX_PROJECT_FILE.min(st.config.max_upload_bytes)).await?;
     std::fs::rename(&tmp, &dest)?;
-    sqlx::query("UPDATE builder_projects SET updated_at = now() WHERE id = $1").bind(id).execute(&st.db).await?;
-    audit::log(&st.db, Some(&actor), "builder.file", &path, serde_json::json!({"project": id, "sha256": sha256, "size": size})).await;
+    sqlx::query("UPDATE builder_projects SET updated_at = now() WHERE id = $1")
+        .bind(id)
+        .execute(&st.db)
+        .await?;
+    audit::log(
+        &st.db,
+        Some(&actor),
+        "builder.file",
+        &path,
+        serde_json::json!({"project": id, "sha256": sha256, "size": size}),
+    )
+    .await;
     Ok(Json(FileInfo { path, size, sha256 }))
 }
 
-pub async fn delete_file(State(st): State<AppState>, actor: Actor, Path((id, path)): Path<(Uuid, String)>) -> ApiResult<Json<serde_json::Value>> {
+pub async fn delete_file(
+    State(st): State<AppState>,
+    actor: Actor,
+    Path((id, path)): Path<(Uuid, String)>,
+) -> ApiResult<Json<serde_json::Value>> {
     load(&st, &actor, id).await?;
     let p = file_path(&st, id, &path)?;
     std::fs::remove_file(&p).map_err(|_| ApiError::NotFound)?;
@@ -268,7 +317,9 @@ pub async fn build(State(st): State<AppState>, actor: Actor, Path(id): Path<Uuid
     let dir = project_dir(&st, id);
     let out = artifact_path(&st, id);
     let _ = std::fs::remove_file(&out);
-    let result = tokio::task::spawn_blocking(move || project::build(&dir, &out)).await.map_err(anyhow::Error::from)?;
+    let result = tokio::task::spawn_blocking(move || project::build(&dir, &out))
+        .await
+        .map_err(anyhow::Error::from)?;
     let v = match result {
         Ok((m, insp)) => serde_json::json!({
             "ok": true, "id": m.id, "version": m.version, "file_name": m.suggested_file_name(),
@@ -277,7 +328,11 @@ pub async fn build(State(st): State<AppState>, actor: Actor, Path(id): Path<Uuid
         }),
         Err(e) => serde_json::json!({"ok": false, "errors": format!("{e:#}").lines().collect::<Vec<_>>()}),
     };
-    sqlx::query("UPDATE builder_projects SET last_build = $2, updated_at = now() WHERE id = $1").bind(id).bind(&v).execute(&st.db).await?;
+    sqlx::query("UPDATE builder_projects SET last_build = $2, updated_at = now() WHERE id = $1")
+        .bind(id)
+        .bind(&v)
+        .execute(&st.db)
+        .await?;
     audit::log(&st.db, Some(&actor), "builder.build", &id.to_string(), v.clone()).await;
     Ok(Json(v))
 }
@@ -324,7 +379,12 @@ fn official() -> String {
 }
 
 /// Soumet la dernière construction (crée une demande de publication).
-pub async fn submit(State(st): State<AppState>, actor: Actor, Path(id): Path<Uuid>, Json(req): Json<SubmitReq>) -> ApiResult<Json<crate::api::submissions::SubmissionView>> {
+pub async fn submit(
+    State(st): State<AppState>,
+    actor: Actor,
+    Path(id): Path<Uuid>,
+    Json(req): Json<SubmitReq>,
+) -> ApiResult<Json<crate::api::submissions::SubmissionView>> {
     load(&st, &actor, id).await?;
     actor.require(Scope::Submit)?;
     let out = artifact_path(&st, id);

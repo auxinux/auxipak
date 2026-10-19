@@ -31,7 +31,13 @@ pub async fn build_state(cfg: config::Config) -> anyhow::Result<AppState> {
         .await
         .map_err(|e| anyhow::anyhow!("connexion à PostgreSQL impossible : {e}"))?;
     MIGRATOR.run(&db).await?;
-    for d in [cfg.submissions_dir(), cfg.packages_dir(), cfg.repos_dir(), cfg.builder_dir(), cfg.tmp_dir()] {
+    for d in [
+        cfg.submissions_dir(),
+        cfg.packages_dir(),
+        cfg.repos_dir(),
+        cfg.builder_dir(),
+        cfg.tmp_dir(),
+    ] {
         std::fs::create_dir_all(d)?;
     }
     let keys = keys::Keys::load(&cfg).await?;
@@ -47,7 +53,9 @@ pub async fn build_state(cfg: config::Config) -> anyhow::Result<AppState> {
 
 /// Régénère les dépôts jamais publiés (premier démarrage).
 pub async fn initial_publish(state: &AppState) -> anyhow::Result<()> {
-    let repos: Vec<(String,)> = sqlx::query_as("SELECT name FROM repositories WHERE enabled AND generation = 0").fetch_all(&state.db).await?;
+    let repos: Vec<(String,)> = sqlx::query_as("SELECT name FROM repositories WHERE enabled AND generation = 0")
+        .fetch_all(&state.db)
+        .await?;
     for (r,) in repos {
         publisher::regenerate(state, &r, None).await?;
     }

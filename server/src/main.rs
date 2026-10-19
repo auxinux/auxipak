@@ -39,7 +39,10 @@ enum Cmd {
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::try_from_env("AUXIPAK_LOG").unwrap_or_else(|_| "info,tower_http=info,sqlx=warn".into()))
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_env("AUXIPAK_LOG")
+                .unwrap_or_else(|_| "info,tower_http=info,sqlx=warn".into()),
+        )
         .with_target(false)
         .init();
     if let Err(e) = run(Cli::parse()).await {
@@ -67,10 +70,23 @@ async fn run(cli: Cli) -> Result<()> {
                 }
             };
             let state = build_state(cfg).await?;
-            let id = auxipak_server::api::admin::insert_user(&state, &username, &display_name, &password, auxipak_server::auth::Role::Admin)
-                .await
-                .map_err(|e| anyhow::anyhow!("{e}"))?;
-            auxipak_server::audit::log(&state.db, None, "user.create_admin", &username, serde_json::json!({"user": id})).await;
+            let id = auxipak_server::api::admin::insert_user(
+                &state,
+                &username,
+                &display_name,
+                &password,
+                auxipak_server::auth::Role::Admin,
+            )
+            .await
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
+            auxipak_server::audit::log(
+                &state.db,
+                None,
+                "user.create_admin",
+                &username,
+                serde_json::json!({"user": id}),
+            )
+            .await;
             println!("administrateur « {username} » créé ({id})");
         }
         Cmd::Regenerate { repository } => {
@@ -90,7 +106,9 @@ async fn run(cli: Cli) -> Result<()> {
                 Some(k) => println!("clé de signature des paquets : {}", k.key_id()),
                 None => println!("clé de signature des paquets : ABSENTE (seuls les paquets pré-signés seront publiables)"),
             }
-            let admins: (i64,) = sqlx::query_as("SELECT count(*) FROM users WHERE role = 'admin' AND active").fetch_one(&state.db).await?;
+            let admins: (i64,) = sqlx::query_as("SELECT count(*) FROM users WHERE role = 'admin' AND active")
+                .fetch_one(&state.db)
+                .await?;
             if admins.0 == 0 {
                 println!("ATTENTION : aucun administrateur — utilisez « auxipak-server create-admin »");
             }
@@ -100,7 +118,9 @@ async fn run(cli: Cli) -> Result<()> {
             let state = build_state(cfg).await.context("initialisation")?;
             initial_publish(&state).await?;
             tokio::spawn(publisher::refresh_loop(state.clone()));
-            let listener = tokio::net::TcpListener::bind(bind).await.with_context(|| format!("écoute sur {bind}"))?;
+            let listener = tokio::net::TcpListener::bind(bind)
+                .await
+                .with_context(|| format!("écoute sur {bind}"))?;
             tracing::info!(%bind, "AuxiPak Server démarré");
             if state.config.mode == auxipak_server::config::Mode::Development {
                 tracing::warn!("MODE DÉVELOPPEMENT : ne pas exposer ce serveur sur Internet");

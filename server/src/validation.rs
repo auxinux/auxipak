@@ -39,7 +39,11 @@ pub struct TargetSummary {
 
 impl Report {
     fn check(&mut self, name: &str, ok: bool, detail: impl Into<String>) {
-        self.checks.push(Check { name: name.into(), ok, detail: detail.into() });
+        self.checks.push(Check {
+            name: name.into(),
+            ok,
+            detail: detail.into(),
+        });
     }
 }
 
@@ -54,7 +58,11 @@ pub fn analyze(path: &Path) -> (Option<Inspection>, Report) {
             return (None, r);
         }
     };
-    r.check("structure du paquet", true, format!("{} entrées, {} octets décompressés", insp.entries.len(), insp.total_unpacked));
+    r.check(
+        "structure du paquet",
+        true,
+        format!("{} entrées, {} octets décompressés", insp.entries.len(), insp.total_unpacked),
+    );
     r.check("manifeste", true, format!("{} {}", insp.manifest.id, insp.manifest.version));
     let m = &insp.manifest;
     r.warnings = insp.warnings.iter().map(|w| w.to_string()).collect();
@@ -70,18 +78,27 @@ pub fn analyze(path: &Path) -> (Option<Inspection>, Report) {
         });
         if t.uses_scripts() {
             r.uses_scripts = true;
-            r.review_flags.push(format!("variante {} : scripts personnalisés à examiner", t.name));
+            r.review_flags
+                .push(format!("variante {} : scripts personnalisés à examiner", t.name));
         }
         if t.mode == Mode::Remote {
             if let Some(u) = t.install.source().and_then(|s| s.url.clone()) {
-                r.review_flags.push(format!("variante {} : téléchargement distant depuis {u}", t.name));
+                r.review_flags
+                    .push(format!("variante {} : téléchargement distant depuis {u}", t.name));
             }
         }
         if let Install::Exe { .. } = t.install {
-            r.review_flags.push(format!("variante {} : installateur exe (comportement opaque)", t.name));
+            r.review_flags
+                .push(format!("variante {} : installateur exe (comportement opaque)", t.name));
         }
-        if t.permissions.iter().any(|p| matches!(p, auxipak_core::manifest::Permission::Drivers | auxipak_core::manifest::Permission::Services)) {
-            r.review_flags.push(format!("variante {} : demande des permissions système étendues", t.name));
+        if t.permissions.iter().any(|p| {
+            matches!(
+                p,
+                auxipak_core::manifest::Permission::Drivers | auxipak_core::manifest::Permission::Services
+            )
+        }) {
+            r.review_flags
+                .push(format!("variante {} : demande des permissions système étendues", t.name));
         }
     }
     if let Some(p) = &m.privacy {
@@ -92,7 +109,11 @@ pub fn analyze(path: &Path) -> (Option<Inspection>, Report) {
         r.review_flags.push("aucune déclaration de vie privée".into());
     }
     let channels: usize = crate::publisher::channel_entries(m).len();
-    r.check("couverture des plateformes", channels > 0, format!("{channels} combinaison(s) canal/architecture"));
+    r.check(
+        "couverture des plateformes",
+        channels > 0,
+        format!("{channels} combinaison(s) canal/architecture"),
+    );
     r.ok = r.checks.iter().all(|c| c.ok);
     (Some(insp), r)
 }

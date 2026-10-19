@@ -76,5 +76,8 @@ pub async fn generate(out: &Path, owner: &str, root_days: i64) -> Result<KeysetS
     write_secret(&out.join("online/timestamp.pem"), &timestamp)?;
     write_secret(&out.join("online/package-signing.pem"), &pkg.to_pem())?;
     write_secret(&out.join("offline/root.pem"), &root_pem)?;
-    Ok(KeysetSummary { root_sha256: crate::hash::sha256_hex(&root_json), package_key_id: pkg.key_id().to_string() })
+    Ok(KeysetSummary {
+        root_sha256: crate::hash::sha256_hex(&root_json),
+        package_key_id: pkg.key_id().to_string(),
+    })
 }

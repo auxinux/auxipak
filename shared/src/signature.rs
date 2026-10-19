@@ -80,13 +80,21 @@ pub struct PublicKeyInfo {
 impl PublicKeyInfo {
     pub fn verifying_key(&self) -> Result<VerifyingKey, SignatureError> {
         if self.algorithm != "ed25519" {
-            return Err(SignatureError::Key(format!("algorithme non pris en charge : {}", self.algorithm)));
+            return Err(SignatureError::Key(format!(
+                "algorithme non pris en charge : {}",
+                self.algorithm
+            )));
         }
         let raw = B64.decode(&self.public_key).map_err(|e| SignatureError::Key(e.to_string()))?;
-        let arr: [u8; 32] = raw.try_into().map_err(|_| SignatureError::Key("longueur de clé invalide".into()))?;
+        let arr: [u8; 32] = raw
+            .try_into()
+            .map_err(|_| SignatureError::Key("longueur de clé invalide".into()))?;
         let vk = VerifyingKey::from_bytes(&arr).map_err(|e| SignatureError::Key(e.to_string()))?;
         if key_id_for(&vk) != self.key_id {
-            return Err(SignatureError::Key(format!("identifiant de clé incohérent : {}", self.key_id)));
+            return Err(SignatureError::Key(format!(
+                "identifiant de clé incohérent : {}",
+                self.key_id
+            )));
         }
         Ok(vk)
     }
@@ -103,7 +111,10 @@ impl TrustedKeys {
     pub const FORMAT: &'static str = "auxipak-trusted-keys/1";
 
     pub fn new(keys: Vec<PublicKeyInfo>) -> Self {
-        TrustedKeys { format: Self::FORMAT.into(), keys }
+        TrustedKeys {
+            format: Self::FORMAT.into(),
+            keys,
+        }
     }
 
     pub fn load(path: &Path) -> Result<Self, SignatureError> {
@@ -265,7 +276,9 @@ impl PackageSignature {
         if p.format != SIGNATURE_FORMAT || p.algorithm != "ed25519" {
             return Err(SignatureError::Format(format!("{} / {}", p.format, p.algorithm)));
         }
-        let key = trust.find(&p.key_id).ok_or_else(|| SignatureError::UnknownKey(p.key_id.clone()))?;
+        let key = trust
+            .find(&p.key_id)
+            .ok_or_else(|| SignatureError::UnknownKey(p.key_id.clone()))?;
         if key.revoked {
             return Err(SignatureError::RevokedKey(key.key_id.clone()));
         }
@@ -275,9 +288,7 @@ impl PackageSignature {
         let signed_at = DateTime::parse_from_rfc3339(&p.signed_at)
             .map_err(|e| SignatureError::Format(format!("date de signature : {e}")))?
             .with_timezone(&Utc);
-        if key.not_before.map(|nb| signed_at < nb).unwrap_or(false)
-            || key.not_after.map(|na| signed_at > na).unwrap_or(false)
-        {
+        if key.not_before.map(|nb| signed_at < nb).unwrap_or(false) || key.not_after.map(|na| signed_at > na).unwrap_or(false) {
             return Err(SignatureError::KeyNotValid(key.key_id.clone()));
         }
         if !crate::hash::digest_eq(&p.package.sha256, actual_sha256) {
@@ -319,7 +330,9 @@ mod tests {
         let sig = s.sign(pkg());
         let json = sig.to_json();
         let parsed = PackageSignature::from_json(json.as_bytes()).unwrap();
-        let v = parsed.verify(&"ab".repeat(32), 1234, &trust, &[KeyPurpose::PackageSigning]).unwrap();
+        let v = parsed
+            .verify(&"ab".repeat(32), 1234, &trust, &[KeyPurpose::PackageSigning])
+            .unwrap();
         assert_eq!(v.owner, "AuxiNux");
     }
 
@@ -337,18 +350,30 @@ mod tests {
         let sig = s.sign(pkg());
         let purposes = [KeyPurpose::PackageSigning];
         // Mauvais fichier.
-        assert!(matches!(sig.verify(&"cd".repeat(32), 1234, &trust, &purposes), Err(SignatureError::Mismatch(_))));
-        assert!(matches!(sig.verify(&"ab".repeat(32), 1, &trust, &purposes), Err(SignatureError::Mismatch(_))));
+        assert!(matches!(
+            sig.verify(&"cd".repeat(32), 1234, &trust, &purposes),
+            Err(SignatureError::Mismatch(_))
+        ));
+        assert!(matches!(
+            sig.verify(&"ab".repeat(32), 1, &trust, &purposes),
+            Err(SignatureError::Mismatch(_))
+        ));
         // Métadonnées modifiées après signature (ex. nouvelle version).
         let mut forged = sig.clone();
         forged.payload.package.version = "9.9.9".into();
-        assert!(matches!(forged.verify(&"ab".repeat(32), 1234, &trust, &purposes), Err(SignatureError::BadSignature)));
+        assert!(matches!(
+            forged.verify(&"ab".repeat(32), 1234, &trust, &purposes),
+            Err(SignatureError::BadSignature)
+        ));
         // Signature altérée.
         let mut bad = sig.clone();
         let mut raw = B64.decode(&bad.signature).unwrap();
         raw[0] ^= 1;
         bad.signature = B64.encode(raw);
-        assert!(matches!(bad.verify(&"ab".repeat(32), 1234, &trust, &purposes), Err(SignatureError::BadSignature)));
+        assert!(matches!(
+            bad.verify(&"ab".repeat(32), 1234, &trust, &purposes),
+            Err(SignatureError::BadSignature)
+        ));
     }
 
     #[test]
@@ -358,7 +383,10 @@ mod tests {
         let sig = s.sign(pkg());
         let purposes = [KeyPurpose::PackageSigning];
         let trust_other = TrustedKeys::new(vec![other.public_info("X", KeyPurpose::PackageSigning)]);
-        assert!(matches!(sig.verify(&"ab".repeat(32), 1234, &trust_other, &purposes), Err(SignatureError::UnknownKey(_))));
+        assert!(matches!(
+            sig.verify(&"ab".repeat(32), 1234, &trust_other, &purposes),
+            Err(SignatureError::UnknownKey(_))
+        ));
         let mut revoked = s.public_info("AuxiNux", KeyPurpose::PackageSigning);
         revoked.revoked = true;
         assert!(matches!(
@@ -366,7 +394,10 @@ mod tests {
             Err(SignatureError::RevokedKey(_))
         ));
         let dev = TrustedKeys::new(vec![s.public_info("Dev", KeyPurpose::DeveloperSigning)]);
-        assert!(matches!(sig.verify(&"ab".repeat(32), 1234, &dev, &purposes), Err(SignatureError::WrongPurpose(_))));
+        assert!(matches!(
+            sig.verify(&"ab".repeat(32), 1234, &dev, &purposes),
+            Err(SignatureError::WrongPurpose(_))
+        ));
         let mut expired = s.public_info("AuxiNux", KeyPurpose::PackageSigning);
         expired.not_after = Some(Utc::now() - chrono::Duration::days(1));
         assert!(matches!(

@@ -42,7 +42,13 @@ impl Env {
                 repos.push(d);
             }
         }
-        Env { paths, config, profile, repos, warnings }
+        Env {
+            paths,
+            config,
+            profile,
+            repos,
+            warnings,
+        }
     }
 
     pub fn print_warnings(&self) {
@@ -81,19 +87,29 @@ pub async fn fetch_and_verify(env: &Env, c: &Candidate<'_>) -> Result<VerifiedPa
         bail!("{} {} a été révoqué : installation refusée", rel.id, rel.version);
     }
     if r.freshness(env.config.cache_ttl_seconds, &env.profile) != repo::Freshness::Fresh {
-        bail!("l'index du dépôt « {} » n'est pas à jour : exécutez « auxipak update »", r.config.name);
+        bail!(
+            "l'index du dépôt « {} » n'est pas à jour : exécutez « auxipak update »",
+            r.config.name
+        );
     }
     let base = targets_url(r)?;
     let url = base.join(&rel.target)?;
     let dir = env.paths.package_cache_dir().join(&r.config.name);
     std::fs::create_dir_all(&dir)?;
     let dest = dir.join(format!("{}.apak", rel.sha256));
-    let policy = RedirectPolicy { allowed_hosts: vec![], allow_insecure_localhost: r.config.allow_insecure_localhost };
+    let policy = RedirectPolicy {
+        allowed_hosts: vec![],
+        allow_insecure_localhost: r.config.allow_insecure_localhost,
+    };
     eprintln!("  téléchargement de {} ({} octets)", rel.file_name, rel.size);
     download::fetch(
         &url,
         &dest,
-        &Expect { sha256: rel.sha256.clone(), size: Some(rel.size), max_size: env.config.policy.max_download_bytes },
+        &Expect {
+            sha256: rel.sha256.clone(),
+            size: Some(rel.size),
+            max_size: env.config.policy.max_download_bytes,
+        },
         &policy,
     )
     .await
@@ -130,7 +146,11 @@ pub async fn fetch_and_verify(env: &Env, c: &Candidate<'_>) -> Result<VerifiedPa
             rel.version
         );
     }
-    Ok(VerifiedPackage { path: dest, inspection, signature: verified })
+    Ok(VerifiedPackage {
+        path: dest,
+        inspection,
+        signature: verified,
+    })
 }
 
 async fn fetch_small(url: &url::Url, policy: &RedirectPolicy) -> Result<Vec<u8>> {
@@ -189,7 +209,11 @@ fn visit<'a>(
                 continue;
             }
         }
-        let sel = Selector { version: Some(d.version.clone()), language: None, repo: None };
+        let sel = Selector {
+            version: Some(d.version.clone()),
+            language: None,
+            repo: None,
+        };
         let dc = catalog::resolve(&env.repos, &d.id, &sel, &env.config.language)
             .with_context(|| format!("dépendance {} ({}) de {}", d.id, d.version, c.release.id))?;
         visit(env, dc, registry, out, visiting, true)?;
@@ -302,7 +326,13 @@ fn scripts_allowed(env: &Env, c: &Candidate, opts: &InstallOpts, signed: bool, t
 }
 
 /// Installe (ou met à niveau) un candidat déjà résolu.
-pub async fn install_one(env: &Env, c: &Candidate<'_>, opts: &InstallOpts, auto: bool, registry: &mut Registry) -> Result<String> {
+pub async fn install_one(
+    env: &Env,
+    c: &Candidate<'_>,
+    opts: &InstallOpts,
+    auto: bool,
+    registry: &mut Registry,
+) -> Result<String> {
     let rel = c.release;
     let existing = registry.get(&rel.id).cloned();
     if let Some(e) = &existing {
@@ -346,16 +376,49 @@ pub async fn install_one(env: &Env, c: &Candidate<'_>, opts: &InstallOpts, auto:
             archive::extract(&vp.path, tmp.path(), &Limits::default())?;
             let staged = stage_app_state(&env.paths, &rel.id, tmp.path())?;
             commit_app_state(&env.paths, &rel.id, &staged)?;
-            let rec = new_record(env, c, &vp, &target, "adopted", vec![], false, auto, InstallState::Adopted, simulated, None);
+            let rec = new_record(
+                env,
+                c,
+                &vp,
+                &target,
+                "adopted",
+                vec![],
+                false,
+                auto,
+                InstallState::Adopted,
+                simulated,
+                None,
+            );
             registry.apps.insert(rel.id.clone(), rec);
             registry.save(&env.paths)?;
-            return Ok(format!("{} {} pris en charge (installation existante adoptée)", rel.id, rel.version));
+            return Ok(format!(
+                "{} {} pris en charge (installation existante adoptée)",
+                rel.id, rel.version
+            ));
         }
     }
 
     let action = if existing.is_some() { "upgrade" } else { "install" };
-    let mut txn = Transaction::begin(&env.paths, action, &rel.id, &rel.version, existing.as_ref().map(|e| e.version.clone()))?;
-    let result = install_txn(env, c, &vp, &target, scripts_ok, auto, existing.as_ref(), &mut txn, simulated, registry).await;
+    let mut txn = Transaction::begin(
+        &env.paths,
+        action,
+        &rel.id,
+        &rel.version,
+        existing.as_ref().map(|e| e.version.clone()),
+    )?;
+    let result = install_txn(
+        env,
+        c,
+        &vp,
+        &target,
+        scripts_ok,
+        auto,
+        existing.as_ref(),
+        &mut txn,
+        simulated,
+        registry,
+    )
+    .await;
     match result {
         Ok(msg) => {
             txn.set_phase(Phase::Registered)?;
@@ -388,12 +451,20 @@ fn new_record(
     let mut history = previous.map(|p| p.history.clone()).unwrap_or_default();
     history.push(HistoryEntry {
         at: now,
-        action: if previous.is_some() { "upgrade".into() } else if state == InstallState::Adopted { "adopt".into() } else { "install".into() },
+        action: if previous.is_some() {
+            "upgrade".into()
+        } else if state == InstallState::Adopted {
+            "adopt".into()
+        } else {
+            "install".into()
+        },
         from: previous.map(|p| p.version.clone()),
         to: Some(rel.version.clone()),
         result: "ok".into(),
     });
-    let base = targets_url(c.repo).map(|u| u.join(&rel.target).map(|x| x.to_string()).unwrap_or_default()).unwrap_or_default();
+    let base = targets_url(c.repo)
+        .map(|u| u.join(&rel.target).map(|x| x.to_string()).unwrap_or_default())
+        .unwrap_or_default();
     let _ = env;
     InstalledApp {
         id: rel.id.clone(),
@@ -454,7 +525,19 @@ async fn install_txn(
         }
     }
 
-    txn.pending_record = Some(new_record(env, c, vp, target, "", vec![], false, auto, InstallState::Partial, simulated, existing));
+    txn.pending_record = Some(new_record(
+        env,
+        c,
+        vp,
+        target,
+        "",
+        vec![],
+        false,
+        auto,
+        InstallState::Partial,
+        simulated,
+        existing,
+    ));
     txn.set_phase(Phase::Installing)?;
     let ctx = Ctx {
         paths: &env.paths,
@@ -481,7 +564,19 @@ async fn install_txn(
         methods::remove_files(&stale)?;
     }
     commit_app_state(&env.paths, &rel.id, &staged)?;
-    let rec = new_record(env, c, vp, target, &outcome.manager, outcome.files, outcome.reboot, auto, InstallState::Installed, simulated, existing);
+    let rec = new_record(
+        env,
+        c,
+        vp,
+        target,
+        &outcome.manager,
+        outcome.files,
+        outcome.reboot,
+        auto,
+        InstallState::Installed,
+        simulated,
+        existing,
+    );
     registry.apps.insert(rel.id.clone(), rec);
     registry.save(&env.paths)?;
     let mut msg = match existing {
@@ -538,12 +633,18 @@ fn is_files_only(txn: &Transaction) -> bool {
 /// Désinstalle une application installée (sans toucher au registre).
 pub async fn remove_installed(env: &Env, app: &InstalledApp, scripts_allowed: bool) -> Result<bool> {
     if app.state == InstallState::Adopted {
-        eprintln!("  {} avait été adopté : désinstallation via le gestionnaire d'origine", app.id);
+        eprintln!(
+            "  {} avait été adopté : désinstallation via le gestionnaire d'origine",
+            app.id
+        );
     }
     let (_, target) = stored_target(&env.paths, app)?;
     require_privileges(&target)?;
     if target.uses_scripts() && !scripts_allowed {
-        bail!("la désinstallation de {} exécute des scripts : relancez avec --allow-scripts", app.id);
+        bail!(
+            "la désinstallation de {} exécute des scripts : relancez avec --allow-scripts",
+            app.id
+        );
     }
     let root = env.paths.app_state_dir(&app.id);
     let work = tempfile::Builder::new().prefix("remove-").tempdir_in({
@@ -566,11 +667,24 @@ pub async fn remove_installed(env: &Env, app: &InstalledApp, scripts_allowed: bo
 }
 
 /// `auxipak remove`.
-pub async fn remove(env: &Env, id: &str, force: bool, autoremove: bool, allow_scripts: bool, registry: &mut Registry) -> Result<Vec<String>> {
-    let app = registry.get(id).cloned().ok_or_else(|| anyhow!("{id} n'est pas installé par AuxiPak (voir « auxipak list »)"))?;
+pub async fn remove(
+    env: &Env,
+    id: &str,
+    force: bool,
+    autoremove: bool,
+    allow_scripts: bool,
+    registry: &mut Registry,
+) -> Result<Vec<String>> {
+    let app = registry
+        .get(id)
+        .cloned()
+        .ok_or_else(|| anyhow!("{id} n'est pas installé par AuxiPak (voir « auxipak list »)"))?;
     let dependents: Vec<String> = registry.dependents(id).iter().map(|a| a.id.clone()).collect();
     if !dependents.is_empty() && !force {
-        bail!("{id} est requis par : {} (utilisez --force pour passer outre)", dependents.join(", "));
+        bail!(
+            "{id} est requis par : {} (utilisez --force pour passer outre)",
+            dependents.join(", ")
+        );
     }
     let mut msgs = Vec::new();
     let mut txn = Transaction::begin(&env.paths, "remove", id, &app.version, None)?;
@@ -582,7 +696,11 @@ pub async fn remove(env: &Env, id: &str, force: bool, autoremove: bool, allow_sc
     let _ = std::fs::remove_dir_all(env.paths.data_dir.join(id));
     let _ = std::fs::remove_dir(env.paths.apps_dir.join(id));
     txn.finish()?;
-    msgs.push(format!("{id} {} désinstallé{}", app.version, if reboot { " (redémarrage requis)" } else { "" }));
+    msgs.push(format!(
+        "{id} {} désinstallé{}",
+        app.version,
+        if reboot { " (redémarrage requis)" } else { "" }
+    ));
     // Dépendances devenues orphelines.
     let orphans: Vec<String> = registry.orphans().iter().map(|a| a.id.clone()).collect();
     for o in orphans {
@@ -590,7 +708,9 @@ pub async fn remove(env: &Env, id: &str, force: bool, autoremove: bool, allow_sc
             let sub = Box::pin(remove(env, &o, false, true, allow_scripts, registry)).await?;
             msgs.extend(sub);
         } else {
-            msgs.push(format!("la dépendance {o} n'est plus utilisée (« auxipak remove {o} » ou --autoremove)"));
+            msgs.push(format!(
+                "la dépendance {o} n'est plus utilisée (« auxipak remove {o} » ou --autoremove)"
+            ));
         }
     }
     if app.method == "deb" || app.manager == "apt" {
@@ -645,9 +765,22 @@ pub async fn install(env: &Env, spec: &str, opts: &InstallOpts, registry: &mut R
         if is_dep {
             eprintln!("dépendance : {} {}", c.release.id, c.release.version);
         } else {
-            eprintln!("{} {} ({}, {})", c.release.id, c.release.version, c.repo.config.name, c.status().label());
+            eprintln!(
+                "{} {} ({}, {})",
+                c.release.id,
+                c.release.version,
+                c.repo.config.name,
+                c.status().label()
+            );
         }
-        let sub_opts = if is_dep { InstallOpts { reinstall: false, ..opts.clone() } } else { opts.clone() };
+        let sub_opts = if is_dep {
+            InstallOpts {
+                reinstall: false,
+                ..opts.clone()
+            }
+        } else {
+            opts.clone()
+        };
         msgs.push(install_one(env, &c, &sub_opts, is_dep, registry).await?);
     }
     Ok(msgs)
@@ -678,7 +811,10 @@ pub async fn repair(env: &Env, registry: &mut Registry) -> Result<Vec<String>> {
                     let _ = std::fs::remove_dir_all(env.paths.app_state_dir(&app.id));
                     msgs.push(format!("{label} : la désinstallation avait abouti, registre mis à jour"));
                 } else {
-                    msgs.push(format!("{label} : application toujours présente, relancez « auxipak remove {} »", app.id));
+                    msgs.push(format!(
+                        "{label} : application toujours présente, relancez « auxipak remove {} »",
+                        app.id
+                    ));
                 }
             }
             txn.finish()?;
@@ -689,7 +825,11 @@ pub async fn repair(env: &Env, registry: &mut Registry) -> Result<Vec<String>> {
             txn.finish()?;
             continue;
         };
-        let manifest_dir = if staged.exists() { staged.clone() } else { env.paths.app_state_dir(&txn.app_id) };
+        let manifest_dir = if staged.exists() {
+            staged.clone()
+        } else {
+            env.paths.app_state_dir(&txn.app_id)
+        };
         let target = std::fs::read(manifest_dir.join(MANIFEST_FILE))
             .ok()
             .and_then(|b| Manifest::parse(&b).ok())
@@ -711,7 +851,12 @@ pub async fn repair(env: &Env, registry: &mut Registry) -> Result<Vec<String>> {
             }
             _ => {
                 let prev_files: Vec<PathBuf> = registry.get(&txn.app_id).map(|a| a.files.clone()).unwrap_or_default();
-                let ours: Vec<PathBuf> = txn.files_written.iter().filter(|f| !prev_files.contains(f)).cloned().collect();
+                let ours: Vec<PathBuf> = txn
+                    .files_written
+                    .iter()
+                    .filter(|f| !prev_files.contains(f))
+                    .cloned()
+                    .collect();
                 methods::remove_files(&ours)?;
                 let _ = std::fs::remove_dir_all(&staged);
                 if rec.method == "files" || present == Some(false) {
@@ -722,7 +867,9 @@ pub async fn repair(env: &Env, registry: &mut Registry) -> Result<Vec<String>> {
                         registry.apps.insert(rec.id.clone(), rec);
                         registry.save(&env.paths)?;
                     }
-                    msgs.push(format!("{label} : état indéterminé, enregistré comme partiel (« auxipak remove » pour nettoyer)"));
+                    msgs.push(format!(
+                        "{label} : état indéterminé, enregistré comme partiel (« auxipak remove » pour nettoyer)"
+                    ));
                 }
             }
         }

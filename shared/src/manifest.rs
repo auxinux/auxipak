@@ -27,8 +27,7 @@ pub const MAX_MANIFEST_SIZE: usize = 256 * 1024;
 /// Racines autorisées pour les destinations du mode `files`.
 pub const FILE_DEST_ROOTS: [&str; 3] = ["{app}", "{bin}", "{data}"];
 /// Racines autorisées pour les chemins de désinstallation `exe` (Windows).
-pub const WINDOWS_PATH_ROOTS: [&str; 4] =
-    ["{program_files}", "{program_files_x86}", "{local_app_data}", "{app}"];
+pub const WINDOWS_PATH_ROOTS: [&str; 4] = ["{program_files}", "{program_files_x86}", "{local_app_data}", "{app}"];
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -327,9 +326,16 @@ impl Install {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "method", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Remove {
-    PackageManager { manager: Manager, packages: Vec<String> },
-    Deb { package: String },
-    Msi { product_code: String },
+    PackageManager {
+        manager: Manager,
+        packages: Vec<String>,
+    },
+    Deb {
+        package: String,
+    },
+    Msi {
+        product_code: String,
+    },
     Exe {
         /// Chemin de l'exécutable de désinstallation, sous une racine connue.
         path: String,
@@ -343,7 +349,9 @@ pub enum Remove {
         paths: Vec<String>,
     },
     /// Supprime le bundle `.app` installé depuis une image disque.
-    App { app: String },
+    App {
+        app: String,
+    },
     /// Supprime les fichiers enregistrés lors de l'installation.
     Files,
     Script {
@@ -357,12 +365,23 @@ pub enum Remove {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "method", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Detect {
-    PackageManager { manager: Manager, package: String },
-    Msi { product_code: String },
-    Pkg { package_id: String },
-    App { app: String },
+    PackageManager {
+        manager: Manager,
+        package: String,
+    },
+    Msi {
+        product_code: String,
+    },
+    Pkg {
+        package_id: String,
+    },
+    App {
+        app: String,
+    },
     /// Présence de fichiers installés (`{app}/...`, `{bin}/...`).
-    Files { paths: Vec<String> },
+    Files {
+        paths: Vec<String>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -467,11 +486,13 @@ impl Target {
             return p;
         }
         match &self.install {
-            Install::PackageManager { manager, .. } => match manager {
-                Manager::Winget | Manager::Brew => Privileges::User,
-                _ => Privileges::Admin,
-            },
-            Install::Msi { scope: MsiScope::User, .. } => Privileges::User,
+            Install::PackageManager {
+                manager: Manager::Winget | Manager::Brew,
+                ..
+            } => Privileges::User,
+            Install::Msi {
+                scope: MsiScope::User, ..
+            } => Privileges::User,
             Install::Files { .. } | Install::Dmg { .. } => Privileges::User,
             _ => Privileges::Admin,
         }
@@ -487,8 +508,14 @@ impl Target {
                 manager: *manager,
                 packages: packages.clone(),
             }),
-            Install::Deb { package, .. } => Some(Remove::Deb { package: package.clone() }),
-            Install::Msi { product_code: Some(pc), .. } => Some(Remove::Msi { product_code: pc.clone() }),
+            Install::Deb { package, .. } => Some(Remove::Deb {
+                package: package.clone(),
+            }),
+            Install::Msi {
+                product_code: Some(pc), ..
+            } => Some(Remove::Msi {
+                product_code: pc.clone(),
+            }),
             Install::Dmg { app, .. } => Some(Remove::App { app: app.clone() }),
             Install::Files { .. } => Some(Remove::Files),
             _ => None,
@@ -509,8 +536,14 @@ impl Target {
                 manager: Manager::Apt,
                 package: package.clone(),
             }),
-            Install::Msi { product_code: Some(pc), .. } => Some(Detect::Msi { product_code: pc.clone() }),
-            Install::Pkg { package_id, .. } => Some(Detect::Pkg { package_id: package_id.clone() }),
+            Install::Msi {
+                product_code: Some(pc), ..
+            } => Some(Detect::Msi {
+                product_code: pc.clone(),
+            }),
+            Install::Pkg { package_id, .. } => Some(Detect::Pkg {
+                package_id: package_id.clone(),
+            }),
             Install::Dmg { app, .. } => Some(Detect::App { app: app.clone() }),
             Install::Files { files } => Some(Detect::Files {
                 paths: files.iter().map(|f| f.destination.clone()).collect(),
@@ -606,8 +639,7 @@ impl Manifest {
     /// Valide (schéma, typage strict, règles sémantiques) une valeur issue du YAML.
     pub fn from_value(value: serde_json::Value) -> Result<(Manifest, Vec<Issue>), ManifestError> {
         crate::schema::validate_manifest_value(&value).map_err(ManifestError::Schema)?;
-        let manifest: Manifest =
-            serde_json::from_value(value).map_err(|e| ManifestError::Schema(vec![e.to_string()]))?;
+        let manifest: Manifest = serde_json::from_value(value).map_err(|e| ManifestError::Schema(vec![e.to_string()]))?;
         let issues = manifest.validate();
         if issues.iter().any(|i| i.fatal) {
             return Err(ManifestError::Invalid(issues));
@@ -624,13 +656,25 @@ impl Manifest {
     pub fn validate(&self) -> Vec<Issue> {
         let mut v = Validator::default();
         if self.format != MANIFEST_FORMAT {
-            v.err("format", format!("version de format {} non prise en charge (attendu {MANIFEST_FORMAT})", self.format));
+            v.err(
+                "format",
+                format!(
+                    "version de format {} non prise en charge (attendu {MANIFEST_FORMAT})",
+                    self.format
+                ),
+            );
         }
         if !ids::is_valid_app_id(&self.id) {
-            v.err("id", "identifiant invalide (minuscules, chiffres, « . », « - », « + », 2 à 64 caractères)");
+            v.err(
+                "id",
+                "identifiant invalide (minuscules, chiffres, « . », « - », « + », 2 à 64 caractères)",
+            );
         }
         if !version::is_valid_version(&self.version) {
-            v.err("version", "version invalide (doit commencer par un chiffre ; caractères autorisés : alphanumériques et .+-~_)");
+            v.err(
+                "version",
+                "version invalide (doit commencer par un chiffre ; caractères autorisés : alphanumériques et .+-~_)",
+            );
         }
         for (field, val, max) in [
             ("name", &self.name, 128usize),
@@ -641,7 +685,10 @@ impl Manifest {
             if val.trim().is_empty() {
                 v.err(field, "champ obligatoire vide");
             } else if val.chars().count() > max || val.chars().any(|c| c.is_control()) {
-                v.err(field, format!("valeur invalide (maximum {max} caractères, sans caractère de contrôle)"));
+                v.err(
+                    field,
+                    format!("valeur invalide (maximum {max} caractères, sans caractère de contrôle)"),
+                );
             }
         }
         if let Some(h) = &self.homepage {
@@ -663,7 +710,10 @@ impl Manifest {
                 v.err(format!("dependencies[{i}].id"), "identifiant invalide");
             }
             if d.id == self.id {
-                v.err(format!("dependencies[{i}]"), "une application ne peut pas dépendre d'elle-même");
+                v.err(
+                    format!("dependencies[{i}]"),
+                    "une application ne peut pas dépendre d'elle-même",
+                );
             }
             if !dep_ids.insert(&d.id) {
                 v.err(format!("dependencies[{i}]"), "dépendance dupliquée");
@@ -742,7 +792,11 @@ impl Manifest {
             .filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
             .collect();
         let name = if name.is_empty() { self.id.clone() } else { name };
-        let lang = if self.languages.len() == 1 { self.languages[0].clone() } else { "mul".into() };
+        let lang = if self.languages.len() == 1 {
+            self.languages[0].clone()
+        } else {
+            "mul".into()
+        };
         format!("{}-{}-{}.apak", name, self.version, lang)
     }
 }
@@ -766,22 +820,36 @@ struct Validator {
 
 impl Validator {
     fn err(&mut self, path: impl Into<String>, msg: impl Into<String>) {
-        self.issues.push(Issue { path: path.into(), message: msg.into(), fatal: true });
+        self.issues.push(Issue {
+            path: path.into(),
+            message: msg.into(),
+            fatal: true,
+        });
     }
     fn warn(&mut self, path: impl Into<String>, msg: impl Into<String>) {
-        self.issues.push(Issue { path: path.into(), message: msg.into(), fatal: false });
+        self.issues.push(Issue {
+            path: path.into(),
+            message: msg.into(),
+            fatal: false,
+        });
     }
 }
 
 fn validate_target(v: &mut Validator, p: &str, t: &Target, contents: &BTreeSet<&str>) {
     if !ids::is_valid_repo_name(&t.name) {
-        v.err(format!("{p}.name"), "nom de variante invalide (minuscules, chiffres, « - », « _ »)");
+        v.err(
+            format!("{p}.name"),
+            "nom de variante invalide (minuscules, chiffres, « - », « _ »)",
+        );
     }
     if t.architectures.is_empty() {
         v.err(format!("{p}.architectures"), "au moins une architecture est requise");
     }
     if t.architectures.contains(&Arch::Any) && t.architectures.len() > 1 {
-        v.err(format!("{p}.architectures"), "« any » ne peut pas être combiné à d'autres architectures");
+        v.err(
+            format!("{p}.architectures"),
+            "« any » ne peut pas être combiné à d'autres architectures",
+        );
     }
     match t.platform {
         Os::Linux => {
@@ -790,14 +858,20 @@ fn validate_target(v: &mut Validator, p: &str, t: &Target, contents: &BTreeSet<&
             }
             for d in &t.distributions {
                 if d.os() != Os::Linux || *d == Distribution::Unknown {
-                    v.err(format!("{p}.distributions"), format!("{d} n'est pas une distribution Linux prise en charge"));
+                    v.err(
+                        format!("{p}.distributions"),
+                        format!("{d} n'est pas une distribution Linux prise en charge"),
+                    );
                 }
             }
         }
         os => {
             for d in &t.distributions {
                 if d.os() != os {
-                    v.err(format!("{p}.distributions"), format!("{d} incompatible avec la plateforme {os}"));
+                    v.err(
+                        format!("{p}.distributions"),
+                        format!("{d} incompatible avec la plateforme {os}"),
+                    );
                 }
             }
         }
@@ -836,7 +910,12 @@ fn validate_target(v: &mut Validator, p: &str, t: &Target, contents: &BTreeSet<&
             }
             check_source(v, &ip, t.mode, source, contents, &[".deb"]);
         }
-        Install::Msi { source, product_code, properties, .. } => {
+        Install::Msi {
+            source,
+            product_code,
+            properties,
+            ..
+        } => {
             require_platform(v, &ip, t.platform, Os::Windows, "msi");
             check_source(v, &ip, t.mode, source, contents, &[".msi"]);
             if let Some(pc) = product_code {
@@ -844,7 +923,10 @@ fn validate_target(v: &mut Validator, p: &str, t: &Target, contents: &BTreeSet<&
                     v.err(format!("{ip}.product_code"), "code produit MSI invalide ({GUID})");
                 }
             } else if t.remove.is_none() {
-                v.warn(format!("{ip}.product_code"), "sans product_code, la désinstallation doit être déclarée explicitement");
+                v.warn(
+                    format!("{ip}.product_code"),
+                    "sans product_code, la désinstallation doit être déclarée explicitement",
+                );
             }
             for (k, val) in properties {
                 if !ids::is_valid_msi_property(k) || !ids::is_valid_installer_arg(val) {
@@ -857,7 +939,10 @@ fn validate_target(v: &mut Validator, p: &str, t: &Target, contents: &BTreeSet<&
             check_source(v, &ip, t.mode, source, contents, &[".exe"]);
             check_args(v, &ip, args);
             if t.privileges.is_none() {
-                v.warn(format!("{p}.privileges"), "privilèges non déclarés pour un installateur exe (admin supposé)");
+                v.warn(
+                    format!("{p}.privileges"),
+                    "privilèges non déclarés pour un installateur exe (admin supposé)",
+                );
             }
         }
         Install::Pkg { source, package_id } => {
@@ -891,7 +976,13 @@ fn validate_target(v: &mut Validator, p: &str, t: &Target, contents: &BTreeSet<&
                     v.err(&fp, format!("source absente de contents : {}", f.source));
                 }
                 if !is_valid_templated_path(&f.destination, &FILE_DEST_ROOTS) {
-                    v.err(&fp, format!("destination invalide (doit commencer par {{app}}, {{bin}} ou {{data}}) : {}", f.destination));
+                    v.err(
+                        &fp,
+                        format!(
+                            "destination invalide (doit commencer par {{app}}, {{bin}} ou {{data}}) : {}",
+                            f.destination
+                        ),
+                    );
                 }
             }
         }
@@ -902,7 +993,10 @@ fn validate_target(v: &mut Validator, p: &str, t: &Target, contents: &BTreeSet<&
             check_script(v, &format!("{ip}.script"), script, t.platform, contents);
             check_args(v, &ip, args);
             if t.remove.is_none() {
-                v.err(format!("{p}.remove"), "une installation par script exige une désinstallation explicite");
+                v.err(
+                    format!("{p}.remove"),
+                    "une installation par script exige une désinstallation explicite",
+                );
             }
         }
     }
@@ -969,7 +1063,10 @@ fn validate_target(v: &mut Validator, p: &str, t: &Target, contents: &BTreeSet<&
             }
         }
     } else if t.effective_remove().is_none() {
-        v.err(format!("{p}.remove"), "aucune procédure de désinstallation ne peut être déduite : déclarez « remove »");
+        v.err(
+            format!("{p}.remove"),
+            "aucune procédure de désinstallation ne peut être déduite : déclarez « remove »",
+        );
     }
 
     if let Some(d) = &t.detect {
@@ -1010,15 +1107,24 @@ fn validate_target(v: &mut Validator, p: &str, t: &Target, contents: &BTreeSet<&
         check_script(v, &format!("{p}.scripts.{hook}"), script, t.platform, contents);
     }
     if t.uses_scripts() {
-        v.warn(p, "cette variante utilise des scripts personnalisés : leur exécution exigera une autorisation explicite");
+        v.warn(
+            p,
+            "cette variante utilise des scripts personnalisés : leur exécution exigera une autorisation explicite",
+        );
     }
     for nd in &t.native_dependencies {
         if !ids::is_valid_native_package(nd) {
-            v.err(format!("{p}.native_dependencies"), format!("nom de paquet natif invalide : {nd}"));
+            v.err(
+                format!("{p}.native_dependencies"),
+                format!("nom de paquet natif invalide : {nd}"),
+            );
         }
     }
     if !t.native_dependencies.is_empty() && t.platform != Os::Linux {
-        v.err(format!("{p}.native_dependencies"), "les dépendances natives ne sont prises en charge que sous Linux");
+        v.err(
+            format!("{p}.native_dependencies"),
+            "les dépendances natives ne sont prises en charge que sous Linux",
+        );
     }
     if t.success_codes.is_empty() {
         v.err(format!("{p}.success_codes"), "au moins un code de succès est requis");
@@ -1062,21 +1168,17 @@ fn check_script(v: &mut Validator, p: &str, script: &str, platform: Os, contents
         _ => script.ends_with(".sh"),
     };
     if !ok_ext {
-        v.err(p, "extension de script incompatible avec la plateforme (.sh pour Linux/macOS, .ps1 pour Windows)");
+        v.err(
+            p,
+            "extension de script incompatible avec la plateforme (.sh pour Linux/macOS, .ps1 pour Windows)",
+        );
     }
     if !contents.contains(script) {
         v.err(p, format!("script absent de contents : {script}"));
     }
 }
 
-fn check_source(
-    v: &mut Validator,
-    p: &str,
-    mode: Mode,
-    s: &Source,
-    contents: &BTreeSet<&str>,
-    exts: &[&str],
-) {
+fn check_source(v: &mut Validator, p: &str, mode: Mode, s: &Source, contents: &BTreeSet<&str>, exts: &[&str]) {
     let sp = format!("{p}.source");
     match mode {
         Mode::Embedded => {
@@ -1114,7 +1216,10 @@ fn check_source(
                 _ => v.err(&sp, "« sha256 » valide est obligatoire en mode remote"),
             }
             if s.size.is_none() {
-                v.warn(&sp, "taille non déclarée : la limite de téléchargement par défaut s'appliquera");
+                v.warn(
+                    &sp,
+                    "taille non déclarée : la limite de téléchargement par défaut s'appliquera",
+                );
             }
             for h in &s.allowed_hosts {
                 if !crate::netpolicy::is_valid_host(h) {
@@ -1122,14 +1227,18 @@ fn check_source(
                 }
             }
             let name = s.file_name.clone().or_else(|| {
-                s.url.as_deref().and_then(|u| url::Url::parse(u).ok()).and_then(|u| {
-                    u.path_segments().and_then(|mut seg| seg.next_back().map(|x| x.to_string()))
-                })
+                s.url
+                    .as_deref()
+                    .and_then(|u| url::Url::parse(u).ok())
+                    .and_then(|u| u.path_segments().and_then(|mut seg| seg.next_back().map(|x| x.to_string())))
             });
             match name {
                 Some(n) if ids::is_safe_file_name(&n) => {
                     if !exts.iter().any(|e| n.to_ascii_lowercase().ends_with(e)) {
-                        v.err(&sp, format!("le fichier téléchargé doit avoir l'extension {}", exts.join(", ")));
+                        v.err(
+                            &sp,
+                            format!("le fichier téléchargé doit avoir l'extension {}", exts.join(", ")),
+                        );
                     }
                 }
                 _ => v.err(&sp, "nom de fichier local indéterminable : déclarez « file_name »"),
@@ -1305,7 +1414,10 @@ targets:
         size: 1000
 "#;
         assert!(Manifest::parse(remote.as_bytes()).is_ok());
-        let no_hash = remote.replace("        sha256: \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"\n", "");
+        let no_hash = remote.replace(
+            "        sha256: \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"\n",
+            "",
+        );
         assert!(Manifest::parse(no_hash.as_bytes()).is_err());
         let http = remote.replace("https://example.org", "http://example.org");
         assert!(Manifest::parse(http.as_bytes()).is_err());

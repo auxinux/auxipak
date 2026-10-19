@@ -160,7 +160,9 @@ fn init_logging(paths: &Paths) {
     let file = std::fs::OpenOptions::new().create(true).append(true).open(paths.log_file());
     let filter = tracing_subscriber::EnvFilter::try_from_env("AUXIPAK_LOG").unwrap_or_else(|_| "info".into());
     if let Ok(f) = file {
-        let layer = tracing_subscriber::fmt::layer().with_ansi(false).with_writer(std::sync::Mutex::new(f));
+        let layer = tracing_subscriber::fmt::layer()
+            .with_ansi(false)
+            .with_writer(std::sync::Mutex::new(f));
         let _ = tracing_subscriber::registry().with(filter).with(layer).try_init();
     }
 }
@@ -225,13 +227,21 @@ async fn env_for(paths: Paths, need: Need) -> Result<Env> {
 async fn run(cli: Cli, paths: Paths) -> Result<()> {
     match cli.cmd {
         Cmd::Search { query, offline } => {
-            let env = if offline { offline_env(paths)? } else { env_for(paths, Need::Browse).await? };
+            let env = if offline {
+                offline_env(paths)?
+            } else {
+                env_for(paths, Need::Browse).await?
+            };
             if env.repos.is_empty() {
                 bail!("aucun index disponible (exécutez « auxipak update » avec une connexion réseau)");
             }
             for r in &env.repos {
                 if r.freshness(env.config.cache_ttl_seconds, &env.profile) != repo::Freshness::Fresh {
-                    eprintln!("index « {} » : dernière synchronisation il y a {}", r.config.name, repo::age_label(&r.state));
+                    eprintln!(
+                        "index « {} » : dernière synchronisation il y a {}",
+                        r.config.name,
+                        repo::age_label(&r.state)
+                    );
                 }
             }
             let hits = catalog::search(&env.repos, query.as_deref().unwrap_or(""), &env.config.language);
@@ -251,7 +261,10 @@ async fn run(cli: Cli, paths: Paths) -> Result<()> {
             } else if hits.is_empty() {
                 println!("Aucun résultat.");
             } else {
-                println!("{:<22} {:<20} {:<12} {:<8} {:<12} {:<9} DESCRIPTION", "ID", "NOM", "VERSION", "LANGUE", "STATUT", "PLATEF.");
+                println!(
+                    "{:<22} {:<20} {:<12} {:<8} {:<12} {:<9} DESCRIPTION",
+                    "ID", "NOM", "VERSION", "LANGUE", "STATUT", "PLATEF."
+                );
                 for c in hits {
                     println!(
                         "{:<22} {:<20} {:<12} {:<8} {:<12} {:<9} {}{}",
@@ -262,12 +275,24 @@ async fn run(cli: Cli, paths: Paths) -> Result<()> {
                         c.status().short(),
                         c.release.platform,
                         c.app.map(|a| a.summary.as_str()).unwrap_or(""),
-                        if c.repo.config.official { String::new() } else { format!(" [{}]", c.repo.config.name) }
+                        if c.repo.config.official {
+                            String::new()
+                        } else {
+                            format!(" [{}]", c.repo.config.name)
+                        }
                     );
                 }
             }
         }
-        Cmd::Install { package, version, lang, repo, allow_scripts, adopt, reinstall } => {
+        Cmd::Install {
+            package,
+            version,
+            lang,
+            repo,
+            allow_scripts,
+            adopt,
+            reinstall,
+        } => {
             let _lock = StateLock::acquire(&paths)?;
             pending_warning(&paths);
             let env = env_for(paths, Need::Install).await?;
@@ -282,12 +307,23 @@ async fn run(cli: Cli, paths: Paths) -> Result<()> {
                 println!("{m}");
             }
         }
-        Cmd::Remove { package, force, autoremove, allow_scripts } => {
+        Cmd::Remove {
+            package,
+            force,
+            autoremove,
+            allow_scripts,
+        } => {
             let _lock = StateLock::acquire(&paths)?;
             pending_warning(&paths);
             let config = Config::load(&paths)?;
             let profile = detect::load_or_detect(&paths)?.profile;
-            let env = Env { paths, config, profile, repos: vec![], warnings: vec![] };
+            let env = Env {
+                paths,
+                config,
+                profile,
+                repos: vec![],
+                warnings: vec![],
+            };
             let mut reg = Registry::load(&env.paths)?;
             for m in engine::remove(&env, &package, force, autoremove, allow_scripts, &mut reg).await? {
                 println!("{m}");
@@ -323,7 +359,10 @@ async fn run(cli: Cli, paths: Paths) -> Result<()> {
             pending_warning(&paths);
             let env = env_for(paths, Need::Install).await?;
             let mut reg = Registry::load(&env.paths)?;
-            let opts = InstallOpts { allow_scripts, ..Default::default() };
+            let opts = InstallOpts {
+                allow_scripts,
+                ..Default::default()
+            };
             for m in engine::upgrade(&env, package.as_deref(), &opts, &mut reg).await? {
                 println!("{m}");
             }
@@ -334,8 +373,17 @@ async fn run(cli: Cli, paths: Paths) -> Result<()> {
             let presence = if check {
                 let config = Config::load(&paths)?;
                 let profile = detect::load_or_detect(&paths)?.profile;
-                let env = Env { paths: paths.clone(), config, profile, repos: vec![], warnings: vec![] };
-                engine::reconcile(&env, &reg).await.into_iter().collect::<std::collections::BTreeMap<_, _>>()
+                let env = Env {
+                    paths: paths.clone(),
+                    config,
+                    profile,
+                    repos: vec![],
+                    warnings: vec![],
+                };
+                engine::reconcile(&env, &reg)
+                    .await
+                    .into_iter()
+                    .collect::<std::collections::BTreeMap<_, _>>()
             } else {
                 Default::default()
             };
@@ -344,11 +392,14 @@ async fn run(cli: Cli, paths: Paths) -> Result<()> {
             } else if reg.apps.is_empty() {
                 println!("Aucune application installée par AuxiPak.");
             } else {
-                println!("{:<22} {:<12} {:<10} {:<10} {:<10} {:<10} INSTALLÉ LE", "ID", "VERSION", "DÉPÔT", "MÉTHODE", "GEST.", "ÉTAT");
+                println!(
+                    "{:<22} {:<12} {:<10} {:<10} {:<10} {:<10} INSTALLÉ LE",
+                    "ID", "VERSION", "DÉPÔT", "MÉTHODE", "GEST.", "ÉTAT"
+                );
                 for a in reg.apps.values() {
                     let mut state = format!("{:?}", a.state).to_lowercase();
                     if a.simulated {
-                        state.push_str("*");
+                        state.push('*');
                     }
                     if let Some(p) = presence.get(&a.id) {
                         match p {
@@ -375,7 +426,11 @@ async fn run(cli: Cli, paths: Paths) -> Result<()> {
             }
         }
         Cmd::Info { package, offline } => {
-            let env = if offline { offline_env(paths)? } else { env_for(paths, Need::Browse).await? };
+            let env = if offline {
+                offline_env(paths)?
+            } else {
+                env_for(paths, Need::Browse).await?
+            };
             info(&env, &package, cli.json)?;
         }
         Cmd::Verify { file, signature } => verify(&paths, &file, signature, cli.json)?,
@@ -399,7 +454,13 @@ async fn run(cli: Cli, paths: Paths) -> Result<()> {
             let _lock = StateLock::acquire(&paths)?;
             let config = Config::load(&paths)?;
             let profile = detect::load_or_detect(&paths)?.profile;
-            let env = Env { paths, config, profile, repos: vec![], warnings: vec![] };
+            let env = Env {
+                paths,
+                config,
+                profile,
+                repos: vec![],
+                warnings: vec![],
+            };
             let mut reg = Registry::load(&env.paths)?;
             for m in engine::repair(&env, &mut reg).await? {
                 println!("{m}");
@@ -409,13 +470,27 @@ async fn run(cli: Cli, paths: Paths) -> Result<()> {
             let config = Config::load(&paths)?;
             let st = detect::load_or_detect(&paths)?;
             let p = &st.profile;
-            println!("Système      : {} ({} {}, {})", p.pretty_name, p.distribution, p.version, p.arch);
-            println!("Canal        : {}", p.channel().map(|c| c.as_str()).unwrap_or("non pris en charge"));
+            println!(
+                "Système      : {} ({} {}, {})",
+                p.pretty_name, p.distribution, p.version, p.arch
+            );
+            println!(
+                "Canal        : {}",
+                p.channel().map(|c| c.as_str()).unwrap_or("non pris en charge")
+            );
             println!("Immuable     : {}", if p.immutable { "oui" } else { "non" });
-            println!("Portée       : {:?} (administrateur : {})", paths.scope, privileges::is_elevated());
+            println!(
+                "Portée       : {:?} (administrateur : {})",
+                paths.scope,
+                privileges::is_elevated()
+            );
             println!("Configuration: {}", paths.config_file().display());
             println!("État         : {}", paths.state_dir.display());
-            println!("Cache        : {} (durée de validité {} s)", paths.cache_dir.display(), config.cache_ttl_seconds);
+            println!(
+                "Cache        : {} (durée de validité {} s)",
+                paths.cache_dir.display(),
+                config.cache_ttl_seconds
+            );
             println!("Journal      : {}", paths.log_file().display());
             if executor::is_simulation() {
                 println!("MODE SIMULATION ACTIF (AUXIPAK_TEST_TOOLS_DIR)");
@@ -456,7 +531,13 @@ fn offline_env(paths: Paths) -> Result<Env> {
             repos.push(d);
         }
     }
-    Ok(Env { paths, config, profile, repos, warnings: vec![] })
+    Ok(Env {
+        paths,
+        config,
+        profile,
+        repos,
+        warnings: vec![],
+    })
 }
 
 fn truncate(s: &str, n: usize) -> String {
@@ -539,19 +620,39 @@ fn info(env: &Env, package: &str, json: bool) -> Result<()> {
         rel.distributions.iter().map(|d| d.as_str()).collect::<Vec<_>>().join(", "),
         rel.architectures.iter().map(|a| a.as_str()).collect::<Vec<_>>().join(", ")
     );
-    println!("Dépôt          : {}{}", c.repo.config.name, if c.repo.config.official { " (officiel)" } else { " (externe)" });
+    println!(
+        "Dépôt          : {}{}",
+        c.repo.config.name,
+        if c.repo.config.official { " (officiel)" } else { " (externe)" }
+    );
     println!("Mode           : {} — privilèges : {:?}", rel.mode, rel.privileges);
     let deps: Vec<String> = rel.dependencies.iter().map(|d| format!("{} ({})", d.id, d.version)).collect();
-    println!("Dépendances    : {}", if deps.is_empty() { "aucune".into() } else { deps.join(", ") });
+    println!(
+        "Dépendances    : {}",
+        if deps.is_empty() { "aucune".into() } else { deps.join(", ") }
+    );
     println!("Sécurité :");
     println!("  Fichier      : {} ({} octets)", rel.file_name, rel.size);
     println!("  SHA-256      : {}", rel.sha256);
     println!("  Signature    : clé {} ({})", rel.signature.key_id, rel.signature.target);
-    println!("  Scripts      : {}", if rel.uses_scripts { "OUI — autorisation explicite requise" } else { "non" });
+    println!(
+        "  Scripts      : {}",
+        if rel.uses_scripts {
+            "OUI — autorisation explicite requise"
+        } else {
+            "non"
+        }
+    );
     println!("  Révoqué      : {}", if c.is_revoked() { "OUI" } else { "non" });
     println!("  Publié le    : {}", rel.published_at.format("%Y-%m-%d %H:%M UTC"));
     if let Some(i) = installed {
-        println!("Installé       : {} le {} ({:?}, {})", i.version, i.installed_at.format("%Y-%m-%d"), i.state, i.manager);
+        println!(
+            "Installé       : {} le {} ({:?}, {})",
+            i.version,
+            i.installed_at.format("%Y-%m-%d"),
+            i.state,
+            i.manager
+        );
     }
     Ok(())
 }
@@ -572,7 +673,12 @@ fn verify(paths: &Paths, file: &std::path::Path, signature: Option<PathBuf>, jso
         let mut last = Err("aucune clé de confiance configurée".to_string());
         for r in &config.repositories {
             if let Ok(t) = r.trust(paths) {
-                match doc.verify(&insp.archive_sha256, insp.archive_size, &t.package_keys, &[KeyPurpose::PackageSigning]) {
+                match doc.verify(
+                    &insp.archive_sha256,
+                    insp.archive_size,
+                    &t.package_keys,
+                    &[KeyPurpose::PackageSigning],
+                ) {
                     Ok(v) => {
                         last = Ok(format!("valide (clé {} — {}, dépôt {})", v.key_id, v.owner, r.name));
                         break;
@@ -600,11 +706,25 @@ fn verify(paths: &Paths, file: &std::path::Path, signature: Option<PathBuf>, jso
     } else {
         println!("Paquet       : {}", file.display());
         println!("Application  : {} {} ({})", m.name, m.version, m.id);
-        println!("Structure    : conforme au format .apak v{} ({} entrées)", archive::APAK_FORMAT_VERSION, insp.entries.len());
+        println!(
+            "Structure    : conforme au format .apak v{} ({} entrées)",
+            archive::APAK_FORMAT_VERSION,
+            insp.entries.len()
+        );
         println!("Manifeste    : valide (schéma et règles sémantiques)");
         println!("SHA-256      : {}", insp.archive_sha256);
-        println!("Taille       : {} octets ({} décompressés)", insp.archive_size, insp.total_unpacked);
-        println!("Variantes    : {}", m.targets.iter().map(|t| format!("{} [{} {}]", t.name, t.platform, t.mode)).collect::<Vec<_>>().join(", "));
+        println!(
+            "Taille       : {} octets ({} décompressés)",
+            insp.archive_size, insp.total_unpacked
+        );
+        println!(
+            "Variantes    : {}",
+            m.targets
+                .iter()
+                .map(|t| format!("{} [{} {}]", t.name, t.platform, t.mode))
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
         if m.targets.iter().any(|t| t.uses_scripts()) {
             println!("Scripts      : présents (exécution soumise à autorisation explicite)");
         }
@@ -643,8 +763,17 @@ async fn repo_cmd(paths: &Paths, cmd: RepoCmd, json: bool) -> Result<()> {
                 );
             }
         }
-        RepoCmd::Add { url, name, root, keys, trust_on_first_use, allow_scripts, allow_insecure_localhost } => {
-            let base = auxipak_core::netpolicy::validate_repo_url(&url, allow_insecure_localhost).map_err(|e| anyhow::anyhow!(e))?;
+        RepoCmd::Add {
+            url,
+            name,
+            root,
+            keys,
+            trust_on_first_use,
+            allow_scripts,
+            allow_insecure_localhost,
+        } => {
+            let base =
+                auxipak_core::netpolicy::validate_repo_url(&url, allow_insecure_localhost).map_err(|e| anyhow::anyhow!(e))?;
             let name = match name {
                 Some(n) => n,
                 None => base
@@ -664,10 +793,15 @@ async fn repo_cmd(paths: &Paths, cmd: RepoCmd, json: bool) -> Result<()> {
             let trust_dir = paths.config_dir.join("trust").join(&name);
             std::fs::create_dir_all(&trust_dir)?;
             let (root_bytes, keys_bytes) = match (root, keys, trust_on_first_use) {
-                (Some(r), Some(k), _) => (std::fs::read(&r).context("lecture de --root")?, std::fs::read(&k).context("lecture de --keys")?),
+                (Some(r), Some(k), _) => (
+                    std::fs::read(&r).context("lecture de --root")?,
+                    std::fs::read(&k).context("lecture de --keys")?,
+                ),
                 (None, None, true) => {
                     eprintln!("ATTENTION : confiance au premier usage — vérifiez les empreintes ci-dessous auprès de l'éditeur du dépôt");
-                    let client = reqwest::Client::builder().redirect(reqwest::redirect::Policy::none()).build()?;
+                    let client = reqwest::Client::builder()
+                        .redirect(reqwest::redirect::Policy::none())
+                        .build()?;
                     let get = |u: url::Url| {
                         let client = client.clone();
                         async move {
@@ -677,18 +811,30 @@ async fn repo_cmd(paths: &Paths, cmd: RepoCmd, json: bool) -> Result<()> {
                     };
                     if base.scheme() == "file" {
                         let p = base.to_file_path().map_err(|_| anyhow::anyhow!("URL invalide"))?;
-                        (std::fs::read(p.join("metadata/1.root.json"))?, std::fs::read(p.join("keys/package-keys.json"))?)
+                        (
+                            std::fs::read(p.join("metadata/1.root.json"))?,
+                            std::fs::read(p.join("keys/package-keys.json"))?,
+                        )
                     } else {
-                        (get(base.join("metadata/1.root.json")?).await?, get(base.join("keys/package-keys.json")?).await?)
+                        (
+                            get(base.join("metadata/1.root.json")?).await?,
+                            get(base.join("keys/package-keys.json")?).await?,
+                        )
                     }
                 }
                 _ => bail!("fournissez --root et --keys (obtenus par un canal sûr), ou --trust-on-first-use"),
             };
             let summary = auxipak_core::tuf::summarize_root(&root_bytes)?;
-            let keys: auxipak_core::signature::TrustedKeys = serde_json::from_slice(&keys_bytes).context("package-keys.json invalide")?;
+            let keys: auxipak_core::signature::TrustedKeys =
+                serde_json::from_slice(&keys_bytes).context("package-keys.json invalide")?;
             paths::atomic_write(&trust_dir.join("root.json"), &root_bytes)?;
             paths::atomic_write(&trust_dir.join("package-keys.json"), &keys_bytes)?;
-            println!("Racine TUF version {} (expire {}), empreinte {}", summary.version, summary.expires, auxipak_core::hash::sha256_hex(&root_bytes));
+            println!(
+                "Racine TUF version {} (expire {}), empreinte {}",
+                summary.version,
+                summary.expires,
+                auxipak_core::hash::sha256_hex(&root_bytes)
+            );
             for k in &keys.keys {
                 println!("Clé de paquets {} — {}", k.key_id, k.owner);
             }

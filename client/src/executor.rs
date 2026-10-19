@@ -54,7 +54,9 @@ impl Tool {
     }
 
     fn candidates(&self) -> Vec<PathBuf> {
-        let sysroot = std::env::var_os("SystemRoot").map(PathBuf::from).unwrap_or_else(|| "C:\\Windows".into());
+        let sysroot = std::env::var_os("SystemRoot")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| "C:\\Windows".into());
         match self {
             Tool::AptGet => vec!["/usr/bin/apt-get".into()],
             Tool::DpkgQuery => vec!["/usr/bin/dpkg-query".into()],
@@ -84,7 +86,9 @@ impl Tool {
 
 /// Répertoire d'outils simulés (tests), s'il est actif.
 pub fn simulation_dir() -> Option<PathBuf> {
-    std::env::var_os("AUXIPAK_TEST_TOOLS_DIR").filter(|v| !v.is_empty()).map(PathBuf::from)
+    std::env::var_os("AUXIPAK_TEST_TOOLS_DIR")
+        .filter(|v| !v.is_empty())
+        .map(PathBuf::from)
 }
 
 pub fn is_simulation() -> bool {
@@ -121,7 +125,11 @@ pub fn resolve_program(program: &str) -> Result<PathBuf> {
     }
     let p = Path::new(program);
     if p.is_absolute() {
-        return if p.exists() { Ok(p.to_path_buf()) } else { bail!("programme introuvable : {program}") };
+        return if p.exists() {
+            Ok(p.to_path_buf())
+        } else {
+            bail!("programme introuvable : {program}")
+        };
     }
     if program.contains('/') || program.contains('\\') {
         bail!("chemin de programme relatif refusé : {program}");
@@ -151,16 +159,44 @@ pub struct RunOpts {
 }
 
 const ENV_ALLOW: &[&str] = &[
-    "PATH", "HOME", "USER", "LOGNAME", "LANG", "LC_ALL", "LC_MESSAGES", "TMPDIR", "TERM", "SystemRoot", "windir",
-    "SystemDrive", "ProgramData", "ProgramFiles", "ProgramFiles(x86)", "ProgramW6432", "LOCALAPPDATA", "APPDATA",
-    "USERPROFILE", "TEMP", "TMP", "PATHEXT", "COMPUTERNAME", "USERNAME", "PROCESSOR_ARCHITECTURE",
-    "AUXIPAK_TEST_TOOLS_DIR", "AUXIPAK_TEST_LOG",
+    "PATH",
+    "HOME",
+    "USER",
+    "LOGNAME",
+    "LANG",
+    "LC_ALL",
+    "LC_MESSAGES",
+    "TMPDIR",
+    "TERM",
+    "SystemRoot",
+    "windir",
+    "SystemDrive",
+    "ProgramData",
+    "ProgramFiles",
+    "ProgramFiles(x86)",
+    "ProgramW6432",
+    "LOCALAPPDATA",
+    "APPDATA",
+    "USERPROFILE",
+    "TEMP",
+    "TMP",
+    "PATHEXT",
+    "COMPUTERNAME",
+    "USERNAME",
+    "PROCESSOR_ARCHITECTURE",
+    "AUXIPAK_TEST_TOOLS_DIR",
+    "AUXIPAK_TEST_LOG",
 ];
 
 /// Exécute un programme avec un vecteur d'arguments.
 pub async fn run(program: &Path, args: &[OsString], opts: &RunOpts) -> Result<Output> {
     let mut cmd = tokio::process::Command::new(program);
-    cmd.args(args).env_clear().stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped()).kill_on_drop(true);
+    cmd.args(args)
+        .env_clear()
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true);
     for (k, v) in std::env::vars_os() {
         if let Some(k) = k.to_str() {
             if ENV_ALLOW.iter().any(|a| a.eq_ignore_ascii_case(k)) {
@@ -242,9 +278,13 @@ mod tests {
     #[tokio::test]
     async fn arguments_are_not_interpreted_by_a_shell() {
         // `printf` reçoit littéralement « $(id) ; echo pwned » : aucune expansion.
-        let out = run(Path::new("/usr/bin/printf"), &[os("%s"), os("$(id) ; echo pwned")], &RunOpts::default())
-            .await
-            .unwrap();
+        let out = run(
+            Path::new("/usr/bin/printf"),
+            &[os("%s"), os("$(id) ; echo pwned")],
+            &RunOpts::default(),
+        )
+        .await
+        .unwrap();
         assert_eq!(out.stdout, "$(id) ; echo pwned");
     }
 
@@ -257,7 +297,10 @@ mod tests {
         let r = run(
             Path::new("/bin/sleep"),
             &[os("5")],
-            &RunOpts { timeout: Some(Duration::from_millis(200)), ..Default::default() },
+            &RunOpts {
+                timeout: Some(Duration::from_millis(200)),
+                ..Default::default()
+            },
         )
         .await;
         assert!(r.is_err());

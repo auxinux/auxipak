@@ -47,7 +47,11 @@ impl Ctx<'_> {
     }
 
     fn opts(&self) -> RunOpts {
-        RunOpts { cwd: Some(self.work.to_path_buf()), env: vec![], timeout: Some(self.timeout()) }
+        RunOpts {
+            cwd: Some(self.work.to_path_buf()),
+            env: vec![],
+            timeout: Some(self.timeout()),
+        }
     }
 
     /// Développe un chemin `{racine}/...`.
@@ -64,7 +68,11 @@ impl Ctx<'_> {
             Verdict::Failure => bail!(
                 "{what} a échoué (code {}) : {}",
                 out.code,
-                last_lines(if out.stderr.trim().is_empty() { &out.stdout } else { &out.stderr })
+                last_lines(if out.stderr.trim().is_empty() {
+                    &out.stdout
+                } else {
+                    &out.stderr
+                })
             ),
         }
     }
@@ -104,7 +112,9 @@ pub fn expand_path(paths: &Paths, app_id: &str, templated: &str) -> Result<PathB
 }
 
 fn env_dir(var: &str) -> Result<PathBuf> {
-    std::env::var_os(var).map(PathBuf::from).ok_or_else(|| anyhow!("variable {var} absente"))
+    std::env::var_os(var)
+        .map(PathBuf::from)
+        .ok_or_else(|| anyhow!("variable {var} absente"))
 }
 
 /// Chemin local de l'installateur : fichier extrait ou téléchargement contrôlé.
@@ -118,7 +128,10 @@ async fn artifact(ctx: &Ctx<'_>, source: &Source) -> Result<PathBuf> {
     }
     let url_s = source.url.as_deref().context("source sans fichier ni URL")?;
     let url = auxipak_core::netpolicy::validate_https_url(url_s).map_err(|e| anyhow!(e))?;
-    let sha = source.sha256.as_deref().context("SHA-256 obligatoire pour une source distante")?;
+    let sha = source
+        .sha256
+        .as_deref()
+        .context("SHA-256 obligatoire pour une source distante")?;
     let name = match &source.file_name {
         Some(n) => n.clone(),
         None => url
@@ -141,7 +154,10 @@ async fn artifact(ctx: &Ctx<'_>, source: &Source) -> Result<PathBuf> {
             size: source.size,
             max_size: source.size.unwrap_or(ctx.config.policy.max_download_bytes),
         },
-        &RedirectPolicy { allowed_hosts: source.allowed_hosts.clone(), allow_insecure_localhost: false },
+        &RedirectPolicy {
+            allowed_hosts: source.allowed_hosts.clone(),
+            allow_insecure_localhost: false,
+        },
     )
     .await?;
     Ok(dest)
@@ -180,7 +196,14 @@ fn adapter(ctx: &Ctx<'_>, m: Manager) -> Result<&'static str> {
     Ok(m.as_str())
 }
 
-async fn run_adapter(ctx: &Ctx<'_>, a: &AdapterConfig, which: &str, cmd: &[String], packages: &[String], file: Option<&Path>) -> Result<executor::Output> {
+async fn run_adapter(
+    ctx: &Ctx<'_>,
+    a: &AdapterConfig,
+    which: &str,
+    cmd: &[String],
+    packages: &[String],
+    file: Option<&Path>,
+) -> Result<executor::Output> {
     if cmd.is_empty() {
         bail!(
             "l'adaptateur « {which} » n'est pas configuré pour cette opération (voir [adapters] dans config.toml et docs/CLI_REFERENCE.md)"
@@ -219,8 +242,14 @@ async fn manager_install(ctx: &Ctx<'_>, m: Manager, packages: &[String]) -> Resu
             let mut reboot = false;
             for p in packages {
                 let args = [
-                    "install", "--id", p, "--exact", "--silent", "--accept-package-agreements",
-                    "--accept-source-agreements", "--disable-interactivity",
+                    "install",
+                    "--id",
+                    p,
+                    "--exact",
+                    "--silent",
+                    "--accept-package-agreements",
+                    "--accept-source-agreements",
+                    "--disable-interactivity",
                 ]
                 .map(os);
                 let out = executor::run(&resolve(Tool::Winget)?, &args, &ctx.opts()).await?;
@@ -325,10 +354,20 @@ pub async fn run_script(ctx: &Ctx<'_>, script: &str, args: &[String], action: &s
     let (program, mut argv) = if script.ends_with(".ps1") {
         (
             resolve(Tool::PowerShell)?,
-            vec![os("-NoProfile"), os("-NonInteractive"), os("-ExecutionPolicy"), os("Bypass"), os("-File"), path.into_os_string()],
+            vec![
+                os("-NoProfile"),
+                os("-NonInteractive"),
+                os("-ExecutionPolicy"),
+                os("Bypass"),
+                os("-File"),
+                path.into_os_string(),
+            ],
         )
     } else {
-        (resolve(Tool::Bash)?, vec![os("--noprofile"), os("--norc"), path.into_os_string()])
+        (
+            resolve(Tool::Bash)?,
+            vec![os("--noprofile"), os("--norc"), path.into_os_string()],
+        )
     };
     argv.extend(args.iter().map(os));
     let mut o = ctx.opts();
@@ -338,9 +377,15 @@ pub async fn run_script(ctx: &Ctx<'_>, script: &str, args: &[String], action: &s
         ("AUXIPAK_APP_ID".into(), ctx.app_id.into()),
         ("AUXIPAK_VERSION".into(), ctx.version.into()),
         ("AUXIPAK_PAYLOAD_DIR".into(), ctx.root.join("payload").display().to_string()),
-        ("AUXIPAK_APP_DIR".into(), ctx.paths.apps_dir.join(ctx.app_id).display().to_string()),
+        (
+            "AUXIPAK_APP_DIR".into(),
+            ctx.paths.apps_dir.join(ctx.app_id).display().to_string(),
+        ),
         ("AUXIPAK_BIN_DIR".into(), ctx.paths.bin_dir.display().to_string()),
-        ("AUXIPAK_DATA_DIR".into(), ctx.paths.data_dir.join(ctx.app_id).display().to_string()),
+        (
+            "AUXIPAK_DATA_DIR".into(),
+            ctx.paths.data_dir.join(ctx.app_id).display().to_string(),
+        ),
     ]);
     eprintln!("  exécution du script autorisé {script} ({action})");
     let out = executor::run(&program, &argv, &o).await?;
@@ -383,7 +428,12 @@ pub async fn install(ctx: &Ctx<'_>, txn: &mut Transaction) -> Result<Outcome> {
                 outcome.reboot |= ctx.check("apt-get install (.deb)", &out, &[])?;
             }
         }
-        Install::Msi { source, properties, scope, .. } => {
+        Install::Msi {
+            source,
+            properties,
+            scope,
+            ..
+        } => {
             let file = artifact(ctx, source).await?;
             outcome.manager = "msiexec".into();
             let mut args = vec![os("/i"), file.into_os_string(), os("/qn"), os("/norestart")];
@@ -513,7 +563,9 @@ fn applications_dir() -> PathBuf {
     if crate::privileges::is_elevated() {
         "/Applications".into()
     } else {
-        std::env::var_os("HOME").map(|h| PathBuf::from(h).join("Applications")).unwrap_or_else(|| "/Applications".into())
+        std::env::var_os("HOME")
+            .map(|h| PathBuf::from(h).join("Applications"))
+            .unwrap_or_else(|| "/Applications".into())
     }
 }
 
@@ -525,8 +577,13 @@ async fn install_dmg(ctx: &Ctx<'_>, file: &Path, app: &str) -> Result<PathBuf> {
     std::fs::create_dir_all(&mnt)?;
     let hdiutil = resolve(Tool::Hdiutil)?;
     let attach = vec![
-        os("attach"), os("-nobrowse"), os("-readonly"), os("-noautoopen"), os("-mountpoint"),
-        mnt.clone().into_os_string(), file.as_os_str().to_owned(),
+        os("attach"),
+        os("-nobrowse"),
+        os("-readonly"),
+        os("-noautoopen"),
+        os("-mountpoint"),
+        mnt.clone().into_os_string(),
+        file.as_os_str().to_owned(),
     ];
     let out = executor::run(&hdiutil, &attach, &ctx.opts()).await?;
     ctx.check("hdiutil attach", &out, &[])?;
@@ -545,7 +602,12 @@ async fn install_dmg(ctx: &Ctx<'_>, file: &Path, app: &str) -> Result<PathBuf> {
         if dest.exists() {
             std::fs::remove_dir_all(&dest)?;
         }
-        let out = executor::run(&resolve(Tool::Ditto)?, &[src.into_os_string(), dest.clone().into_os_string()], &ctx.opts()).await?;
+        let out = executor::run(
+            &resolve(Tool::Ditto)?,
+            &[src.into_os_string(), dest.clone().into_os_string()],
+            &ctx.opts(),
+        )
+        .await?;
         ctx.check("ditto", &out, &[])?;
         Ok(dest)
     }
@@ -590,7 +652,10 @@ pub async fn remove(ctx: &Ctx<'_>, files: &[PathBuf]) -> Result<bool> {
         }
         Remove::Pkg { package_id, paths } => {
             for p in paths {
-                let ok = p.strip_prefix("/Applications/").map(ids::is_safe_relative_path).unwrap_or(false);
+                let ok = p
+                    .strip_prefix("/Applications/")
+                    .map(ids::is_safe_relative_path)
+                    .unwrap_or(false);
                 if !ok {
                     bail!("chemin refusé : {p}");
                 }
@@ -607,7 +672,10 @@ pub async fn remove(ctx: &Ctx<'_>, files: &[PathBuf]) -> Result<bool> {
             ctx.check("pkgutil --forget", &out, &[])?;
         }
         Remove::App { app } => {
-            for f in files.iter().filter(|f| f.file_name().map(|n| n == app.as_str()).unwrap_or(false)) {
+            for f in files
+                .iter()
+                .filter(|f| f.file_name().map(|n| n == app.as_str()).unwrap_or(false))
+            {
                 if f.exists() {
                     std::fs::remove_dir_all(f)?;
                 }
@@ -646,8 +714,13 @@ pub fn remove_files(files: &[PathBuf]) -> Result<()> {
 
 /// Détecte si l'application est présente sur le système. `None` : inconnu.
 pub async fn detect(ctx: &Ctx<'_>) -> Result<Option<bool>> {
-    let Some(d) = ctx.target.effective_detect() else { return Ok(None) };
-    let quiet = RunOpts { timeout: Some(Duration::from_secs(120)), ..Default::default() };
+    let Some(d) = ctx.target.effective_detect() else {
+        return Ok(None);
+    };
+    let quiet = RunOpts {
+        timeout: Some(Duration::from_secs(120)),
+        ..Default::default()
+    };
     match d {
         Detect::PackageManager { manager, package } => {
             if !ids::is_valid_native_package(&package) {
@@ -660,7 +733,9 @@ pub async fn detect(ctx: &Ctx<'_>) -> Result<Option<bool>> {
                     Ok(Some(out.code == 0 && out.stdout.contains("install ok installed")))
                 }
                 Manager::Auxi | Manager::Virtuaos => {
-                    let Some(a) = adapter_for(ctx.config, manager) else { return Ok(None) };
+                    let Some(a) = adapter_for(ctx.config, manager) else {
+                        return Ok(None);
+                    };
                     if a.query.is_empty() {
                         return Ok(None);
                     }
@@ -720,7 +795,10 @@ mod tests {
         let d = tempfile::tempdir().unwrap();
         let p = Paths::under(d.path(), false);
         assert_eq!(expand_path(&p, "demo", "{bin}/demo").unwrap(), d.path().join("bin/demo"));
-        assert_eq!(expand_path(&p, "demo", "{app}/lib/x").unwrap(), d.path().join("apps/demo/lib/x"));
+        assert_eq!(
+            expand_path(&p, "demo", "{app}/lib/x").unwrap(),
+            d.path().join("apps/demo/lib/x")
+        );
         assert!(expand_path(&p, "demo", "{bin}/../../etc/passwd").is_err());
         assert!(expand_path(&p, "demo", "{root}/x").is_err());
         assert!(expand_path(&p, "demo", "/etc/x").is_err());

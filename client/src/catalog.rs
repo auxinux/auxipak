@@ -75,7 +75,11 @@ pub fn all_candidates(repos: &[RepoData]) -> Vec<Candidate<'_>> {
         let Some(ch) = &r.channel else { continue };
         for rel in &ch.releases {
             let app = r.apps.apps.iter().find(|a| a.id == rel.id);
-            v.push(Candidate { repo: r, release: rel, app });
+            v.push(Candidate {
+                repo: r,
+                release: rel,
+                app,
+            });
         }
     }
     v
@@ -175,7 +179,10 @@ pub fn resolve<'a>(repos: &'a [RepoData], spec: &str, sel: &Selector, default_la
     if pool.is_empty() {
         let revoked = revoked_versions(repos, &spec_l, sel);
         if !revoked.is_empty() {
-            bail!("« {spec} » : version(s) {} révoquée(s) : installation refusée", revoked.join(", "));
+            bail!(
+                "« {spec} » : version(s) {} révoquée(s) : installation refusée",
+                revoked.join(", ")
+            );
         }
         bail!("aucune application « {spec} » n'est disponible pour ce système (essayez « auxipak search {spec} »)");
     }
@@ -194,7 +201,11 @@ pub fn resolve<'a>(repos: &'a [RepoData], spec: &str, sel: &Selector, default_la
         .filter(|c| sel.version.as_ref().map(|r| r.matches(&c.release.version)).unwrap_or(true))
         .filter(|c| sel.language.as_ref().map(|l| lang_score(c.release, l) > 0).unwrap_or(true))
         .collect();
-    let revoked: Vec<String> = matching.iter().filter(|c| c.is_revoked()).map(|c| c.release.version.clone()).collect();
+    let revoked: Vec<String> = matching
+        .iter()
+        .filter(|c| c.is_revoked())
+        .map(|c| c.release.version.clone())
+        .collect();
     let mut ok: Vec<&Candidate> = matching.into_iter().filter(|c| !c.is_revoked()).collect();
     if ok.is_empty() {
         let mut revoked = revoked;
@@ -202,7 +213,10 @@ pub fn resolve<'a>(repos: &'a [RepoData], spec: &str, sel: &Selector, default_la
         revoked.sort();
         revoked.dedup();
         if !revoked.is_empty() {
-            bail!("« {spec} » : version(s) {} révoquée(s) : installation refusée", revoked.join(", "));
+            bail!(
+                "« {spec} » : version(s) {} révoquée(s) : installation refusée",
+                revoked.join(", ")
+            );
         }
         bail!("« {spec} » : aucune version ne correspond aux critères demandés");
     }

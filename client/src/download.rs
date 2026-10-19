@@ -89,10 +89,7 @@ pub async fn fetch(url: &Url, dest: &Path, expect: &Expect, policy: &RedirectPol
     }
     let dir = dest.parent().context("destination sans répertoire parent")?;
     ensure_space(dir, expect.size.unwrap_or(0))?;
-    let part = dest.with_extension(format!(
-        "{}.part",
-        dest.extension().and_then(|e| e.to_str()).unwrap_or("dl")
-    ));
+    let part = dest.with_extension(format!("{}.part", dest.extension().and_then(|e| e.to_str()).unwrap_or("dl")));
     match url.scheme() {
         "file" => {
             let src = url.to_file_path().map_err(|_| anyhow!("URL de fichier invalide"))?;

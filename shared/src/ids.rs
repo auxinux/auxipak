@@ -65,9 +65,9 @@ pub fn is_valid_msi_property(s: &str) -> bool {
 pub fn is_valid_installer_arg(s: &str) -> bool {
     !s.is_empty()
         && s.len() <= 256
-        && !s.chars().any(|c| {
-            c.is_control() || matches!(c, '"' | '\'' | '`' | '$' | ';' | '|' | '&' | '<' | '>' | '%' | '^')
-        })
+        && !s
+            .chars()
+            .any(|c| c.is_control() || matches!(c, '"' | '\'' | '`' | '$' | ';' | '|' | '&' | '<' | '>' | '%' | '^'))
 }
 
 /// Chemin relatif sûr à l'intérieur d'une archive `.apak` :
@@ -86,7 +86,9 @@ pub fn is_safe_relative_path(p: &str) -> bool {
             && c != "."
             && c != ".."
             && c.len() <= 255
-            && !c.chars().any(|ch| ch.is_control() || matches!(ch, '<' | '>' | ':' | '"' | '|' | '?' | '*'))
+            && !c
+                .chars()
+                .any(|ch| ch.is_control() || matches!(ch, '<' | '>' | ':' | '"' | '|' | '?' | '*'))
             && !c.ends_with(' ')
             && !c.ends_with('.')
             && !is_windows_reserved(c)
@@ -96,9 +98,7 @@ pub fn is_safe_relative_path(p: &str) -> bool {
 fn is_windows_reserved(component: &str) -> bool {
     let stem = component.split('.').next().unwrap_or("").to_ascii_uppercase();
     matches!(stem.as_str(), "CON" | "PRN" | "AUX" | "NUL")
-        || ((stem.starts_with("COM") || stem.starts_with("LPT"))
-            && stem.len() == 4
-            && stem.as_bytes()[3].is_ascii_digit())
+        || ((stem.starts_with("COM") || stem.starts_with("LPT")) && stem.len() == 4 && stem.as_bytes()[3].is_ascii_digit())
 }
 
 /// Nom de fichier simple (sans répertoire).

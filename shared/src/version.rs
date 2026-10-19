@@ -80,8 +80,7 @@ pub fn is_valid_version(v: &str) -> bool {
     !v.is_empty()
         && v.len() <= 64
         && v.as_bytes()[0].is_ascii_digit()
-        && v
-            .bytes()
+        && v.bytes()
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, b'.' | b'+' | b'-' | b'~' | b'_'))
 }
 
@@ -104,7 +103,10 @@ pub struct VersionReq {
 
 impl VersionReq {
     pub fn any() -> Self {
-        VersionReq { raw: "*".into(), clauses: vec![] }
+        VersionReq {
+            raw: "*".into(),
+            clauses: vec![],
+        }
     }
 
     pub fn parse(s: &str) -> Result<Self, String> {

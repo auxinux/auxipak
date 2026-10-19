@@ -35,8 +35,16 @@ fn rt() -> tokio::runtime::Runtime {
 impl Fixture {
     fn new() -> Fixture {
         let dir = tempfile::tempdir().unwrap();
-        rt().block_on(auxipak_core::keyset::generate(&dir.path().join("keys"), "Test", 30)).unwrap();
-        let f = Fixture { dir, generation: 0, packages: vec![], apps: vec![], revoked: vec![], ttl: 3600 };
+        rt().block_on(auxipak_core::keyset::generate(&dir.path().join("keys"), "Test", 30))
+            .unwrap();
+        let f = Fixture {
+            dir,
+            generation: 0,
+            packages: vec![],
+            apps: vec![],
+            revoked: vec![],
+            ttl: 3600,
+        };
         f.write_config();
         f
     }
@@ -94,7 +102,9 @@ impl Fixture {
             Ok(i) => i.manifest,
             Err(_) => {
                 let mut r = sevenz::reader(apak);
-                auxipak_core::manifest::Manifest::parse(&r.read_file("instruction.auxipak").unwrap()).unwrap().0
+                auxipak_core::manifest::Manifest::parse(&r.read_file("instruction.auxipak").unwrap())
+                    .unwrap()
+                    .0
             }
         };
         let file_name = format!("{}-{}.apak", manifest.id, manifest.version);
@@ -142,7 +152,12 @@ impl Fixture {
         let src = self.p(&format!("src-{}", self.generation));
         std::fs::create_dir_all(&src).unwrap();
         let content = RepoContent {
-            info: RepositoryInfo { name: "official".into(), title: "Test".into(), description: String::new(), official: true },
+            info: RepositoryInfo {
+                name: "official".into(),
+                title: "Test".into(),
+                description: String::new(),
+                official: true,
+            },
             generation: self.generation,
             packages: self.packages.clone(),
             apps: self.apps.clone(),
@@ -152,7 +167,11 @@ impl Fixture {
         let out = self.p(&format!("gen-{}", self.generation));
         let keys: Vec<Box<dyn KeySource>> = ["targets", "snapshot", "timestamp"]
             .iter()
-            .map(|r| Box::new(PemKeySource { path: self.p(&format!("keys/online/{r}.pem")) }) as Box<dyn KeySource>)
+            .map(|r| {
+                Box::new(PemKeySource {
+                    path: self.p(&format!("keys/online/{r}.pem")),
+                }) as Box<dyn KeySource>
+            })
             .collect();
         rt().block_on(tuf::publish(PublishSpec {
             root_path: self.p("keys/public/root.json"),
@@ -271,11 +290,17 @@ fn install_list_upgrade_remove_with_cache() {
     let out = f.ok(&["search", "hello"]);
     assert!(out.contains("hello") && out.contains("1.0.0"), "{out}");
     assert!(f.home().join("state/profile.json").exists());
-    assert!(out.contains("vérifié"), "statut officiel affiché pour un dépôt officiel : {out}");
+    assert!(
+        out.contains("vérifié"),
+        "statut officiel affiché pour un dépôt officiel : {out}"
+    );
     f.ok(&["install", "hello"]);
     assert_eq!(std::fs::read(f.installed_bin("hello")).unwrap(), script("hello", "1.0.0"));
     let list = f.ok(&["list", "--check"]);
-    assert!(list.contains("hello") && list.contains("installed") && !list.contains("absente"), "{list}");
+    assert!(
+        list.contains("hello") && list.contains("installed") && !list.contains("absente"),
+        "{list}"
+    );
     assert!(f.ok(&["install", "hello"]).contains("déjà installé"));
 
     // Nouvelle version : le cache est encore frais, la recherche ne la voit pas…
@@ -381,7 +406,13 @@ fn rejects_revoked_package() {
     f.publish();
     let sha = f.packages[0].sha256.clone();
     f.packages.clear();
-    f.revoked.push(Revocation { id: "hello".into(), version: "1.0.0".into(), sha256: sha, reason: "test".into(), revoked_at: Utc::now() });
+    f.revoked.push(Revocation {
+        id: "hello".into(),
+        version: "1.0.0".into(),
+        sha256: sha,
+        reason: "test".into(),
+        revoked_at: Utc::now(),
+    });
     f.publish();
     f.ok(&["update"]);
     let out = f.fails(&["install", "hello"]);
@@ -391,17 +422,26 @@ fn rejects_revoked_package() {
 #[test]
 fn rejects_malicious_archive() {
     let mut f = Fixture::new();
-    let m = manifest("trav", "1.0.0", "", "").replace("targets:", &format!(
-        "contents:\n  - path: payload/bin/trav\n    sha256: \"{}\"\n    size: 1\ntargets:",
-        auxipak_core::hash::sha256_hex(b"x")
-    ));
+    let m = manifest("trav", "1.0.0", "", "").replace(
+        "targets:",
+        &format!(
+            "contents:\n  - path: payload/bin/trav\n    sha256: \"{}\"\n    size: 1\ntargets:",
+            auxipak_core::hash::sha256_hex(b"x")
+        ),
+    );
     let evil = f.p("evil.apak");
     archive::write_raw_7z(
         &evil,
         vec![
-            (sevenz_rust2::ArchiveEntry::new_file("instruction.auxipak"), Some(m.into_bytes())),
+            (
+                sevenz_rust2::ArchiveEntry::new_file("instruction.auxipak"),
+                Some(m.into_bytes()),
+            ),
             (sevenz_rust2::ArchiveEntry::new_file("payload/bin/trav"), Some(b"x".to_vec())),
-            (sevenz_rust2::ArchiveEntry::new_file("payload/../../../escape"), Some(b"pwned".to_vec())),
+            (
+                sevenz_rust2::ArchiveEntry::new_file("payload/../../../escape"),
+                Some(b"pwned".to_vec()),
+            ),
         ],
     )
     .unwrap();
@@ -416,18 +456,18 @@ fn rejects_malicious_archive() {
     assert!(out.contains("INVALIDE"), "{out}");
 }
 
+#[cfg(unix)]
 #[test]
 fn scripts_require_explicit_authorization() {
     let mut f = Fixture::new();
-    let m = manifest(
-        "scripted",
-        "1.0.0",
-        "    scripts:\n      post_install: scripts/post.sh\n",
-        "",
-    );
+    let m = manifest("scripted", "1.0.0", "    scripts:\n      post_install: scripts/post.sh\n", "");
     // Script de test inoffensif : écrit un marqueur dans le répertoire de données du test.
     let post = b"#!/bin/sh\nmkdir -p \"$AUXIPAK_DATA_DIR\" && echo ok > \"$AUXIPAK_DATA_DIR/marker\"\n";
-    f.add(&m, &[("payload/bin/scripted", &script("scripted", "1")), ("scripts/post.sh", post)], None);
+    f.add(
+        &m,
+        &[("payload/bin/scripted", &script("scripted", "1")), ("scripts/post.sh", post)],
+        None,
+    );
     f.publish();
     f.ok(&["update"]);
     // « search » et « info » n'exécutent jamais de script.
@@ -457,12 +497,20 @@ fn admin_privileges_are_required_when_declared() {
 fn dependencies_are_installed_first_and_protected() {
     let mut f = Fixture::new();
     simple(&mut f, "libdemo", "1.0.0");
-    let m = manifest("appdemo", "2.0.0", "", "dependencies:\n  - id: libdemo\n    version: \">=1.0\"\n");
+    let m = manifest(
+        "appdemo",
+        "2.0.0",
+        "",
+        "dependencies:\n  - id: libdemo\n    version: \">=1.0\"\n",
+    );
     f.add(&m, &[("payload/bin/appdemo", &script("appdemo", "2"))], None);
     f.publish();
     f.ok(&["update"]);
     let out = f.ok(&["install", "appdemo"]);
-    assert!(out.find("libdemo").unwrap() < out.rfind("appdemo 2.0.0 installé").unwrap(), "{out}");
+    assert!(
+        out.find("libdemo").unwrap() < out.rfind("appdemo 2.0.0 installé").unwrap(),
+        "{out}"
+    );
     assert!(f.installed_bin("libdemo").exists() && f.installed_bin("appdemo").exists());
     // Une dépendance utilisée n'est jamais supprimée implicitement.
     let out = f.fails(&["remove", "libdemo"]);
@@ -505,10 +553,19 @@ targets:
     std::fs::write(f.installed_bin("twofiles-b"), b"fichier de l'utilisateur").unwrap();
     let out = f.fails(&["install", "twofiles"]);
     assert!(out.contains("n'est pas géré par AuxiPak"), "{out}");
-    assert_eq!(std::fs::read(f.installed_bin("twofiles-b")).unwrap(), b"fichier de l'utilisateur");
-    assert!(!f.installed_bin("twofiles-a").exists(), "le premier fichier copié doit être retiré");
+    assert_eq!(
+        std::fs::read(f.installed_bin("twofiles-b")).unwrap(),
+        b"fichier de l'utilisateur"
+    );
+    assert!(
+        !f.installed_bin("twofiles-a").exists(),
+        "le premier fichier copié doit être retiré"
+    );
     assert!(f.ok(&["list"]).contains("Aucune application"));
-    assert!(std::fs::read_dir(f.home().join("state/transactions")).unwrap().next().is_none());
+    assert!(std::fs::read_dir(f.home().join("state/transactions"))
+        .unwrap()
+        .next()
+        .is_none());
 }
 
 #[test]
@@ -545,7 +602,9 @@ fn external_repositories_cannot_claim_official_status() {
     f.publish();
     // Même dépôt, ajouté comme dépôt externe : le statut « vérifié » de l'index est ignoré.
     let cfg = f.home().join("config/config.toml");
-    let text = std::fs::read_to_string(&cfg).unwrap().replace("official = true", "official = false");
+    let text = std::fs::read_to_string(&cfg)
+        .unwrap()
+        .replace("official = true", "official = false");
     std::fs::write(&cfg, text).unwrap();
     let out = f.ok(&["search", "hello"]);
     assert!(out.contains("externe") && !out.contains("vérifié"), "{out}");
@@ -554,12 +613,29 @@ fn external_repositories_cannot_claim_official_status() {
 #[test]
 fn repo_management_rejects_insecure_urls() {
     let f = Fixture::new();
-    let out = f.fails(&["repo", "add", "http://example.org/repo", "--name", "ext", "--trust-on-first-use"]);
+    let out = f.fails(&[
+        "repo",
+        "add",
+        "http://example.org/repo",
+        "--name",
+        "ext",
+        "--trust-on-first-use",
+    ]);
     assert!(out.contains("HTTPS"), "{out}");
     let root = f.p("keys/public/root.json");
     let keys = f.p("keys/public/package-keys.json");
     let url = url::Url::from_directory_path(f.repo()).unwrap();
-    f.ok(&["repo", "add", url.as_str(), "--name", "ext", "--root", root.to_str().unwrap(), "--keys", keys.to_str().unwrap()]);
+    f.ok(&[
+        "repo",
+        "add",
+        url.as_str(),
+        "--name",
+        "ext",
+        "--root",
+        root.to_str().unwrap(),
+        "--keys",
+        keys.to_str().unwrap(),
+    ]);
     let list = f.ok(&["repo", "list"]);
     assert!(list.contains("ext") && list.contains("EXTERNE"), "{list}");
     f.ok(&["repo", "remove", "ext"]);
@@ -599,7 +675,11 @@ targets:
     std::fs::create_dir_all(&tools).unwrap();
     let log = f.p("auxi.log");
     let fake = tools.join("auxi");
-    std::fs::write(&fake, "#!/bin/sh\nfor a in \"$@\"; do printf '[%s]' \"$a\"; done >> \"$AUXIPAK_TEST_LOG\"\necho >> \"$AUXIPAK_TEST_LOG\"\n").unwrap();
+    std::fs::write(
+        &fake,
+        "#!/bin/sh\nfor a in \"$@\"; do printf '[%s]' \"$a\"; done >> \"$AUXIPAK_TEST_LOG\"\necho >> \"$AUXIPAK_TEST_LOG\"\n",
+    )
+    .unwrap();
     std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
     let env = [
         ("AUXIPAK_TEST_TOOLS_DIR", tools.to_str().unwrap()),

@@ -74,7 +74,11 @@ pub fn validate_repo_url(raw: &str, allow_insecure_localhost: bool) -> Result<Ur
             } else {
                 Err(format!(
                     "URL de dépôt refusée (HTTPS obligatoire{}) : {raw}",
-                    if local { " ; HTTP local exige allow_insecure_localhost" } else { "" }
+                    if local {
+                        " ; HTTP local exige allow_insecure_localhost"
+                    } else {
+                        ""
+                    }
                 ))
             }
         }
@@ -109,7 +113,9 @@ mod tests {
     fn repo_urls() {
         assert!(validate_repo_url("https://pak.auxinux.ca/repos/official", false).is_ok());
         assert_eq!(
-            validate_repo_url("https://pak.auxinux.ca/repos/official", false).unwrap().as_str(),
+            validate_repo_url("https://pak.auxinux.ca/repos/official", false)
+                .unwrap()
+                .as_str(),
             "https://pak.auxinux.ca/repos/official/"
         );
         assert!(validate_repo_url("http://pak.auxinux.ca/", true).is_err());

@@ -344,10 +344,7 @@ pub fn distribution_from_os_release(osr: &OsRelease) -> Distribution {
             return d;
         }
     }
-    let like = osr
-        .get("ID_LIKE")
-        .map(|s| s.to_ascii_lowercase())
-        .unwrap_or_default();
+    let like = osr.get("ID_LIKE").map(|s| s.to_ascii_lowercase()).unwrap_or_default();
     let likes: Vec<&str> = like.split_whitespace().collect();
     // AuxiNuxOS/VirtuaOS dérivent de Debian mais doivent être reconnus avant
     // la famille générique pour ne jamais utiliser APT directement.

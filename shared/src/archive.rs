@@ -103,7 +103,10 @@ pub struct Inspection {
 }
 
 fn unsafe_entry(path: &str, reason: impl Into<String>) -> ApakError {
-    ApakError::UnsafeEntry { path: path.to_string(), reason: reason.into() }
+    ApakError::UnsafeEntry {
+        path: path.to_string(),
+        reason: reason.into(),
+    }
 }
 
 /// Valide les métadonnées d'une entrée (nom, type, attributs).
@@ -122,11 +125,12 @@ fn check_entry(e: &ArchiveEntry) -> Result<EntryInfo, ApakError> {
         }
         if a & FILE_ATTRIBUTE_UNIX_EXTENSION != 0 {
             let kind = (a >> 16) & S_IFMT;
-            let ok = kind == 0
-                || (kind == S_IFREG && !e.is_directory())
-                || (kind == S_IFDIR && e.is_directory());
+            let ok = kind == 0 || (kind == S_IFREG && !e.is_directory()) || (kind == S_IFDIR && e.is_directory());
             if !ok {
-                return Err(unsafe_entry(&path, "type de fichier spécial interdit (lien symbolique, périphérique…)"));
+                return Err(unsafe_entry(
+                    &path,
+                    "type de fichier spécial interdit (lien symbolique, périphérique…)",
+                ));
             }
         }
     }
@@ -137,9 +141,16 @@ fn check_entry(e: &ArchiveEntry) -> Result<EntryInfo, ApakError> {
         path == MANIFEST_FILE || (top == "payload" || top == "scripts") && path.contains('/')
     };
     if !allowed {
-        return Err(unsafe_entry(&path, "seuls instruction.auxipak, payload/ et scripts/ sont autorisés"));
+        return Err(unsafe_entry(
+            &path,
+            "seuls instruction.auxipak, payload/ et scripts/ sont autorisés",
+        ));
     }
-    Ok(EntryInfo { path, size: if e.is_directory() { 0 } else { e.size() }, is_dir: e.is_directory() })
+    Ok(EntryInfo {
+        path,
+        size: if e.is_directory() { 0 } else { e.size() },
+        is_dir: e.is_directory(),
+    })
 }
 
 fn open_reader(path: &Path) -> Result<ArchiveReader<File>, ApakError> {
@@ -154,7 +165,11 @@ pub fn inspect(path: &Path, limits: &Limits) -> Result<Inspection, ApakError> {
     let mut reader = open_reader(path)?;
     let files = reader.archive().files.clone();
     if files.len() > limits.max_entries {
-        return Err(ApakError::Limit(format!("{} entrées (maximum {})", files.len(), limits.max_entries)));
+        return Err(ApakError::Limit(format!(
+            "{} entrées (maximum {})",
+            files.len(),
+            limits.max_entries
+        )));
     }
     let mut entries = Vec::with_capacity(files.len());
     let mut seen = BTreeSet::new();
@@ -167,13 +182,19 @@ pub fn inspect(path: &Path, limits: &Limits) -> Result<Inspection, ApakError> {
             return Err(unsafe_entry(&info.path, "entrée dupliquée"));
         }
         if info.size > limits.max_entry_size {
-            return Err(ApakError::Limit(format!("entrée {} trop volumineuse ({} octets)", info.path, info.size)));
+            return Err(ApakError::Limit(format!(
+                "entrée {} trop volumineuse ({} octets)",
+                info.path, info.size
+            )));
         }
         total = total.saturating_add(info.size);
         entries.push(info);
     }
     if total > limits.max_total_size {
-        return Err(ApakError::Limit(format!("taille décompressée totale {total} > {}", limits.max_total_size)));
+        return Err(ApakError::Limit(format!(
+            "taille décompressée totale {total} > {}",
+            limits.max_total_size
+        )));
     }
     if total > 64 * 1024 * 1024 && total / archive_size.max(1) > limits.max_ratio {
         return Err(ApakError::Limit(format!(
@@ -188,7 +209,10 @@ pub fn inspect(path: &Path, limits: &Limits) -> Result<Inspection, ApakError> {
         for m in methods {
             let id = m.id();
             if id != EncoderMethod::ID_LZMA2 && id != EncoderMethod::ID_LZMA && id != EncoderMethod::ID_COPY {
-                return Err(unsafe_entry(&e.path, format!("méthode de compression non autorisée : {}", m.name())));
+                return Err(unsafe_entry(
+                    &e.path,
+                    format!("méthode de compression non autorisée : {}", m.name()),
+                ));
             }
         }
     }
@@ -233,7 +257,10 @@ fn check_contents(m: &Manifest, entries: &[EntryInfo]) -> Result<(), ApakError> 
     }
     for c in &m.contents {
         if !present.contains(c.path.as_str()) {
-            return Err(ApakError::Contents(format!("fichier déclaré absent de l'archive : {}", c.path)));
+            return Err(ApakError::Contents(format!(
+                "fichier déclaré absent de l'archive : {}",
+                c.path
+            )));
         }
     }
     Ok(())
@@ -247,8 +274,7 @@ pub fn extract(path: &Path, dest: &Path, limits: &Limits) -> Result<Inspection, 
         return Err(ApakError::Io(io::Error::other("le répertoire de destination n'est pas vide")));
     }
     let dest = dest.canonicalize()?;
-    let declared: BTreeMap<String, ContentEntry> =
-        insp.manifest.contents.iter().map(|c| (c.path.clone(), c.clone())).collect();
+    let declared: BTreeMap<String, ContentEntry> = insp.manifest.contents.iter().map(|c| (c.path.clone(), c.clone())).collect();
     let mut reader = open_reader(path)?;
     let mut written_total = 0u64;
     let mut extracted = BTreeSet::new();
@@ -383,14 +409,19 @@ pub fn build(manifest: &Manifest, files: &[BuildFile], out: &Path) -> Result<(Ma
         }
         let meta = fs::symlink_metadata(&f.source)?;
         if !meta.file_type().is_file() {
-            return Err(unsafe_entry(p, "la source doit être un fichier ordinaire (pas de lien symbolique)"));
+            return Err(unsafe_entry(
+                p,
+                "la source doit être un fichier ordinaire (pas de lien symbolique)",
+            ));
         }
         let (sha256, size) = sha256_file(&f.source)?;
-        let executable = f.executable
-            || p.ends_with(".sh")
-            || is_unix_executable(&meta)
-            || executable_in_manifest(&m, p);
-        contents.push(ContentEntry { path: p.clone(), sha256, size, executable });
+        let executable = f.executable || p.ends_with(".sh") || is_unix_executable(&meta) || executable_in_manifest(&m, p);
+        contents.push(ContentEntry {
+            path: p.clone(),
+            sha256,
+            size,
+            executable,
+        });
     }
     m.contents = contents;
     let yaml = m.to_yaml();
@@ -499,7 +530,11 @@ targets:
         let out = dir.join("Test-1.0.0-fr.apak");
         build(
             &m,
-            &[BuildFile { archive_path: "payload/bin/hello".into(), source: src, executable: true }],
+            &[BuildFile {
+                archive_path: "payload/bin/hello".into(),
+                source: src,
+                executable: true,
+            }],
             &out,
         )
         .unwrap();
@@ -522,7 +557,10 @@ targets:
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            assert_eq!(fs::metadata(out.join("payload/bin/hello")).unwrap().permissions().mode() & 0o777, 0o700);
+            assert_eq!(
+                fs::metadata(out.join("payload/bin/hello")).unwrap().permissions().mode() & 0o777,
+                0o700
+            );
         }
     }
 
@@ -575,7 +613,10 @@ targets:
     fn rejects_path_traversal() {
         let dir = tempfile::tempdir().unwrap();
         for name in ["../evil", "payload/../../evil", "/etc/passwd", "payload/..\\evil", "C:/evil"] {
-            let p = raw(dir.path(), vec![manifest_entry(), (ArchiveEntry::new_file(name), Some(b"x".to_vec()))]);
+            let p = raw(
+                dir.path(),
+                vec![manifest_entry(), (ArchiveEntry::new_file(name), Some(b"x".to_vec()))],
+            );
             let err = inspect(&p, &Limits::default()).unwrap_err();
             assert!(matches!(err, ApakError::UnsafeEntry { .. }), "{name}: {err}");
         }
@@ -600,7 +641,10 @@ targets:
     #[test]
     fn rejects_unexpected_top_level_and_duplicates() {
         let dir = tempfile::tempdir().unwrap();
-        let p = raw(dir.path(), vec![manifest_entry(), (ArchiveEntry::new_file("autorun.sh"), Some(b"x".to_vec()))]);
+        let p = raw(
+            dir.path(),
+            vec![manifest_entry(), (ArchiveEntry::new_file("autorun.sh"), Some(b"x".to_vec()))],
+        );
         assert!(matches!(inspect(&p, &Limits::default()), Err(ApakError::UnsafeEntry { .. })));
         let p = raw(
             dir.path(),
@@ -635,7 +679,10 @@ targets:
         );
         assert!(matches!(inspect(&p, &Limits::default()), Err(ApakError::Contents(_))));
         // Fichier déclaré mais absent.
-        let p = raw(dir.path(), vec![(ArchiveEntry::new_file(MANIFEST_FILE), Some(manifest.into_bytes()))]);
+        let p = raw(
+            dir.path(),
+            vec![(ArchiveEntry::new_file(MANIFEST_FILE), Some(manifest.into_bytes()))],
+        );
         assert!(matches!(inspect(&p, &Limits::default()), Err(ApakError::Contents(_))));
     }
 
@@ -661,7 +708,10 @@ targets:
         let err = inspect(&p, &Limits::default()).unwrap_err();
         assert!(matches!(err, ApakError::Limit(_)), "{err}");
         // Limite de taille totale.
-        let small = Limits { max_total_size: 1024, ..Limits::default() };
+        let small = Limits {
+            max_total_size: 1024,
+            ..Limits::default()
+        };
         assert!(matches!(inspect(&p, &small), Err(ApakError::Limit(_))));
     }
 

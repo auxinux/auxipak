@@ -16,7 +16,10 @@ fn main() {
             let dir = PathBuf::from(dir);
             let root = dir.join("root.json");
             let keys = dir.join("package-keys.json");
-            assert!(root.exists() && keys.exists(), "AUXIPAK_OFFICIAL_TRUST_DIR doit contenir root.json et package-keys.json");
+            assert!(
+                root.exists() && keys.exists(),
+                "AUXIPAK_OFFICIAL_TRUST_DIR doit contenir root.json et package-keys.json"
+            );
             println!("cargo:rerun-if-changed={}", root.display());
             println!("cargo:rerun-if-changed={}", keys.display());
             code.push_str(&format!(

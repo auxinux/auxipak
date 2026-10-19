@@ -45,7 +45,10 @@ fn detect_arch() -> Option<Arch> {
     #[cfg(target_os = "macos")]
     {
         // Rosetta 2 : un binaire x86_64 sur Apple Silicon.
-        if let Ok(out) = std::process::Command::new("/usr/sbin/sysctl").args(["-in", "sysctl.proc_translated"]).output() {
+        if let Ok(out) = std::process::Command::new("/usr/sbin/sysctl")
+            .args(["-in", "sysctl.proc_translated"])
+            .output()
+        {
             if String::from_utf8_lossy(&out.stdout).trim() == "1" {
                 return Some(Arch::Arm64);
             }
@@ -76,7 +79,9 @@ fn detect_windows(arch: Arch) -> SystemProfile {
         version: info.version().to_string(),
         arch,
         raw_id: "windows".into(),
-        pretty_name: format!("{} {}", info.os_type(), info.edition().unwrap_or("")).trim().to_string(),
+        pretty_name: format!("{} {}", info.os_type(), info.edition().unwrap_or(""))
+            .trim()
+            .to_string(),
         immutable: false,
     }
 }
@@ -112,10 +117,17 @@ pub fn load_or_detect(paths: &Paths) -> Result<ProfileStatus> {
         Some(s) => (s.profile.fingerprint() != current.fingerprint(), false),
     };
     if stored.as_ref().map(|s| s.profile != current).unwrap_or(true) {
-        let sp = StoredProfile { profile: current.clone(), detected_at: Utc::now() };
+        let sp = StoredProfile {
+            profile: current.clone(),
+            detected_at: Utc::now(),
+        };
         atomic_write(&file, &serde_json::to_vec_pretty(&sp)?)?;
     }
-    Ok(ProfileStatus { profile: current, changed, first_run })
+    Ok(ProfileStatus {
+        profile: current,
+        changed,
+        first_run,
+    })
 }
 
 #[cfg(test)]
@@ -126,7 +138,11 @@ mod tests {
     fn detects_from_fake_root() {
         let d = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(d.path().join("etc")).unwrap();
-        std::fs::write(d.path().join("etc/os-release"), "ID=auxinuxos\nVERSION_ID=1.0\nID_LIKE=debian\n").unwrap();
+        std::fs::write(
+            d.path().join("etc/os-release"),
+            "ID=auxinuxos\nVERSION_ID=1.0\nID_LIKE=debian\n",
+        )
+        .unwrap();
         let p = detect_linux(d.path(), Arch::X86_64).unwrap();
         assert_eq!(p.distribution, Distribution::Auxinuxos);
         assert!(p.immutable);

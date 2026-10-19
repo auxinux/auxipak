@@ -65,7 +65,11 @@ impl KeySource for PemKeySource {
         Ok(Box::new(parse_keypair(&der)?))
     }
 
-    async fn write(&self, _value: &str, _key_id_hex: &str) -> std::result::Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
+    async fn write(
+        &self,
+        _value: &str,
+        _key_id_hex: &str,
+    ) -> std::result::Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
         Err("écriture de clé non prise en charge".into())
     }
 }
@@ -89,7 +93,11 @@ impl KeySource for MemKeySource {
         Ok(Box::new(parse_keypair(&der)?))
     }
 
-    async fn write(&self, _value: &str, _key_id_hex: &str) -> std::result::Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
+    async fn write(
+        &self,
+        _value: &str,
+        _key_id_hex: &str,
+    ) -> std::result::Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
         Err("écriture de clé non prise en charge".into())
     }
 }
@@ -148,7 +156,11 @@ pub async fn create_root(spec: RootSpec) -> Result<Vec<u8>> {
         }
         root.roles.insert(
             role,
-            RoleKeys { keyids: ids, threshold: NonZeroU64::new(threshold).unwrap(), _extra: HashMap::new() },
+            RoleKeys {
+                keyids: ids,
+                threshold: NonZeroU64::new(threshold).unwrap(),
+                _extra: HashMap::new(),
+            },
         );
         Ok(())
     };
@@ -199,7 +211,11 @@ pub fn summarize_root(bytes: &[u8]) -> Result<RootSummary> {
         })
         .collect();
     roles.sort();
-    Ok(RootSummary { version: r.version.get(), expires: r.expires.to_string(), roles })
+    Ok(RootSummary {
+        version: r.version.get(),
+        expires: r.expires.to_string(),
+        roles,
+    })
 }
 
 /// Paramètres de publication d'un dépôt TUF.
@@ -232,7 +248,9 @@ pub async fn publish(spec: PublishSpec) -> Result<()> {
             bail!("nom de cible dangereux : {name}");
         }
         let t = Target::from_path(path).await.map_err(|e| anyhow!("cible {name} : {e}"))?;
-        editor.add_target(name.as_str(), t).map_err(|e| anyhow!("cible {name} : {e}"))?;
+        editor
+            .add_target(name.as_str(), t)
+            .map_err(|e| anyhow!("cible {name} : {e}"))?;
     }
     editor
         .targets_version(v)
@@ -244,7 +262,10 @@ pub async fn publish(spec: PublishSpec) -> Result<()> {
         .timestamp_version(v)
         .timestamp_expires(to_jiff(spec.timestamp_expires)?);
     let signed = editor.sign(&spec.keys).await.map_err(|e| anyhow!("signature TUF : {e}"))?;
-    signed.write(&meta_dir).await.map_err(|e| anyhow!("écriture des métadonnées : {e}"))?;
+    signed
+        .write(&meta_dir)
+        .await
+        .map_err(|e| anyhow!("écriture des métadonnées : {e}"))?;
     // Copie des racines successives pour permettre la rotation côté client.
     for (name, path) in &spec.targets {
         let dest = targets_dir.join(name);
@@ -387,7 +408,15 @@ pub mod tests {
         let root = keys.root_json().await;
         let root_path = dir.path().join("root.json");
         std::fs::write(&root_path, &root).unwrap();
-        let repo = publish_simple(dir.path(), &keys, &root_path, 1, b"{\"v\":1}", Utc::now() + Duration::hours(24)).await;
+        let repo = publish_simple(
+            dir.path(),
+            &keys,
+            &root_path,
+            1,
+            b"{\"v\":1}",
+            Utc::now() + Duration::hours(24),
+        )
+        .await;
         let ds = dir.path().join("ds");
         std::fs::create_dir(&ds).unwrap();
         let r = load(&repo, &root, &ds).await.unwrap();
@@ -417,7 +446,15 @@ pub mod tests {
         let root = keys.root_json().await;
         let root_path = dir.path().join("root.json");
         std::fs::write(&root_path, &root).unwrap();
-        let repo = publish_simple(dir.path(), &keys, &root_path, 1, b"{\"v\":1}", Utc::now() + Duration::hours(24)).await;
+        let repo = publish_simple(
+            dir.path(),
+            &keys,
+            &root_path,
+            1,
+            b"{\"v\":1}",
+            Utc::now() + Duration::hours(24),
+        )
+        .await;
         // Cible falsifiée : le contenu ne correspond plus à l'empreinte signée.
         let target = repo.join("targets/index.json");
         std::fs::remove_file(&target).unwrap();
@@ -438,7 +475,12 @@ pub mod tests {
         // Métadonnées falsifiées : la signature de targets.json ne correspond plus.
         let tj = repo.join("metadata/targets.json");
         let text = std::fs::read_to_string(&tj).unwrap();
-        std::fs::write(&tj, text.replacen("\"version\": 1", "\"version\": 1 ", 1).replace("\"length\": 7", "\"length\": 8")).unwrap();
+        std::fs::write(
+            &tj,
+            text.replacen("\"version\": 1", "\"version\": 1 ", 1)
+                .replace("\"length\": 7", "\"length\": 8"),
+        )
+        .unwrap();
         let ds2 = dir.path().join("ds2");
         std::fs::create_dir(&ds2).unwrap();
         assert!(load(&repo, &root, &ds2).await.is_err());
@@ -472,7 +514,15 @@ pub mod tests {
         let root_path = dir.path().join("root.json");
         std::fs::write(&root_path, &attacker_root).unwrap();
         // Dépôt signé par des clés non désignées par la racine de confiance du client.
-        let repo = publish_simple(dir.path(), &attacker, &root_path, 1, b"evil", Utc::now() + Duration::hours(24)).await;
+        let repo = publish_simple(
+            dir.path(),
+            &attacker,
+            &root_path,
+            1,
+            b"evil",
+            Utc::now() + Duration::hours(24),
+        )
+        .await;
         std::fs::copy(dir.path().join("root.json"), repo.join("metadata/1.root.json")).unwrap();
         let ds = dir.path().join("ds");
         std::fs::create_dir(&ds).unwrap();

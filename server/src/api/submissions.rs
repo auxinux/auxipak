@@ -52,6 +52,7 @@ const SELECT: &str = "SELECT s.id, s.repository, s.file_name, s.size, s.sha256, 
      FROM submissions s LEFT JOIN users u ON u.id = s.submitted_by LEFT JOIN users r ON r.id = s.reviewed_by";
 
 /// Crée une soumission à partir d'un fichier déjà écrit sur disque.
+#[allow(clippy::too_many_arguments)]
 pub async fn create_from_file(
     st: &AppState,
     actor: &Actor,
@@ -118,10 +119,19 @@ pub async fn create_from_file(
 
 pub async fn load(st: &AppState, id: Uuid) -> ApiResult<SubmissionView> {
     let q = format!("{SELECT} WHERE s.id = $1");
-    Ok(sqlx::query_as(sqlx::AssertSqlSafe(q)).bind(id).fetch_optional(&st.db).await?.ok_or(ApiError::NotFound)?)
+    sqlx::query_as(sqlx::AssertSqlSafe(q))
+        .bind(id)
+        .fetch_optional(&st.db)
+        .await?
+        .ok_or(ApiError::NotFound)
 }
 
-pub async fn create(State(st): State<AppState>, actor: Actor, Query(q): Query<CreateQuery>, body: Body) -> ApiResult<Json<SubmissionView>> {
+pub async fn create(
+    State(st): State<AppState>,
+    actor: Actor,
+    Query(q): Query<CreateQuery>,
+    body: Body,
+) -> ApiResult<Json<SubmissionView>> {
     actor.require(Scope::Submit)?;
     std::fs::create_dir_all(st.config.tmp_dir())?;
     let tmp = st.config.tmp_dir().join(format!("upload-{}.apak", Uuid::new_v4()));
@@ -145,7 +155,12 @@ pub async fn list_for(st: &AppState, actor: &Actor, status: Option<&str>) -> Api
     let q = format!(
         "{SELECT} WHERE ($1::text IS NULL OR s.status = $1) AND ($2 OR s.submitted_by = $3) ORDER BY s.created_at DESC LIMIT 500"
     );
-    Ok(sqlx::query_as(sqlx::AssertSqlSafe(q)).bind(status).bind(all).bind(actor.user_id).fetch_all(&st.db).await?)
+    Ok(sqlx::query_as(sqlx::AssertSqlSafe(q))
+        .bind(status)
+        .bind(all)
+        .bind(actor.user_id)
+        .fetch_all(&st.db)
+        .await?)
 }
 
 pub async fn list(State(st): State<AppState>, actor: Actor, Query(q): Query<ListQuery>) -> ApiResult<Json<Vec<SubmissionView>>> {
@@ -156,7 +171,10 @@ async fn owned_or_reviewer(st: &AppState, actor: &Actor, id: Uuid) -> ApiResult<
     let s = load(st, id).await?;
     if !actor.has(Scope::Review) {
         actor.require(Scope::Submit)?;
-        let owner: Option<(Option<Uuid>,)> = sqlx::query_as("SELECT submitted_by FROM submissions WHERE id = $1").bind(id).fetch_optional(&st.db).await?;
+        let owner: Option<(Option<Uuid>,)> = sqlx::query_as("SELECT submitted_by FROM submissions WHERE id = $1")
+            .bind(id)
+            .fetch_optional(&st.db)
+            .await?;
         if owner.and_then(|o| o.0) != Some(actor.user_id) {
             return Err(ApiError::NotFound);
         }
@@ -169,21 +187,36 @@ pub async fn get_one(State(st): State<AppState>, actor: Actor, Path(id): Path<Uu
 }
 
 /// Joint une signature détachée (vérifiée immédiatement).
-pub async fn put_signature(State(st): State<AppState>, actor: Actor, Path(id): Path<Uuid>, body: Bytes) -> ApiResult<Json<SubmissionView>> {
+pub async fn put_signature(
+    State(st): State<AppState>,
+    actor: Actor,
+    Path(id): Path<Uuid>,
+    body: Bytes,
+) -> ApiResult<Json<SubmissionView>> {
     let s = owned_or_reviewer(&st, &actor, id).await?;
     if s.status != "pending" {
-        return Err(ApiError::Conflict("seule une demande en attente peut recevoir une signature".into()));
+        return Err(ApiError::Conflict(
+            "seule une demande en attente peut recevoir une signature".into(),
+        ));
     }
     let sig = PackageSignature::from_json(&body).map_err(|e| bad(format!("signature illisible : {e}")))?;
     let insp = auxipak_core::archive::inspect(&publisher::submission_file(&st, id), &Default::default())
         .map_err(|e| bad(e.to_string()))?;
-    let key = crate::validation::check_signature(&sig, &insp, &st.keys.package_keys).map_err(|e| bad(format!("signature refusée : {e}")))?;
+    let key = crate::validation::check_signature(&sig, &insp, &st.keys.package_keys)
+        .map_err(|e| bad(format!("signature refusée : {e}")))?;
     sqlx::query("UPDATE submissions SET signature = $2 WHERE id = $1")
         .bind(id)
         .bind(serde_json::to_value(&sig).map_err(anyhow::Error::from)?)
         .execute(&st.db)
         .await?;
-    audit::log(&st.db, Some(&actor), "submission.signature", &s.file_name, serde_json::json!({"submission": id, "key": key})).await;
+    audit::log(
+        &st.db,
+        Some(&actor),
+        "submission.signature",
+        &s.file_name,
+        serde_json::json!({"submission": id, "key": key}),
+    )
+    .await;
     Ok(Json(load(&st, id).await?))
 }
 
@@ -193,7 +226,12 @@ pub struct ReviewReq {
     pub note: String,
 }
 
-pub async fn approve(State(st): State<AppState>, actor: Actor, Path(id): Path<Uuid>, body: Option<Json<ReviewReq>>) -> ApiResult<Json<serde_json::Value>> {
+pub async fn approve(
+    State(st): State<AppState>,
+    actor: Actor,
+    Path(id): Path<Uuid>,
+    body: Option<Json<ReviewReq>>,
+) -> ApiResult<Json<serde_json::Value>> {
     let note = body.map(|b| b.0.note).unwrap_or_default();
     let releases = publisher::approve(&st, &actor, id, &note).await?;
     Ok(Json(serde_json::json!({"status": "published", "releases": releases})))
@@ -217,11 +255,23 @@ pub async fn reject_submission(st: &AppState, actor: &Actor, id: Uuid, note: &st
         return Err(ApiError::Conflict("demande introuvable ou déjà traitée".into()));
     }
     let _ = std::fs::remove_file(publisher::submission_file(st, id));
-    audit::log(&st.db, Some(actor), "submission.reject", &id.to_string(), serde_json::json!({"note": note})).await;
+    audit::log(
+        &st.db,
+        Some(actor),
+        "submission.reject",
+        &id.to_string(),
+        serde_json::json!({"note": note}),
+    )
+    .await;
     Ok(())
 }
 
-pub async fn reject(State(st): State<AppState>, actor: Actor, Path(id): Path<Uuid>, Json(req): Json<ReviewReq>) -> ApiResult<Json<serde_json::Value>> {
+pub async fn reject(
+    State(st): State<AppState>,
+    actor: Actor,
+    Path(id): Path<Uuid>,
+    Json(req): Json<ReviewReq>,
+) -> ApiResult<Json<serde_json::Value>> {
     if !actor.has(Scope::Review) {
         return Err(forbidden("la portée « review » est requise"));
     }

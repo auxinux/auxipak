@@ -106,7 +106,10 @@ pub struct Adapters {
 
 impl Default for Adapters {
     fn default() -> Self {
-        Adapters { auxi: default_auxi(), virtuaos: AdapterConfig::default() }
+        Adapters {
+            auxi: default_auxi(),
+            virtuaos: AdapterConfig::default(),
+        }
     }
 }
 
@@ -141,7 +144,10 @@ fn default_max_download() -> u64 {
 
 impl Default for Policy {
     fn default() -> Self {
-        Policy { allow_brew: true, max_download_bytes: default_max_download() }
+        Policy {
+            allow_brew: true,
+            max_download_bytes: default_max_download(),
+        }
     }
 }
 
@@ -174,7 +180,12 @@ impl Config {
         let cfg: Config = if file.exists() {
             let text = std::fs::read_to_string(&file).with_context(|| format!("lecture de {}", file.display()))?;
             toml::from_str(&text).with_context(|| format!("configuration invalide : {}", file.display()))?
-        } else if let Some(sys) = paths.system_config_dir.as_ref().map(|d| d.join("config.toml")).filter(|f| f.exists()) {
+        } else if let Some(sys) = paths
+            .system_config_dir
+            .as_ref()
+            .map(|d| d.join("config.toml"))
+            .filter(|f| f.exists())
+        {
             let text = std::fs::read_to_string(&sys)?;
             toml::from_str(&text).with_context(|| format!("configuration invalide : {}", sys.display()))?
         } else {
@@ -282,7 +293,7 @@ impl RepoConfig {
 }
 
 /// Valeurs par défaut des adaptateurs, documentées.
-pub fn adapter_for<'a>(cfg: &'a Config, manager: auxipak_core::manifest::Manager) -> Option<&'a AdapterConfig> {
+pub fn adapter_for(cfg: &Config, manager: auxipak_core::manifest::Manager) -> Option<&AdapterConfig> {
     use auxipak_core::manifest::Manager;
     match manager {
         Manager::Auxi => Some(&cfg.adapters.auxi),

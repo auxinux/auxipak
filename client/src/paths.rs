@@ -82,8 +82,12 @@ impl Paths {
 
     #[cfg(windows)]
     fn system() -> Paths {
-        let pd = std::env::var_os("ProgramData").map(PathBuf::from).unwrap_or_else(|| "C:\\ProgramData".into());
-        let pf = std::env::var_os("ProgramFiles").map(PathBuf::from).unwrap_or_else(|| "C:\\Program Files".into());
+        let pd = std::env::var_os("ProgramData")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| "C:\\ProgramData".into());
+        let pf = std::env::var_os("ProgramFiles")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| "C:\\Program Files".into());
         let root = pd.join("AuxiPak");
         Paths {
             scope: Scope::System,
@@ -101,7 +105,9 @@ impl Paths {
     fn user() -> Paths {
         #[cfg(windows)]
         {
-            let la = std::env::var_os("LOCALAPPDATA").map(PathBuf::from).unwrap_or_else(|| ".".into());
+            let la = std::env::var_os("LOCALAPPDATA")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| ".".into());
             let mut p = Paths::under(&la.join("AuxiPak"), false);
             p.system_config_dir = std::env::var_os("ProgramData").map(|d| PathBuf::from(d).join("AuxiPak").join("config"));
             p

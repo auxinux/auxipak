@@ -1,0 +1,96 @@
+# Publication d'une release GitHub (brouillon) à partir d'une étiquette v*.
+# Les binaires sont accompagnés de leurs empreintes SHA-256 et d'attestations
+# de provenance signées (Sigstore). Une release n'est considérée comme sûre
+# qu'après vérification de ces attestations et relecture humaine du brouillon.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Construction ${{ matrix.name }}
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - { name: linux-x86_64, os: ubuntu-24.04, target: x86_64-unknown-linux-gnu, server: true }
+          - { name: linux-arm64, os: ubuntu-24.04-arm, target: aarch64-unknown-linux-gnu, server: true }
+          - { name: windows-x86_64, os: windows-latest, target: x86_64-pc-windows-msvc, server: false }
+          - { name: windows-arm64, os: windows-11-arm, target: aarch64-pc-windows-msvc, server: false }
+          - { name: macos-arm64, os: macos-14, target: aarch64-apple-darwin, server: false }
+          - { name: macos-x86_64, os: macos-14, target: x86_64-apple-darwin, server: false }
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    env:
+      # Ancres de confiance du dépôt officiel (publiques) : intégrées au client
+      # si le répertoire existe (voir docs/SIGNING.md).
+      AUXIPAK_OFFICIAL_TRUST_DIR: ${{ github.workspace }}/trust/official
+    steps:
+      - uses: actions/checkout@v4
+      - name: Ancres de confiance présentes ?
+        shell: bash
+        run: |
+          if [[ ! -f trust/official/root.json ]]; then
+            echo "::warning::trust/official/root.json absent : le client ne contiendra pas d'ancre officielle intégrée"
+            echo "AUXIPAK_OFFICIAL_TRUST_DIR=" >> "$GITHUB_ENV"
+          fi
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - name: Construction
+        shell: bash
+        run: |
+          pkgs="-p auxipak -p auxipak-builder"
+          [[ "${{ matrix.server }}" == "true" ]] && pkgs="$pkgs -p auxipak-server"
+          cargo build --release --locked --target ${{ matrix.target }} $pkgs
+      - name: Archive
+        shell: bash
+        run: |
+          name="auxipak-${GITHUB_REF_NAME}-${{ matrix.name }}"
+          mkdir -p "dist/$name"
+          ext=""; [[ "${{ runner.os }}" == "Windows" ]] && ext=".exe"
+          for b in auxipak auxipak-builder auxipak-server; do
+            f="target/${{ matrix.target }}/release/$b$ext"
+            [[ -f "$f" ]] && cp "$f" "dist/$name/"
+          done
+          cp LICENSE README.md CHANGELOG.md "dist/$name/"
+          cd dist
+          if [[ "${{ runner.os }}" == "Windows" ]]; then 7z a "$name.zip" "$name" >/dev/null; else tar czf "$name.tar.gz" "$name"; fi
+          rm -rf "$name"
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: dist/*
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.name }}
+          path: dist/*
+
+  publish:
+    name: Brouillon de release
+    needs: [build]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - run: cd dist && sha256sum * > SHA256SUMS
+      - uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          files: dist/*
+          body: |
+            Brouillon généré automatiquement. Avant publication :
+            1. vérifier les attestations : `gh attestation verify <fichier> --repo ${{ github.repository }}` ;
+            2. vérifier SHA256SUMS ;
+            3. relecture humaine des notes de version (CHANGELOG.md).

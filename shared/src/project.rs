@@ -73,7 +73,11 @@ fn walk(dir: &Path, prefix: &str, out: &mut Vec<BuildFile>) -> Result<()> {
         } else if ft.is_dir() {
             walk(&e.path(), &format!("{rel}/"), out)?;
         } else if ft.is_file() {
-            out.push(BuildFile { archive_path: rel, source: e.path(), executable: false });
+            out.push(BuildFile {
+                archive_path: rel,
+                source: e.path(),
+                executable: false,
+            });
         }
     }
     Ok(())
@@ -177,13 +181,21 @@ pub fn static_tests(file: &Path, external_tools: bool) -> Result<Vec<Check>> {
             return Ok(report);
         }
     };
-    push("structure et manifeste".into(), true, format!("{} entrées", insp.entries.len()));
+    push(
+        "structure et manifeste".into(),
+        true,
+        format!("{} entrées", insp.entries.len()),
+    );
     let tmp = tempfile::tempdir()?;
     if let Err(e) = archive::extract(file, tmp.path(), &Limits::default()) {
         push("extraction et empreintes".into(), false, e.to_string());
         return Ok(report);
     }
-    push("extraction et empreintes".into(), true, format!("{} octets", insp.total_unpacked));
+    push(
+        "extraction et empreintes".into(),
+        true,
+        format!("{} octets", insp.total_unpacked),
+    );
     let m = &insp.manifest;
     let mut any = false;
     for p in reference_profiles() {
@@ -203,12 +215,25 @@ pub fn static_tests(file: &Path, external_tools: bool) -> Result<Vec<Check>> {
         if let Install::Deb { package, source } = &t.install {
             if let (Some(f), true) = (&source.file, external_tools) {
                 let path = tmp.path().join(f);
-                match std::process::Command::new("dpkg-deb").arg("--field").arg(&path).arg("Package").output() {
+                match std::process::Command::new("dpkg-deb")
+                    .arg("--field")
+                    .arg(&path)
+                    .arg("Package")
+                    .output()
+                {
                     Ok(o) if o.status.success() => {
                         let actual = String::from_utf8_lossy(&o.stdout).trim().to_string();
-                        push(format!("{} : nom du paquet .deb", t.name), &actual == package, format!("control : {actual}, manifeste : {package}"));
+                        push(
+                            format!("{} : nom du paquet .deb", t.name),
+                            &actual == package,
+                            format!("control : {actual}, manifeste : {package}"),
+                        );
                     }
-                    _ => push(format!("{} : contrôle .deb", t.name), true, "dpkg-deb indisponible : non vérifié".into()),
+                    _ => push(
+                        format!("{} : contrôle .deb", t.name),
+                        true,
+                        "dpkg-deb indisponible : non vérifié".into(),
+                    ),
                 }
             }
         }
@@ -220,11 +245,23 @@ pub fn static_tests(file: &Path, external_tools: bool) -> Result<Vec<Check>> {
             let path: PathBuf = tmp.path().join(&s);
             if s.ends_with(".sh") && external_tools {
                 match std::process::Command::new("bash").arg("-n").arg(&path).output() {
-                    Ok(o) => push(format!("{} : syntaxe de {s}", t.name), o.status.success(), String::from_utf8_lossy(&o.stderr).trim().into()),
-                    Err(_) => push(format!("{} : syntaxe de {s}", t.name), true, "bash indisponible : non vérifié".into()),
+                    Ok(o) => push(
+                        format!("{} : syntaxe de {s}", t.name),
+                        o.status.success(),
+                        String::from_utf8_lossy(&o.stderr).trim().into(),
+                    ),
+                    Err(_) => push(
+                        format!("{} : syntaxe de {s}", t.name),
+                        true,
+                        "bash indisponible : non vérifié".into(),
+                    ),
                 }
             } else {
-                push(format!("{} : {s}", t.name), true, "analyse syntaxique non effectuée (examen manuel requis)".into());
+                push(
+                    format!("{} : {s}", t.name),
+                    true,
+                    "analyse syntaxique non effectuée (examen manuel requis)".into(),
+                );
             }
         }
     }
@@ -239,7 +276,11 @@ mod tests {
     fn template_project_builds_and_passes_static_tests() {
         let d = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(d.path().join("payload/bin")).unwrap();
-        std::fs::write(d.path().join(MANIFEST_FILE), render_template("hello", "Hello \"x\"", "1.0", "AuxiNux", "fr", "MIT")).unwrap();
+        std::fs::write(
+            d.path().join(MANIFEST_FILE),
+            render_template("hello", "Hello \"x\"", "1.0", "AuxiNux", "fr", "MIT"),
+        )
+        .unwrap();
         std::fs::write(d.path().join("payload/bin/hello"), b"#!/bin/sh\necho hi\n").unwrap();
         let out = d.path().join("hello.apak");
         let (m, insp) = build(d.path(), &out).unwrap();

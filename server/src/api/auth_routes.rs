@@ -104,17 +104,30 @@ pub async fn login(
 
 pub async fn logout(State(st): State<AppState>, actor: Actor, jar: CookieJar) -> ApiResult<(CookieJar, Json<serde_json::Value>)> {
     if let Via::Session { token_hash, .. } = &actor.via {
-        sqlx::query("DELETE FROM sessions WHERE token_hash = $1").bind(token_hash).execute(&st.db).await?;
+        sqlx::query("DELETE FROM sessions WHERE token_hash = $1")
+            .bind(token_hash)
+            .execute(&st.db)
+            .await?;
     }
-    Ok((jar.remove(Cookie::from(auth::SESSION_COOKIE)), Json(serde_json::json!({"ok": true}))))
+    Ok((
+        jar.remove(Cookie::from(auth::SESSION_COOKIE)),
+        Json(serde_json::json!({"ok": true})),
+    ))
 }
 
 pub async fn me(actor: Actor) -> Json<serde_json::Value> {
-    let scopes: Vec<&str> = [Scope::Read, Scope::Build, Scope::Submit, Scope::Review, Scope::Evaluate, Scope::Admin]
-        .into_iter()
-        .filter(|s| actor.has(*s))
-        .map(|s| s.as_str())
-        .collect();
+    let scopes: Vec<&str> = [
+        Scope::Read,
+        Scope::Build,
+        Scope::Submit,
+        Scope::Review,
+        Scope::Evaluate,
+        Scope::Admin,
+    ]
+    .into_iter()
+    .filter(|s| actor.has(*s))
+    .map(|s| s.as_str())
+    .collect();
     Json(serde_json::json!({
         "user": actor.username, "role": actor.role.as_str(), "kind": actor.kind(), "scopes": scopes,
         "csrf_token": match &actor.via { Via::Session { csrf, .. } => Some(csrf.clone()), _ => None },
@@ -151,7 +164,13 @@ pub struct TokenRow {
 }
 
 /// Crée un jeton ; retourne (identifiant, jeton en clair — affiché une seule fois).
-pub async fn issue_token(st: &AppState, actor: &Actor, owner: Uuid, owner_role: Role, req: &TokenReq) -> ApiResult<(Uuid, String)> {
+pub async fn issue_token(
+    st: &AppState,
+    actor: &Actor,
+    owner: Uuid,
+    owner_role: Role,
+    req: &TokenReq,
+) -> ApiResult<(Uuid, String)> {
     if !actor.is_human() {
         return Err(forbidden("seul un humain peut créer des jetons"));
     }
@@ -160,7 +179,9 @@ pub async fn issue_token(st: &AppState, actor: &Actor, owner: Uuid, owner_role: 
     // un jeton, et uniquement avec des portées que l'émetteur détient lui-même.
     if let Via::Token { .. } = &actor.via {
         if !actor.has(Scope::Admin) {
-            return Err(forbidden("la création de jetons exige une session ou un jeton administrateur"));
+            return Err(forbidden(
+                "la création de jetons exige une session ou un jeton administrateur",
+            ));
         }
         for s in &req.scopes {
             if !Scope::parse(s).map(|sc| actor.has(sc)).unwrap_or(false) {
@@ -214,12 +235,18 @@ pub async fn issue_token(st: &AppState, actor: &Actor, owner: Uuid, owner_role: 
     Ok((id, token))
 }
 
-pub async fn create_own_token(State(st): State<AppState>, actor: Actor, Json(req): Json<TokenReq>) -> ApiResult<Json<serde_json::Value>> {
+pub async fn create_own_token(
+    State(st): State<AppState>,
+    actor: Actor,
+    Json(req): Json<TokenReq>,
+) -> ApiResult<Json<serde_json::Value>> {
     if req.user_id.is_some_and(|u| u != actor.user_id) {
         return Err(forbidden("utilisez /api/v1/admin/tokens pour un autre utilisateur"));
     }
     let (id, token) = issue_token(&st, &actor, actor.user_id, actor.role, &req).await?;
-    Ok(Json(serde_json::json!({"id": id, "token": token, "warning": "ce jeton ne sera plus affiché"})))
+    Ok(Json(
+        serde_json::json!({"id": id, "token": token, "warning": "ce jeton ne sera plus affiché"}),
+    ))
 }
 
 pub async fn list_own_tokens(State(st): State<AppState>, actor: Actor) -> ApiResult<Json<Vec<TokenRow>>> {
@@ -234,7 +261,11 @@ pub async fn list_own_tokens(State(st): State<AppState>, actor: Actor) -> ApiRes
     ))
 }
 
-pub async fn revoke_own_token(State(st): State<AppState>, actor: Actor, Path(id): Path<Uuid>) -> ApiResult<Json<serde_json::Value>> {
+pub async fn revoke_own_token(
+    State(st): State<AppState>,
+    actor: Actor,
+    Path(id): Path<Uuid>,
+) -> ApiResult<Json<serde_json::Value>> {
     let r = sqlx::query("UPDATE api_tokens SET revoked = TRUE WHERE id = $1 AND user_id = $2")
         .bind(id)
         .bind(actor.user_id)

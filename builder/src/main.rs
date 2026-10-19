@@ -137,7 +137,15 @@ fn write_private(path: &Path, data: &str) -> Result<()> {
 
 async fn run(cli: Cli) -> Result<()> {
     match cli.cmd {
-        Cmd::Init { dir, id, name, version, publisher, language, license } => init(&dir, &id, &name, &version, &publisher, &language, &license),
+        Cmd::Init {
+            dir,
+            id,
+            name,
+            version,
+            publisher,
+            language,
+            license,
+        } => init(&dir, &id, &name, &version, &publisher, &language, &license),
         Cmd::Validate { path } => validate(&path, cli.json),
         Cmd::Build { dir, output } => {
             let (out, insp) = build(&dir, output.as_deref())?;
@@ -151,7 +159,13 @@ async fn run(cli: Cli) -> Result<()> {
                 );
             } else {
                 println!("Paquet construit : {}", out.display());
-                println!("  {} {} — {} entrées, {} octets", insp.manifest.id, insp.manifest.version, insp.entries.len(), insp.archive_size);
+                println!(
+                    "  {} {} — {} entrées, {} octets",
+                    insp.manifest.id,
+                    insp.manifest.version,
+                    insp.entries.len(),
+                    insp.archive_size
+                );
                 println!("  SHA-256 : {}", insp.archive_sha256);
                 println!("  (non publié : utilisez « auxipak-builder submit » pour demander la publication)");
             }
@@ -177,12 +191,23 @@ async fn run(cli: Cli) -> Result<()> {
             let trust = TrustedKeys::load(&keys)?;
             let (sha, size) = auxipak_core::hash::sha256_file(&file)?;
             let doc = PackageSignature::from_json(&std::fs::read(format!("{}.sig", file.display()))?)?;
-            let v = doc.verify(&sha, size, &trust, &[KeyPurpose::PackageSigning, KeyPurpose::DeveloperSigning])?;
+            let v = doc.verify(
+                &sha,
+                size,
+                &trust,
+                &[KeyPurpose::PackageSigning, KeyPurpose::DeveloperSigning],
+            )?;
             println!("Signature valide : clé {} ({}), signée le {}", v.key_id, v.owner, v.signed_at);
             Ok(())
         }
         Cmd::Keys { cmd } => keys(cmd).await,
-        Cmd::Submit { file, server, token, repository, note } => submit(&file, &server, &token, &repository, &note, cli.json).await,
+        Cmd::Submit {
+            file,
+            server,
+            token,
+            repository,
+            note,
+        } => submit(&file, &server, &token, &repository, &note, cli.json).await,
     }
 }
 
@@ -204,7 +229,11 @@ fn init(dir: &Path, id: &str, name: &str, version: &str, publisher: &str, langua
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(&placeholder, std::fs::Permissions::from_mode(0o755))?;
     }
-    println!("Projet créé dans {}. Éditez {MANIFEST_FILE}, puis « auxipak-builder build {} ».", dir.display(), dir.display());
+    println!(
+        "Projet créé dans {}. Éditez {MANIFEST_FILE}, puis « auxipak-builder build {} ».",
+        dir.display(),
+        dir.display()
+    );
     Ok(())
 }
 
@@ -246,7 +275,12 @@ fn validate(path: &Path, json: bool) -> Result<()> {
             }))?
         );
     } else {
-        println!("{kind} valide : {} {} ({} variante(s))", manifest.id, manifest.version, manifest.targets.len());
+        println!(
+            "{kind} valide : {} {} ({} variante(s))",
+            manifest.id,
+            manifest.version,
+            manifest.targets.len()
+        );
         for w in warnings {
             println!("{w}");
         }
@@ -258,7 +292,10 @@ fn test(file: &Path, json: bool) -> Result<()> {
     let report = project::static_tests(file, true)?;
     let ok = report.iter().all(|c| c.ok);
     if json {
-        println!("{}", serde_json::to_string_pretty(&serde_json::json!({"ok": ok, "checks": report}))?);
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::json!({"ok": ok, "checks": report}))?
+        );
     } else {
         for c in &report {
             println!("[{}] {} : {}", if c.ok { " OK " } else { "ÉCHEC" }, c.check, c.detail);
@@ -276,13 +313,27 @@ async fn keys(cmd: KeysCmd) -> Result<()> {
         KeysCmd::Generate { out, public, owner } => {
             let s = PackageSigner::generate();
             write_private(&out, &s.to_pem())?;
-            let mut trust = if public.exists() { TrustedKeys::load(&public)? } else { TrustedKeys::new(vec![]) };
+            let mut trust = if public.exists() {
+                TrustedKeys::load(&public)?
+            } else {
+                TrustedKeys::new(vec![])
+            };
             trust.keys.push(s.public_info(&owner, KeyPurpose::PackageSigning));
             std::fs::write(&public, serde_json::to_string_pretty(&trust)?)?;
-            println!("Clé {} créée : privée {} (à protéger), publique ajoutée à {}", s.key_id(), out.display(), public.display());
+            println!(
+                "Clé {} créée : privée {} (à protéger), publique ajoutée à {}",
+                s.key_id(),
+                out.display(),
+                public.display()
+            );
             Ok(())
         }
-        KeysCmd::InitRepository { out, owner, root_days, dev } => {
+        KeysCmd::InitRepository {
+            out,
+            owner,
+            root_days,
+            dev,
+        } => {
             let summary = auxipak_core::keyset::generate(&out, &owner, root_days).await?;
             println!("Racine de confiance créée dans {}", out.display());
             println!("  public/root.json, public/package-keys.json : à distribuer (client, serveur)");
@@ -323,7 +374,9 @@ async fn submit(file: &Path, server: &str, token: &str, repository: &str, note: 
         .append_pair("note", note);
     let f = tokio::fs::File::open(file).await?;
     let body = reqwest::Body::wrap_stream(tokio_util::io::ReaderStream::new(f));
-    let client = reqwest::Client::builder().redirect(reqwest::redirect::Policy::none()).build()?;
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()?;
     let resp = client
         .post(url)
         .bearer_auth(token)

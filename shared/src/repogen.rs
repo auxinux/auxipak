@@ -5,8 +5,8 @@
 //! [`crate::tuf::publish`].
 
 use crate::index::{
-    package_target, AppMeta, AppsIndex, ChannelIndex, ChannelRef, Release, RepoIndex, RepositoryInfo, Revocation,
-    RevocationList, SignatureRef, APPS_TARGET, INDEX_META_VERSION, REPO_INDEX_TARGET, REVOCATIONS_TARGET,
+    package_target, AppMeta, AppsIndex, ChannelIndex, ChannelRef, Release, RepoIndex, RepositoryInfo, Revocation, RevocationList,
+    SignatureRef, APPS_TARGET, INDEX_META_VERSION, REPO_INDEX_TARGET, REVOCATIONS_TARGET,
 };
 use crate::manifest::{Manifest, Target};
 use crate::platform::{Arch, Channel, Distribution, Os};
@@ -44,8 +44,11 @@ pub fn channel_entries(m: &Manifest) -> Vec<ChannelEntry> {
                 m.into_iter().collect()
             }
         };
-        let archs: Vec<Arch> =
-            if t.architectures.contains(&Arch::Any) { vec![Arch::X86_64, Arch::Arm64] } else { t.architectures.clone() };
+        let archs: Vec<Arch> = if t.architectures.contains(&Arch::Any) {
+            vec![Arch::X86_64, Arch::Arm64]
+        } else {
+            t.architectures.clone()
+        };
         for (c, dists) in chans {
             for a in &archs {
                 out.entry((c, *a))
@@ -115,7 +118,10 @@ pub fn write_indexes(content: &RepoContent, src: &Path, now: DateTime<Utc>) -> R
                 target: pkg_target.clone(),
                 size: p.size,
                 sha256: p.sha256.clone(),
-                signature: SignatureRef { target: sig_target.clone(), key_id: p.signature_key_id.clone() },
+                signature: SignatureRef {
+                    target: sig_target.clone(),
+                    key_id: p.signature_key_id.clone(),
+                },
                 published_at: p.published_at,
                 dependencies: m.dependencies.clone(),
                 mode: e.target.mode,
@@ -136,14 +142,36 @@ pub fn write_indexes(content: &RepoContent, src: &Path, now: DateTime<Utc>) -> R
     let mut refs = Vec::new();
     for ((c, a), rels) in &channels {
         let name = c.index_target(*a);
-        let ci = ChannelIndex { meta_version: INDEX_META_VERSION, channel: *c, arch: *a, generated_at: now, releases: rels.clone() };
+        let ci = ChannelIndex {
+            meta_version: INDEX_META_VERSION,
+            channel: *c,
+            arch: *a,
+            generated_at: now,
+            releases: rels.clone(),
+        };
         targets.push((name.clone(), write(&name, &serde_json::to_value(&ci)?)?));
-        refs.push(ChannelRef { channel: *c, arch: *a, target: name, releases: rels.len() });
+        refs.push(ChannelRef {
+            channel: *c,
+            arch: *a,
+            target: name,
+            releases: rels.len(),
+        });
     }
-    let apps = AppsIndex { meta_version: INDEX_META_VERSION, generated_at: now, apps: content.apps.clone() };
+    let apps = AppsIndex {
+        meta_version: INDEX_META_VERSION,
+        generated_at: now,
+        apps: content.apps.clone(),
+    };
     targets.push((APPS_TARGET.into(), write(APPS_TARGET, &serde_json::to_value(&apps)?)?));
-    let rev = RevocationList { meta_version: INDEX_META_VERSION, generated_at: now, revoked: content.revoked.clone() };
-    targets.push((REVOCATIONS_TARGET.into(), write(REVOCATIONS_TARGET, &serde_json::to_value(&rev)?)?));
+    let rev = RevocationList {
+        meta_version: INDEX_META_VERSION,
+        generated_at: now,
+        revoked: content.revoked.clone(),
+    };
+    targets.push((
+        REVOCATIONS_TARGET.into(),
+        write(REVOCATIONS_TARGET, &serde_json::to_value(&rev)?)?,
+    ));
     let index = RepoIndex {
         meta_version: INDEX_META_VERSION,
         repository: content.info.clone(),
@@ -153,7 +181,10 @@ pub fn write_indexes(content: &RepoContent, src: &Path, now: DateTime<Utc>) -> R
         revocations: REVOCATIONS_TARGET.into(),
         channels: refs,
     };
-    targets.push((REPO_INDEX_TARGET.into(), write(REPO_INDEX_TARGET, &serde_json::to_value(&index)?)?));
+    targets.push((
+        REPO_INDEX_TARGET.into(),
+        write(REPO_INDEX_TARGET, &serde_json::to_value(&index)?)?,
+    ));
     Ok(targets)
 }
 
