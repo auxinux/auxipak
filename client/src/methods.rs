@@ -376,7 +376,15 @@ pub async fn run_script(ctx: &Ctx<'_>, script: &str, args: &[String], action: &s
         ("AUXIPAK_ACTION".to_string(), action.to_string()),
         ("AUXIPAK_APP_ID".into(), ctx.app_id.into()),
         ("AUXIPAK_VERSION".into(), ctx.version.into()),
-        ("AUXIPAK_PAYLOAD_DIR".into(), ctx.root.join("payload").display().to_string()),
+        (
+            "AUXIPAK_PAYLOAD_DIR".into(),
+            // Absent à la désinstallation : seuls le manifeste et les scripts sont conservés.
+            if ctx.root.join("payload").is_dir() {
+                ctx.root.join("payload").display().to_string()
+            } else {
+                String::new()
+            },
+        ),
         (
             "AUXIPAK_APP_DIR".into(),
             ctx.paths.apps_dir.join(ctx.app_id).display().to_string(),
@@ -726,6 +734,12 @@ pub async fn detect(ctx: &Ctx<'_>) -> Result<Option<bool>> {
             if !ids::is_valid_native_package(&package) {
                 bail!("paquet invalide");
             }
+            // Un paquet .deb installé sur AuxiNuxOS/VirtuaOS l'a été via l'adaptateur
+            // système : la détection passe par lui, jamais par APT.
+            let manager = match (manager, native_manager(ctx.profile.distribution)) {
+                (Manager::Apt, Some(m @ (Manager::Auxi | Manager::Virtuaos))) => m,
+                (m, _) => m,
+            };
             match manager {
                 Manager::Apt => {
                     let Ok(dq) = resolve(Tool::DpkgQuery) else { return Ok(None) };

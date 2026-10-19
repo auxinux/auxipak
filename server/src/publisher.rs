@@ -254,7 +254,9 @@ async fn regenerate_locked(state: &AppState, repo: &str) -> Result<u64> {
         .fetch_optional(&state.db)
         .await?
         .with_context(|| format!("dépôt inconnu : {repo}"))?;
-    let generation = (r.generation + 1) as u64;
+    // Version TUF strictement croissante, même après restauration d'une
+    // ancienne sauvegarde : au moins le nombre de minutes écoulées depuis 1970.
+    let generation = ((r.generation + 1) as u64).max((Utc::now().timestamp() / 60) as u64);
     let releases: Vec<ReleaseRow> = sqlx::query_as(
         "SELECT id, app_id, version, file_name, size, sha256, signature_key_id, manifest, uses_scripts, state, state_reason,
                 state_changed_at, published_at
@@ -366,6 +368,7 @@ async fn regenerate_locked(state: &AppState, repo: &str) -> Result<u64> {
         snapshot_expires: now + Duration::days(auxipak_core::tuf::expiry::SNAPSHOT_DAYS),
         timestamp_expires: now + Duration::hours(state.config.timestamp_hours),
         out_dir: out.clone(),
+        previous_roots: state.keys.previous_roots.clone(),
     })
     .await?;
     std::fs::create_dir_all(out.join("keys"))?;

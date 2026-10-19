@@ -387,6 +387,21 @@ async fn run(cli: Cli, paths: Paths) -> Result<()> {
             } else {
                 Default::default()
             };
+            // Révocations connues (dernier index validé, sans réseau).
+            let revoked: std::collections::BTreeSet<String> = match Config::load(&paths) {
+                Ok(cfg) => reg
+                    .apps
+                    .values()
+                    .filter(|a| {
+                        cfg.repo(&a.repo)
+                            .and_then(|r| repo::load_cached(r, &paths).ok().flatten())
+                            .map(|d| d.revocations.is_revoked(&a.id, &a.version, &a.package_sha256).is_some())
+                            .unwrap_or(false)
+                    })
+                    .map(|a| a.id.clone())
+                    .collect(),
+                Err(_) => Default::default(),
+            };
             if cli.json {
                 println!("{}", serde_json::to_string_pretty(&reg.apps)?);
             } else if reg.apps.is_empty() {
@@ -400,6 +415,9 @@ async fn run(cli: Cli, paths: Paths) -> Result<()> {
                     let mut state = format!("{:?}", a.state).to_lowercase();
                     if a.simulated {
                         state.push('*');
+                    }
+                    if revoked.contains(&a.id) {
+                        state.push_str(" RÉVOQUÉE");
                     }
                     if let Some(p) = presence.get(&a.id) {
                         match p {
@@ -419,6 +437,9 @@ async fn run(cli: Cli, paths: Paths) -> Result<()> {
                         a.installed_at.format("%Y-%m-%d %H:%M"),
                         if a.auto_installed { " (dépendance)" } else { "" }
                     );
+                }
+                if !revoked.is_empty() {
+                    println!("ATTENTION : version(s) révoquée(s) installée(s) — mettez à niveau ou désinstallez-les");
                 }
                 if reg.apps.values().any(|a| a.simulated) {
                     println!("* installation réalisée en mode simulation (tests) : non valide comme installation réelle");

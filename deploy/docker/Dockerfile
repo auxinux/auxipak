@@ -8,10 +8,9 @@ COPY . .
 RUN cargo build --release --locked -p auxipak-server -p auxipak-builder
 
 FROM debian:trixie-slim
-RUN apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates curl \
- && rm -rf /var/lib/apt/lists/* \
- && groupadd --system --gid 10001 auxipak \
+# Aucun paquet supplémentaire : le serveur n'effectue aucune connexion sortante
+# et la sonde de santé est intégrée au binaire.
+RUN groupadd --system --gid 10001 auxipak \
  && useradd --system --uid 10001 --gid auxipak --home-dir /var/lib/auxipak-server --shell /usr/sbin/nologin auxipak \
  && mkdir -p /var/lib/auxipak-server /etc/auxipak-server/keys \
  && chown auxipak:auxipak /var/lib/auxipak-server
@@ -23,6 +22,6 @@ ENV AUXIPAK_BIND=0.0.0.0:8080 \
     AUXIPAK_KEYS_DIR=/etc/auxipak-server/keys
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-  CMD curl -fsS http://127.0.0.1:8080/api/v1/health || exit 1
+  CMD ["/usr/local/bin/auxipak-server", "healthcheck"]
 ENTRYPOINT ["/usr/local/bin/auxipak-server"]
 CMD ["serve"]

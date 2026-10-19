@@ -520,6 +520,9 @@ async fn install_txn(
     let owned: Vec<PathBuf> = existing.map(|e| e.files.clone()).unwrap_or_default();
     if let Some(prev) = existing {
         if target.upgrade.strategy == auxipak_core::manifest::UpgradeStrategy::RemoveThenInstall {
+            // Le système est modifié dès cette étape : la transaction le reflète.
+            txn.pending_record = Some(prev.clone());
+            txn.set_phase(Phase::Installing)?;
             eprintln!("  désinstallation de la version {} avant mise à niveau", prev.version);
             remove_installed(env, prev, scripts_ok).await?;
         }
@@ -689,7 +692,8 @@ pub async fn remove(
     let mut msgs = Vec::new();
     let mut txn = Transaction::begin(&env.paths, "remove", id, &app.version, None)?;
     txn.set_phase(Phase::Installing)?;
-    let reboot = remove_installed(env, &app, allow_scripts).await?;
+    let repo_allows = env.config.repo(&app.repo).map(|r| r.allow_scripts).unwrap_or(false);
+    let reboot = remove_installed(env, &app, allow_scripts || repo_allows).await?;
     registry.apps.remove(id);
     registry.save(&env.paths)?;
     let _ = std::fs::remove_dir_all(env.paths.app_state_dir(id));

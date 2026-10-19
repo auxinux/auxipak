@@ -34,6 +34,8 @@ enum Cmd {
     },
     /// Vérifier la configuration, la base de données et les clés.
     CheckConfig,
+    /// Vérifier qu'une instance locale répond (sonde de santé des conteneurs).
+    Healthcheck,
 }
 
 #[tokio::main]
@@ -52,6 +54,9 @@ async fn main() {
 }
 
 async fn run(cli: Cli) -> Result<()> {
+    if let Some(Cmd::Healthcheck) = cli.cmd {
+        return healthcheck().await;
+    }
     let cfg = Config::from_env()?;
     match cli.cmd.unwrap_or(Cmd::Serve) {
         Cmd::Migrate => {
@@ -94,6 +99,7 @@ async fn run(cli: Cli) -> Result<()> {
             let g = publisher::regenerate(&state, &repository, None).await?;
             println!("dépôt {repository} régénéré (génération {g})");
         }
+        Cmd::Healthcheck => unreachable!(),
         Cmd::CheckConfig => {
             let mode = cfg.mode;
             let state = build_state(cfg).await?;
@@ -130,6 +136,35 @@ async fn run(cli: Cli) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// Requête HTTP minimale vers l'instance locale (aucune dépendance externe).
+async fn healthcheck() -> Result<()> {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let bind: SocketAddr = std::env::var("AUXIPAK_BIND")
+        .unwrap_or_else(|_| "127.0.0.1:8080".into())
+        .parse()?;
+    let target = if bind.ip().is_unspecified() {
+        SocketAddr::from(([127, 0, 0, 1], bind.port()))
+    } else {
+        bind
+    };
+    let fut = async {
+        let mut s = tokio::net::TcpStream::connect(target).await?;
+        s.write_all(b"GET /api/v1/health HTTP/1.0\r\nHost: localhost\r\n\r\n").await?;
+        let mut buf = Vec::new();
+        s.read_to_end(&mut buf).await?;
+        Ok::<_, anyhow::Error>(String::from_utf8_lossy(&buf).into_owned())
+    };
+    let resp = tokio::time::timeout(std::time::Duration::from_secs(5), fut)
+        .await
+        .context("délai dépassé")??;
+    if resp.starts_with("HTTP/1.0 200") || resp.starts_with("HTTP/1.1 200") {
+        println!("ok");
+        Ok(())
+    } else {
+        anyhow::bail!("réponse inattendue : {}", resp.lines().next().unwrap_or(""))
+    }
 }
 
 async fn shutdown() {

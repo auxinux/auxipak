@@ -182,6 +182,7 @@ impl Fixture {
             snapshot_expires: Utc::now() + Duration::days(7),
             timestamp_expires,
             out_dir: out.clone(),
+            previous_roots: vec![],
         }))
         .unwrap();
         let _ = std::fs::remove_dir_all(self.repo());
@@ -404,6 +405,7 @@ fn rejects_revoked_package() {
     let mut f = Fixture::new();
     simple(&mut f, "hello", "1.0.0");
     f.publish();
+    f.ok(&["install", "hello"]);
     let sha = f.packages[0].sha256.clone();
     f.packages.clear();
     f.revoked.push(Revocation {
@@ -415,6 +417,10 @@ fn rejects_revoked_package() {
     });
     f.publish();
     f.ok(&["update"]);
+    // La version installée est signalée comme révoquée.
+    let list = f.ok(&["list"]);
+    assert!(list.contains("RÉVOQUÉE"), "{list}");
+    f.ok(&["remove", "hello"]);
     let out = f.fails(&["install", "hello"]);
     assert!(out.contains("révoqu"), "{out}");
 }

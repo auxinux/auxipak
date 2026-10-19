@@ -10,8 +10,8 @@ correspondant (voir [ARCHITECTURE.md](ARCHITECTURE.md#canaux)) :
 
 | Système | Détection | Canal | Mécanismes d'installation | État |
 |---|---|---|---|---|
-| Debian (12, 13) | `/etc/os-release` (`ID=debian`) | `linux/deb` | APT (`apt-get`), paquets `.deb`, `files`, scripts | parcours de démonstration automatisé (`tests/e2e`) |
-| Ubuntu (22.04, 24.04) et dérivées (`ID_LIKE=ubuntu`) | `os-release` | `linux/deb` | idem Debian | validation restante sur Ubuntu réel |
+| Debian (12, 13) | `/etc/os-release` (`ID=debian`) | `linux/deb` | APT (`apt-get`), paquets `.deb`, `files`, scripts | démonstration `tests/e2e` prévue pour Debian/Ubuntu ; validation sur Debian réel à consigner |
+| Ubuntu (22.04, 24.04) et dérivées (`ID_LIKE=ubuntu`) | `os-release` | `linux/deb` | idem Debian | démonstration de bout en bout (installation `.deb` réelle) intégrée à la CI sur Ubuntu 24.04 |
 | AuxiNuxOS | `ID=auxinuxos` ou `ID_LIKE` contenant `auxinuxos` | `linux/auxinuxos` | commande `auxi` (APT n'est **jamais** utilisé), `files`, scripts | **validation restante** (adaptateur `auxi` non validé) |
 | VirtuaOS | `ID=virtuaos` ou `ID_LIKE` contenant `virtuaos` | `linux/virtuaos` | adaptateur configurable (non configuré par défaut), `files`, scripts | **validation restante** |
 | Windows 10/11 (x86_64, ARM64) | API système (`os_info`) | `windows` | winget, MSI (`msiexec`), EXE, `files`, PowerShell | **validation restante** |
@@ -23,23 +23,40 @@ correspond. AuxiPak ne met jamais à jour le système d'exploitation lui-même.
 
 ## 2. Binaires publiés
 
-Les binaires du client (`auxipak`) et du constructeur (`auxipak-builder`) sont
-destinés à être publiés sur la page des versions du dépôt
-<https://github.com/auxinux/auxipak/releases>, produits par l'intégration
-continue GitHub Actions du projet, accompagnés de leurs empreintes SHA-256.
+Les binaires sont produits par le flux GitHub Actions
+`.github/workflows/release.yml` à chaque étiquette `v*` (par exemple
+`v1.0.0`), puis publiés, après relecture humaine du brouillon, sur
+<https://github.com/auxinux/auxipak/releases>.
 
-> Le flux de publication GitHub Actions n'est pas encore présent dans le dépôt
-> (aucun répertoire `.github/workflows/`). Tant qu'il n'existe pas, compilez
-> le client depuis les sources (section 7).
+| Archive | Contenu |
+|---|---|
+| `auxipak-<version>-linux-x86_64.tar.gz`, `auxipak-<version>-linux-arm64.tar.gz` | `auxipak`, `auxipak-builder`, `auxipak-server` |
+| `auxipak-<version>-windows-x86_64.zip`, `auxipak-<version>-windows-arm64.zip` | `auxipak.exe`, `auxipak-builder.exe` |
+| `auxipak-<version>-macos-arm64.tar.gz`, `auxipak-<version>-macos-x86_64.tar.gz` | `auxipak`, `auxipak-builder` |
+| `SHA256SUMS` | empreintes SHA-256 de toutes les archives |
 
-Avant toute installation, vérifiez l'empreinte de l'archive téléchargée
-(Linux/macOS : `sha256sum` ou `shasum -a 256` ; Windows :
-`Get-FileHash -Algorithm SHA256`) en la comparant à celle publiée.
+Chaque archive contient aussi `LICENSE`, `README.md` et `CHANGELOG.md`, et
+fait l'objet d'une **attestation de provenance** signée (Sigstore). Avant
+toute installation :
 
-Un binaire publié peut **embarquer** les ancres de confiance du dépôt officiel
-s'il a été compilé avec `AUXIPAK_OFFICIAL_TRUST_DIR` (voir section 7 et
-[SIGNING.md](SIGNING.md#4-distribution-de-la-racine-avec-le-client)). Dans le
-cas contraire, il faut installer `root.json` et `package-keys.json` (section 4).
+```console
+$ sha256sum -c --ignore-missing SHA256SUMS                     # macOS : shasum -a 256 -c
+$ gh attestation verify auxipak-v1.0.0-linux-x86_64.tar.gz --repo auxinux/auxipak
+```
+
+Sous Windows : `Get-FileHash -Algorithm SHA256 <archive>` et comparaison avec
+`SHA256SUMS`.
+
+Le flux de publication intègre les ancres de confiance du dépôt officiel au
+client si le dépôt source contient `trust/official/root.json` (variable
+`AUXIPAK_OFFICIAL_TRUST_DIR`, voir section 7 et
+[SIGNING.md](SIGNING.md#4-distribution-de-la-racine-avec-le-client)) ; sinon
+il émet un avertissement et le client est publié sans ancre embarquée. Dans
+ce cas, installez `root.json` et `package-keys.json` (section 4).
+
+Les binaires Windows et macOS sont construits et leurs tests automatisés
+exécutés nativement par l'intégration continue ; l'installation réelle
+d'applications sur ces systèmes reste à valider.
 
 ## 3. Installation du client
 

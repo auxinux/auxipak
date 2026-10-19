@@ -385,8 +385,8 @@ Exécution :
   `pre_remove` → méthode → `post_remove` ;
 - code de retour interprété selon `success_codes` / `reboot_codes`.
 
-À la désinstallation, `payload/` n'est pas conservé : un script de
-désinstallation ne doit pas s'appuyer sur `AUXIPAK_PAYLOAD_DIR`.
+À la désinstallation, `payload/` n'est pas conservé : `AUXIPAK_PAYLOAD_DIR`
+est alors vide, et un script de désinstallation ne doit pas en dépendre.
 
 ## 10. Racines de chemins
 

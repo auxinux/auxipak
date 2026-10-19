@@ -27,7 +27,7 @@ pub fn write_secret(path: &Path, data: &str) -> Result<()> {
     if path.exists() {
         bail!("{} existe déjà : refus d'écraser une clé", path.display());
     }
-    if let Some(p) = path.parent() {
+    if let Some(p) = path.parent().filter(|p| !p.as_os_str().is_empty() && *p != Path::new(".")) {
         std::fs::create_dir_all(p)?;
         #[cfg(unix)]
         {

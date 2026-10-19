@@ -231,6 +231,8 @@ pub struct PublishSpec {
     pub timestamp_expires: chrono::DateTime<chrono::Utc>,
     /// Répertoire de sortie (doit être vide) : `metadata/` et `targets/` y sont créés.
     pub out_dir: PathBuf,
+    /// Racines antérieures à publier (`1.root.json`, `2.root.json`…).
+    pub previous_roots: Vec<(String, Vec<u8>)>,
 }
 
 /// Signe et écrit un dépôt TUF complet.
@@ -266,7 +268,17 @@ pub async fn publish(spec: PublishSpec) -> Result<()> {
         .write(&meta_dir)
         .await
         .map_err(|e| anyhow!("écriture des métadonnées : {e}"))?;
-    // Copie des racines successives pour permettre la rotation côté client.
+    // Racines antérieures (N.root.json) : un client peut suivre toute la
+    // chaîne de rotation depuis la racine qu'il possède.
+    for (name, bytes) in &spec.previous_roots {
+        if !name.ends_with(".root.json") || !crate::ids::is_safe_file_name(name) {
+            bail!("nom de racine invalide : {name}");
+        }
+        let dest = meta_dir.join(name);
+        if !dest.exists() {
+            tokio::fs::write(&dest, bytes).await?;
+        }
+    }
     for (name, path) in &spec.targets {
         let dest = targets_dir.join(name);
         if let Some(p) = dest.parent() {
@@ -374,6 +386,7 @@ pub mod tests {
             snapshot_expires: Utc::now() + Duration::days(7),
             timestamp_expires: ts_expires,
             out_dir: out.clone(),
+            previous_roots: vec![],
         })
         .await
         .unwrap();

@@ -75,7 +75,10 @@ Règles :
   de ses portées et de celles du rôle de son propriétaire ;
 - `review`, `evaluate` et `admin` sont **réservées aux humains** : refusées à
   la création d'un jeton `ci`/`agent` (`400`) et ignorées à l'usage ;
-- seul un humain (session ou jeton `human`) peut créer des jetons ;
+- seul un humain peut créer des jetons : par une **session**, ou par un
+  jeton `human` qui porte lui-même la portée `admin` ; dans ce second cas,
+  le nouveau jeton ne peut recevoir que des portées que le jeton émetteur
+  détient (un jeton ne sert jamais à obtenir davantage de droits) ;
 - le champ facultatif `provider` (≤ 64 caractères) identifie l'outil
   (ex. `claude-code`, `github-actions`) et apparaît dans le journal d'audit.
 
@@ -123,7 +126,7 @@ Règles :
 | POST | `/api/v1/auth/logout` | authentifié | supprime la session |
 | GET | `/api/v1/auth/me` | authentifié | `{"user","role","kind","scopes","csrf_token"}` |
 | GET | `/api/v1/tokens` | authentifié | jetons de l'utilisateur (sans les secrets) |
-| POST | `/api/v1/tokens` | humain | `{"name","kind","scopes":[…],"provider"?,"expires_days"?}` → `{"id","token","warning"}` |
+| POST | `/api/v1/tokens` | session, ou jeton `human` avec `admin` | `{"name","kind","scopes":[…],"provider"?,"expires_days"?}` → `{"id","token","warning"}` |
 | DELETE | `/api/v1/tokens/{id}` | authentifié | révoque un de ses jetons |
 
 ### Soumissions
@@ -250,7 +253,7 @@ curl -fsS -X POST -H "Authorization: Bearer $REVIEW_TOKEN" -H 'Content-Type: app
   -d '{"state":"revoked","reason":"faille critique CVE-XXXX-YYYY"}' "$URL/api/v1/admin/releases/$REL/state"
 ```
 
-## 5. Construire un paquet avec l'API Builder (jeton « agent »)
+## 5. Construire un paquet avec l'API Builder (jeton agent)
 
 Scénario : un agent (Claude Code ou autre) dispose d'un jeton `agent`
 (`build`, `submit`) et construit le paquet `mon-outil`. Il ne peut ni

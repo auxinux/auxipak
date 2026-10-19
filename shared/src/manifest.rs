@@ -905,6 +905,16 @@ fn validate_target(v: &mut Validator, p: &str, t: &Target, contents: &BTreeSet<&
             if t.platform != Os::Linux {
                 v.err(&ip, "la méthode deb est réservée à Linux");
             }
+            if t.distributions
+                .iter()
+                .any(|d| matches!(d, Distribution::Auxinuxos | Distribution::Virtuaos))
+            {
+                v.warn(
+                    &ip,
+                    "sur AuxiNuxOS/VirtuaOS, un .deb ne s'installe que si l'adaptateur système définit install_local_deb \
+                     (APT est bloqué) ; préférez package_manager (auxi) ou files",
+                );
+            }
             if !ids::is_valid_native_package(package) {
                 v.err(format!("{ip}.package"), "nom de paquet Debian invalide");
             }

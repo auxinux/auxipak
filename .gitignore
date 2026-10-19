@@ -5,3 +5,8 @@
 *.pem
 !deploy/**/*.example.pem
 /.dev
+**/.env
+!deploy/.env.example
+secrets/
+keys/
+*.key

@@ -22,6 +22,8 @@ pub struct Keys {
     pub package_keys: TrustedKeys,
     pub package_keys_json: Vec<u8>,
     pub signer: Option<PackageSigner>,
+    /// Racines antérieures (`root-history/N.root.json`) publiées pour la rotation.
+    pub previous_roots: Vec<(String, Vec<u8>)>,
     tuf: Vec<PathBuf>,
 }
 
@@ -90,12 +92,22 @@ impl Keys {
             tracing::warn!("aucune clé de signature de paquets : seuls les paquets déjà signés pourront être publiés");
             None
         };
+        let mut previous_roots = Vec::new();
+        if let Ok(rd) = std::fs::read_dir(dir.join("root-history")) {
+            for e in rd.flatten() {
+                let name = e.file_name().to_string_lossy().into_owned();
+                if name.ends_with(".root.json") {
+                    previous_roots.push((name, std::fs::read(e.path())?));
+                }
+            }
+        }
         Ok(Keys {
             root_path,
             root_json,
             package_keys,
             package_keys_json,
             signer,
+            previous_roots,
             tuf,
         })
     }

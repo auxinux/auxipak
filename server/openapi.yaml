@@ -67,7 +67,7 @@ components:
         version: { type: [string, "null"] }
         validation: { type: object }
         has_signature: { type: boolean }
-        status: { type: string, enum: [invalid, pending, approved, rejected, published, failed] }
+        status: { type: string, enum: [invalid, pending, rejected, published] }
         submitter: { type: [string, "null"] }
         submitter_kind: { type: string, enum: [session, human, ci, agent] }
         note: { type: string }
