@@ -153,6 +153,8 @@ function Install-AuxiPak {
         Write-Host "  auxipak search firefox"
         Write-Host "  auxipak install <application>"
         Write-Host "Desinstallation : irm $Url/uninstall.ps1 | iex"
+        # Succes : ne pas laisser le code de sortie d'une commande interne.
+        $global:LASTEXITCODE = 0
     } finally {
         Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue
     }

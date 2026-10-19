@@ -71,6 +71,8 @@ function Uninstall-AuxiPak {
         Write-Host "Configuration conservee ($root) : `$env:AUXIPAK_PURGE = '1' pour la supprimer."
     }
     Write-Host "AuxiPak est desinstalle."
+    # Succes : ne pas laisser le code de sortie d'une commande interne.
+    $global:LASTEXITCODE = 0
 }
 
 Uninstall-AuxiPak
