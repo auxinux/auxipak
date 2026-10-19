@@ -203,6 +203,7 @@ release, lues dans `deploy/downloads/` (monté en lecture seule).
    ```console
    $ cd ~/auxipak/deploy
    $ ./scripts/fetch-client.sh v1.0.0      # ou un dossier : ./scripts/fetch-client.sh ~/release
+   $ GITHUB_TOKEN=github_pat_… ./scripts/fetch-client.sh v1.0.0   # dépôt privé
    $ curl -fsS https://auxipak.auxinux.ca/downloads/SHA256SUMS
    ```
 

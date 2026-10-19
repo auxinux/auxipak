@@ -75,7 +75,9 @@ jobs:
           cd dist
           if [[ "${{ runner.os }}" == "Windows" ]]; then 7z a "$name.zip" "$name" >/dev/null; else tar czf "$name.tar.gz" "$name"; fi
           rm -rf "$name"
+      # Attestations : indisponibles pour un dépôt privé sans offre adaptée.
       - uses: actions/attest-build-provenance@v2
+        continue-on-error: true
         with:
           subject-path: dist/*
       - uses: actions/upload-artifact@v4
@@ -103,6 +105,6 @@ jobs:
           files: dist/*
           body: |
             Brouillon généré automatiquement. Avant publication :
-            1. vérifier les attestations : `gh attestation verify <fichier> --repo ${{ github.repository }}` ;
+            1. vérifier les attestations si elles existent : `gh attestation verify <fichier> --repo ${{ github.repository }}` ;
             2. vérifier SHA256SUMS ;
             3. relecture humaine des notes de version (CHANGELOG.md).
