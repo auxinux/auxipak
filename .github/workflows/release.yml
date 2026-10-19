@@ -7,6 +7,15 @@ name: Release
 on:
   push:
     tags: ["v*"]
+  # Lancement manuel : l'étiquette est créée à la publication du brouillon.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Étiquette de la release (ex. v1.0.0)"
+        required: true
+
+env:
+  RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
 
 permissions:
   contents: read
@@ -54,7 +63,8 @@ jobs:
       - name: Archive
         shell: bash
         run: |
-          name="auxipak-${GITHUB_REF_NAME}-${{ matrix.name }}"
+          [[ "$RELEASE_TAG" =~ ^v[0-9A-Za-z._-]+$ ]] || { echo "étiquette invalide : $RELEASE_TAG"; exit 1; }
+          name="auxipak-${RELEASE_TAG}-${{ matrix.name }}"
           mkdir -p "dist/$name"
           ext=""; [[ "${{ runner.os }}" == "Windows" ]] && ext=".exe"
           for b in auxipak auxipak-builder auxipak-server; do
@@ -88,6 +98,8 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           draft: true
+          tag_name: ${{ env.RELEASE_TAG }}
+          target_commitish: ${{ github.sha }}
           files: dist/*
           body: |
             Brouillon généré automatiquement. Avant publication :
