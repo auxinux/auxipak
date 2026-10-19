@@ -154,6 +154,40 @@ $ curl -fsS https://pak.auxinux.ca/index | jq .
 $ curl -fsSI https://pak.auxinux.ca/repos/official/metadata/timestamp.json
 ```
 
+### 3.7 Mandataire HTTPS sur une autre machine (panneau d'hébergement)
+
+Si le HTTPS est assuré par un panneau ou un Nginx situé sur **une autre
+machine**, le serveur doit être joignable depuis celle-ci, et uniquement
+depuis celle-ci. Dans `deploy/.env` :
+
+```ini
+AUXIPAK_BIND=0.0.0.0
+AUXIPAK_TRUSTED_PROXIES=172.30.0.1,<IP du mandataire>
+```
+
+Docker contourne `ufw` : le filtrage se fait dans la chaîne `DOCKER-USER`,
+rétablie à chaque démarrage par une unité systemd
+(`/etc/systemd/system/auxipak-fw.service`) :
+
+```ini
+[Unit]
+Description=AuxiPak : port 8080 réservé au mandataire HTTPS
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/iptables -I DOCKER-USER -p tcp --dport 8080 ! -s <IP du mandataire> -j DROP
+ExecStop=/usr/sbin/iptables -D DOCKER-USER -p tcp --dport 8080 ! -s <IP du mandataire> -j DROP
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Côté mandataire : protocole HTTP, port 8080, délai de réponse 3 600 s et
+taille de corps 8 Gio (envoi des paquets).
+
 ## 4. Exploitation
 
 ### 4.1 Healthcheck
