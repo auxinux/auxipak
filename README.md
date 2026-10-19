@@ -107,7 +107,9 @@ Une fonctionnalité implémentée n'est pas une fonctionnalité validée. État 
 | Debian 13 réel | **à valider** | détection testée par analyse d'`os-release` ; parcours APT identique à Ubuntu |
 | AuxiNuxOS 1.0 réel | **à valider** | syntaxe de la commande `auxi` supposée (`auxi install/remove`) : voir [CLI_REFERENCE.md](docs/CLI_REFERENCE.md) ; adaptateur testé uniquement en simulation |
 | VirtuaOS | **à valider** | adaptateur système non configuré ; méthode `files` disponible |
-| Windows x64/ARM64, macOS Intel/Apple Silicon | **à valider** | binaires et tests natifs produits par la CI GitHub Actions ; méthodes MSI/EXE/winget/pkg/dmg/Homebrew jamais exécutées réellement |
+| Windows x64/ARM64, macOS Apple Silicon, Linux ARM64 | **partiellement validés (CI GitHub Actions)** | compilation et tests natifs du client et de la bibliothèque réussis (TUF, signatures, extraction, méthode `files`, registre, reprise après interruption, refus de privilèges) |
+| macOS Intel | construit en CI | binaire compilé par compilation croisée ; aucun test exécuté |
+| Méthodes MSI, EXE, winget, pkg, dmg, Homebrew | **à valider** | arguments construits et vérifiés par revue ; jamais exécutées sur un système réel |
 | Clés de production | **non créées** | cérémonie à réaliser ([SIGNING.md](docs/SIGNING.md)) ; aucune clé privée n'est versionnée |
 
 ## Licence
