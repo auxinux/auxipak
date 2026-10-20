@@ -101,7 +101,6 @@ pub async fn fetch_and_verify(env: &Env, c: &Candidate<'_>) -> Result<VerifiedPa
         allowed_hosts: vec![],
         allow_insecure_localhost: r.config.allow_insecure_localhost,
     };
-    eprintln!("  téléchargement de {} ({} octets)", rel.file_name, rel.size);
     download::fetch(
         &url,
         &dest,
@@ -111,6 +110,7 @@ pub async fn fetch_and_verify(env: &Env, c: &Candidate<'_>) -> Result<VerifiedPa
             max_size: env.config.policy.max_download_bytes,
         },
         &policy,
+        &rel.file_name,
     )
     .await
     .with_context(|| format!("téléchargement de {}", rel.file_name))?;

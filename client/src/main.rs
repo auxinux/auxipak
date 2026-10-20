@@ -9,6 +9,7 @@ mod executor;
 mod methods;
 mod paths;
 mod privileges;
+mod progress;
 mod registry;
 mod repo;
 

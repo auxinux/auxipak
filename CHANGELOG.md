@@ -5,6 +5,21 @@ le projet applique le [versionnage sémantique](https://semver.org/lang/fr/).
 
 ## [Non publié]
 
+## [1.0.2] — 2026-10-20
+
+### Ajouté
+
+- Client : barre de progression des téléchargements (pourcentage, taille,
+  débit, temps restant) et indicateur d'étape avec temps écoulé pour la
+  vérification d'empreinte et les installateurs (montage et copie d'un
+  `.dmg`, APT, winget, Homebrew, MSI, `.pkg`…). Animation uniquement dans un
+  terminal ; désactivable avec `AUXIPAK_NO_PROGRESS=1`.
+
+### Corrigé
+
+- Interface Web : les textes longs (URL, empreintes) ne débordent plus des
+  cartes.
+
 ## [1.0.1] — 2026-10-20
 
 ### Ajouté

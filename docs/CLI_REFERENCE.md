@@ -214,6 +214,7 @@ Emplacements de `<config>`, `<état>`, `<cache>`, `<journal>` :
 | Variable | Effet |
 |---|---|
 | `AUXIPAK_HOME` | place configuration, état, cache, journal et racines sous un répertoire unique |
+| `AUXIPAK_NO_PROGRESS` | désactive la barre de progression et l'animation des étapes (sinon actives uniquement dans un terminal) |
 | `AUXIPAK_LOG` | filtre de journalisation (`error`, `warn`, `info`, `debug`, syntaxe `tracing`) |
 | `XDG_CONFIG_HOME`, `XDG_STATE_HOME`, `XDG_CACHE_HOME`, `XDG_DATA_HOME` | emplacements utilisateur (Linux/macOS) |
 | `AUXIPAK_PROFILE_OVERRIDE` | **tests et diagnostic** : profil système imposé (JSON `{"os","distribution","version","arch","raw_id","pretty_name","immutable"}`) |

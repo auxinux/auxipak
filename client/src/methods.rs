@@ -145,7 +145,7 @@ async fn artifact(ctx: &Ctx<'_>, source: &Source) -> Result<PathBuf> {
     let dir = ctx.work.join("remote");
     std::fs::create_dir_all(&dir)?;
     let dest = dir.join(&name);
-    eprintln!("  téléchargement de {url}");
+    eprintln!("  source : {url}");
     download::fetch(
         &url,
         &dest,
@@ -158,6 +158,7 @@ async fn artifact(ctx: &Ctx<'_>, source: &Source) -> Result<PathBuf> {
             allowed_hosts: source.allowed_hosts.clone(),
             allow_insecure_localhost: false,
         },
+        &name,
     )
     .await?;
     Ok(dest)
@@ -230,12 +231,20 @@ async fn manager_install(ctx: &Ctx<'_>, m: Manager, packages: &[String]) -> Resu
             args.extend(packages.iter().map(os));
             let mut o = ctx.opts();
             o.env.push(("DEBIAN_FRONTEND".into(), "noninteractive".into()));
-            let out = executor::run(&resolve(Tool::AptGet)?, &args, &o).await?;
+            let out = crate::progress::step(
+                format!("installation par APT : {}", packages.join(" ")),
+                executor::run(&resolve(Tool::AptGet)?, &args, &o),
+            )
+            .await?;
             ctx.check("apt-get install", &out, &[])
         }
         Manager::Auxi | Manager::Virtuaos => {
             let a = adapter_for(ctx.config, m).context("adaptateur absent")?;
-            let out = run_adapter(ctx, a, m.as_str(), &a.install, packages, None).await?;
+            let out = crate::progress::step(
+                format!("installation par {} : {}", m.as_str(), packages.join(" ")),
+                run_adapter(ctx, a, m.as_str(), &a.install, packages, None),
+            )
+            .await?;
             ctx.check(&format!("{m} install"), &out, &[])
         }
         Manager::Winget => {
@@ -252,7 +261,11 @@ async fn manager_install(ctx: &Ctx<'_>, m: Manager, packages: &[String]) -> Resu
                     "--disable-interactivity",
                 ]
                 .map(os);
-                let out = executor::run(&resolve(Tool::Winget)?, &args, &ctx.opts()).await?;
+                let out = crate::progress::step(
+                    format!("installation par winget : {p}"),
+                    executor::run(&resolve(Tool::Winget)?, &args, &ctx.opts()),
+                )
+                .await?;
                 reboot |= ctx.check("winget install", &out, &[])?;
             }
             Ok(reboot)
@@ -260,7 +273,11 @@ async fn manager_install(ctx: &Ctx<'_>, m: Manager, packages: &[String]) -> Resu
         Manager::Brew => {
             let mut args = vec![os("install")];
             args.extend(packages.iter().map(os));
-            let out = executor::run(&resolve(Tool::Brew)?, &args, &ctx.opts()).await?;
+            let out = crate::progress::step(
+                format!("installation par Homebrew : {}", packages.join(" ")),
+                executor::run(&resolve(Tool::Brew)?, &args, &ctx.opts()),
+            )
+            .await?;
             ctx.check("brew install", &out, &[])
         }
     }
@@ -294,19 +311,27 @@ async fn manager_remove(ctx: &Ctx<'_>, m: Manager, packages: &[String]) -> Resul
             }
             let mut o = ctx.opts();
             o.env.push(("DEBIAN_FRONTEND".into(), "noninteractive".into()));
-            let out = executor::run(&resolve(Tool::AptGet)?, &args, &o).await?;
+            let out = crate::progress::step("désinstallation par APT", executor::run(&resolve(Tool::AptGet)?, &args, &o)).await?;
             ctx.check("apt-get remove", &out, &[])
         }
         Manager::Auxi | Manager::Virtuaos => {
             let a = adapter_for(ctx.config, m).context("adaptateur absent")?;
-            let out = run_adapter(ctx, a, m.as_str(), &a.remove, packages, None).await?;
+            let out = crate::progress::step(
+                format!("désinstallation par {}", m.as_str()),
+                run_adapter(ctx, a, m.as_str(), &a.remove, packages, None),
+            )
+            .await?;
             ctx.check(&format!("{m} remove"), &out, &[])
         }
         Manager::Winget => {
             let mut reboot = false;
             for p in packages {
                 let args = ["uninstall", "--id", p, "--exact", "--silent", "--disable-interactivity"].map(os);
-                let out = executor::run(&resolve(Tool::Winget)?, &args, &ctx.opts()).await?;
+                let out = crate::progress::step(
+                    format!("désinstallation par winget : {p}"),
+                    executor::run(&resolve(Tool::Winget)?, &args, &ctx.opts()),
+                )
+                .await?;
                 reboot |= ctx.check("winget uninstall", &out, &[])?;
             }
             Ok(reboot)
@@ -314,7 +339,11 @@ async fn manager_remove(ctx: &Ctx<'_>, m: Manager, packages: &[String]) -> Resul
         Manager::Brew => {
             let mut args = vec![os("uninstall")];
             args.extend(packages.iter().map(os));
-            let out = executor::run(&resolve(Tool::Brew)?, &args, &ctx.opts()).await?;
+            let out = crate::progress::step(
+                "désinstallation par Homebrew",
+                executor::run(&resolve(Tool::Brew)?, &args, &ctx.opts()),
+            )
+            .await?;
             ctx.check("brew uninstall", &out, &[])
         }
     }
@@ -395,8 +424,7 @@ pub async fn run_script(ctx: &Ctx<'_>, script: &str, args: &[String], action: &s
             ctx.paths.data_dir.join(ctx.app_id).display().to_string(),
         ),
     ]);
-    eprintln!("  exécution du script autorisé {script} ({action})");
-    let out = executor::run(&program, &argv, &o).await?;
+    let out = crate::progress::step(format!("script {script} ({action})"), executor::run(&program, &argv, &o)).await?;
     ctx.check(&format!("script {script}"), &out, &[])
 }
 
@@ -424,7 +452,11 @@ pub async fn install(ctx: &Ctx<'_>, txn: &mut Transaction) -> Result<Outcome> {
                 let m = native_manager(ctx.profile.distribution).unwrap();
                 let a = adapter_for(ctx.config, m).context("adaptateur absent")?;
                 outcome.manager = m.as_str().into();
-                let out = run_adapter(ctx, a, m.as_str(), &a.install_local_deb, &[], Some(&file)).await?;
+                let out = crate::progress::step(
+                    format!("installation du paquet .deb par {}", m.as_str()),
+                    run_adapter(ctx, a, m.as_str(), &a.install_local_deb, &[], Some(&file)),
+                )
+                .await?;
                 outcome.reboot |= ctx.check("installation du paquet .deb", &out, &[])?;
             } else {
                 outcome.manager = "apt".into();
@@ -432,7 +464,11 @@ pub async fn install(ctx: &Ctx<'_>, txn: &mut Transaction) -> Result<Outcome> {
                 o.env.push(("DEBIAN_FRONTEND".into(), "noninteractive".into()));
                 let abs = file.canonicalize()?;
                 let args = vec![os("install"), os("-y"), os("--no-install-recommends"), abs.into_os_string()];
-                let out = executor::run(&resolve(Tool::AptGet)?, &args, &o).await?;
+                let out = crate::progress::step(
+                    "installation du paquet .deb par APT",
+                    executor::run(&resolve(Tool::AptGet)?, &args, &o),
+                )
+                .await?;
                 outcome.reboot |= ctx.check("apt-get install (.deb)", &out, &[])?;
             }
         }
@@ -455,7 +491,11 @@ pub async fn install(ctx: &Ctx<'_>, txn: &mut Transaction) -> Result<Outcome> {
                 }
                 args.push(os(format!("{k}={v}")));
             }
-            let out = executor::run(&resolve(Tool::Msiexec)?, &args, &ctx.opts()).await?;
+            let out = crate::progress::step(
+                "installation MSI (msiexec)",
+                executor::run(&resolve(Tool::Msiexec)?, &args, &ctx.opts()),
+            )
+            .await?;
             outcome.reboot |= ctx.check("msiexec", &out, &[3010, 1641])?;
         }
         Install::Exe { source, args } => {
@@ -467,14 +507,18 @@ pub async fn install(ctx: &Ctx<'_>, txn: &mut Transaction) -> Result<Outcome> {
                 }
             }
             let argv: Vec<OsString> = args.iter().map(os).collect();
-            let out = executor::run(&file, &argv, &ctx.opts()).await?;
+            let out = crate::progress::step("exécution de l'installateur", executor::run(&file, &argv, &ctx.opts())).await?;
             outcome.reboot |= ctx.check("installateur exe", &out, &[])?;
         }
         Install::Pkg { source, .. } => {
             let file = artifact(ctx, source).await?;
             outcome.manager = "installer".into();
             let args = vec![os("-pkg"), file.into_os_string(), os("-target"), os("/")];
-            let out = executor::run(&resolve(Tool::Installer)?, &args, &ctx.opts()).await?;
+            let out = crate::progress::step(
+                "installation du paquet .pkg",
+                executor::run(&resolve(Tool::Installer)?, &args, &ctx.opts()),
+            )
+            .await?;
             outcome.reboot |= ctx.check("installer -pkg", &out, &[])?;
         }
         Install::Dmg { source, app } => {
@@ -593,7 +637,7 @@ async fn install_dmg(ctx: &Ctx<'_>, file: &Path, app: &str) -> Result<PathBuf> {
         mnt.clone().into_os_string(),
         file.as_os_str().to_owned(),
     ];
-    let out = executor::run(&hdiutil, &attach, &ctx.opts()).await?;
+    let out = crate::progress::step("montage de l'image disque", executor::run(&hdiutil, &attach, &ctx.opts())).await?;
     ctx.check("hdiutil attach", &out, &[])?;
     let result = async {
         let src = mnt.join(app);
@@ -610,10 +654,13 @@ async fn install_dmg(ctx: &Ctx<'_>, file: &Path, app: &str) -> Result<PathBuf> {
         if dest.exists() {
             std::fs::remove_dir_all(&dest)?;
         }
-        let out = executor::run(
-            &resolve(Tool::Ditto)?,
-            &[src.into_os_string(), dest.clone().into_os_string()],
-            &ctx.opts(),
+        let out = crate::progress::step(
+            format!("copie de {app} vers {}", dest_dir.display()),
+            executor::run(
+                &resolve(Tool::Ditto)?,
+                &[src.into_os_string(), dest.clone().into_os_string()],
+                &ctx.opts(),
+            ),
         )
         .await?;
         ctx.check("ditto", &out, &[])?;
@@ -644,7 +691,11 @@ pub async fn remove(ctx: &Ctx<'_>, files: &[PathBuf]) -> Result<bool> {
                 bail!("code produit invalide");
             }
             let args = vec![os("/x"), os(product_code), os("/qn"), os("/norestart")];
-            let out = executor::run(&resolve(Tool::Msiexec)?, &args, &ctx.opts()).await?;
+            let out = crate::progress::step(
+                "désinstallation MSI (msiexec)",
+                executor::run(&resolve(Tool::Msiexec)?, &args, &ctx.opts()),
+            )
+            .await?;
             reboot |= ctx.check("msiexec /x", &out, &[3010, 1641])?;
         }
         Remove::Exe { path, args } => {
@@ -655,7 +706,7 @@ pub async fn remove(ctx: &Ctx<'_>, files: &[PathBuf]) -> Result<bool> {
                 }
             }
             let argv: Vec<OsString> = args.iter().map(os).collect();
-            let out = executor::run(&exe, &argv, &ctx.opts()).await?;
+            let out = crate::progress::step("exécution du désinstallateur", executor::run(&exe, &argv, &ctx.opts())).await?;
             reboot |= ctx.check("désinstallateur", &out, &[])?;
         }
         Remove::Pkg { package_id, paths } => {

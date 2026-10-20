@@ -79,10 +79,12 @@ pub fn ensure_space(dir: &Path, needed: u64) -> Result<()> {
 
 /// Télécharge `url` vers `dest`, avec reprise depuis `dest.part`, et vérifie
 /// l'empreinte. En cas d'échec de vérification, le fichier partiel est supprimé.
-pub async fn fetch(url: &Url, dest: &Path, expect: &Expect, policy: &RedirectPolicy) -> Result<()> {
+/// `label` : nom affiché dans la barre de progression.
+pub async fn fetch(url: &Url, dest: &Path, expect: &Expect, policy: &RedirectPolicy, label: &str) -> Result<()> {
     if dest.exists() {
         let (sha, size) = sha256_file(dest)?;
         if digest_eq(&sha, &expect.sha256) && expect.size.map(|s| s == size).unwrap_or(true) {
+            eprintln!("  ✓ {label} (déjà téléchargé, empreinte vérifiée)");
             return Ok(());
         }
         std::fs::remove_file(dest)?;
@@ -99,9 +101,10 @@ pub async fn fetch(url: &Url, dest: &Path, expect: &Expect, policy: &RedirectPol
             }
             std::fs::copy(&src, &part)?;
         }
-        "https" | "http" => download_http(url, &part, expect, policy).await?,
+        "https" | "http" => download_http(url, &part, expect, policy, label).await?,
         s => bail!("schéma non pris en charge : {s}"),
     }
+    let check = crate::progress::Step::start("vérification de l'empreinte SHA-256");
     let (sha, size) = sha256_file(&part)?;
     if !digest_eq(&sha, &expect.sha256) || expect.size.map(|s| s != size).unwrap_or(false) {
         let _ = std::fs::remove_file(&part);
@@ -110,11 +113,12 @@ pub async fn fetch(url: &Url, dest: &Path, expect: &Expect, policy: &RedirectPol
             expect.sha256
         );
     }
+    check.finish();
     std::fs::rename(&part, dest)?;
     Ok(())
 }
 
-async fn download_http(url: &Url, part: &Path, expect: &Expect, policy: &RedirectPolicy) -> Result<()> {
+async fn download_http(url: &Url, part: &Path, expect: &Expect, policy: &RedirectPolicy, label: &str) -> Result<()> {
     if url.scheme() == "http" && !policy.allow_insecure_localhost {
         bail!("téléchargement HTTP refusé : {url}");
     }
@@ -136,6 +140,7 @@ async fn download_http(url: &Url, part: &Path, expect: &Expect, policy: &Redirec
         if existing > 0 {
             req = req.header(reqwest::header::RANGE, format!("bytes={existing}-"));
         }
+        let mut bar = crate::progress::Download::new(label, expect.size);
         let result: Result<()> = async {
             let resp = req.send().await.with_context(|| format!("connexion à {url}"))?;
             let status = resp.status();
@@ -148,6 +153,7 @@ async fn download_http(url: &Url, part: &Path, expect: &Expect, policy: &Redirec
             }
             if let Some(len) = resp.content_length() {
                 let total = if append { existing + len } else { len };
+                bar.set_total(Some(total));
                 if total > expect.max_size || expect.size.map(|s| total != s).unwrap_or(false) {
                     bail!("{url} : taille annoncée inattendue ({total} octets)");
                 }
@@ -169,18 +175,26 @@ async fn download_http(url: &Url, part: &Path, expect: &Expect, policy: &Redirec
                     bail!("{url} : taille maximale dépassée");
                 }
                 file.write_all(&chunk)?;
+                bar.set(written);
             }
             file.sync_all()?;
             Ok(())
         }
         .await;
         match result {
-            Ok(()) => return Ok(()),
+            Ok(()) => {
+                bar.finish();
+                return Ok(());
+            }
             Err(e) if attempt < 4 => {
+                bar.abandon();
                 tracing::warn!(%url, attempt, error = %e, "nouvelle tentative de téléchargement");
                 tokio::time::sleep(Duration::from_secs(1 << attempt)).await;
             }
-            Err(e) => return Err(e),
+            Err(e) => {
+                bar.abandon();
+                return Err(e);
+            }
         }
     }
 }
