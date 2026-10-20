@@ -20,6 +20,9 @@ h1 { font-size: 1.6rem; margin: .2rem 0 1rem; }
 h2 { font-size: 1.2rem; margin: 1.5rem 0 .75rem; }
 .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); padding: 1rem 1.25rem; margin-bottom: 1rem; }
 .grid { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
+/* Éléments de grille : rétrécissables ; les textes longs sans espace (URL, empreintes) se coupent au lieu de déborder. */
+.grid > *, .stats > * { min-width: 0; }
+.card, td { overflow-wrap: anywhere; }
 .stats { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
 .stat { text-decoration: none; color: var(--text); }
 .stat b { display: block; font-size: 1.6rem; }
