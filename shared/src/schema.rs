@@ -20,7 +20,7 @@ pub fn validate_manifest_value(v: &Value) -> Result<(), Vec<String>> {
         .iter_errors(v)
         .map(|e| {
             let path = e.instance_path().to_string();
-            format!("{} : {}", if path.is_empty() { "/".to_string() } else { path }, e)
+            crate::tr!("{} : {}", "{}: {}", if path.is_empty() { "/".to_string() } else { path }, e)
         })
         .collect();
     if errors.is_empty() {

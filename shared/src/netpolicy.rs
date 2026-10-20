@@ -1,25 +1,38 @@
 //! Politique réseau : validation des URL de téléchargement et des redirections.
 
+use crate::tr;
 use url::{Host, Url};
 
 /// Valide une URL de téléchargement distant : HTTPS obligatoire, nom d'hôte DNS
 /// (pas d'adresse IP littérale), pas d'identifiants intégrés, pas de fragment.
 pub fn validate_https_url(raw: &str) -> Result<Url, String> {
-    let u = Url::parse(raw).map_err(|e| format!("URL invalide « {raw} » : {e}"))?;
+    let u = Url::parse(raw).map_err(|e| tr!("URL invalide « {raw} » : {e}", "invalid URL “{raw}”: {e}"))?;
     if u.scheme() != "https" {
-        return Err(format!("URL refusée (HTTPS obligatoire) : {raw}"));
+        return Err(tr!(
+            "URL refusée (HTTPS obligatoire) : {raw}",
+            "URL rejected (HTTPS required): {raw}"
+        ));
     }
     if !u.username().is_empty() || u.password().is_some() {
-        return Err("URL refusée : identifiants intégrés interdits".into());
+        return Err(tr!(
+            "URL refusée : identifiants intégrés interdits",
+            "URL rejected: embedded credentials are not allowed"
+        ));
     }
     if u.fragment().is_some() {
-        return Err("URL refusée : fragment interdit".into());
+        return Err(tr!(
+            "URL refusée : fragment interdit",
+            "URL rejected: fragments are not allowed"
+        ));
     }
     match u.host() {
         Some(Host::Domain(d)) if is_valid_host(d) => Ok(u),
-        Some(Host::Domain(_)) => Err(format!("nom d'hôte invalide : {raw}")),
-        Some(_) => Err("URL refusée : les adresses IP littérales sont interdites".into()),
-        None => Err("URL refusée : hôte manquant".into()),
+        Some(Host::Domain(_)) => Err(tr!("nom d'hôte invalide : {raw}", "invalid host name: {raw}")),
+        Some(_) => Err(tr!(
+            "URL refusée : les adresses IP littérales sont interdites",
+            "URL rejected: literal IP addresses are not allowed"
+        )),
+        None => Err(tr!("URL refusée : hôte manquant", "URL rejected: missing host")),
     }
 }
 
@@ -43,13 +56,19 @@ pub fn is_valid_host(h: &str) -> bool {
 /// redirection doit appeler cette fonction pour chaque saut.
 pub fn redirect_allowed(next: &Url, allowed_hosts: &[String]) -> Result<(), String> {
     if next.scheme() != "https" {
-        return Err(format!("redirection refusée vers une URL non HTTPS : {next}"));
+        return Err(tr!(
+            "redirection refusée vers une URL non HTTPS : {next}",
+            "redirect to a non-HTTPS URL rejected: {next}"
+        ));
     }
     let host = next.host_str().unwrap_or_default().to_ascii_lowercase();
     if allowed_hosts.iter().any(|a| a.eq_ignore_ascii_case(&host)) {
         Ok(())
     } else {
-        Err(format!("redirection refusée vers un hôte non autorisé : {host}"))
+        Err(tr!(
+            "redirection refusée vers un hôte non autorisé : {host}",
+            "redirect to a non-allowed host rejected: {host}"
+        ))
     }
 }
 
@@ -57,13 +76,17 @@ pub fn redirect_allowed(next: &Url, allowed_hosts: &[String]) -> Result<(), Stri
 /// HTTP limité à la boucle locale lorsque `allow_insecure_localhost` est vrai
 /// (développement uniquement).
 pub fn validate_repo_url(raw: &str, allow_insecure_localhost: bool) -> Result<Url, String> {
-    let mut u = Url::parse(raw).map_err(|e| format!("URL de dépôt invalide « {raw} » : {e}"))?;
+    let mut u =
+        Url::parse(raw).map_err(|e| tr!("URL de dépôt invalide « {raw} » : {e}", "invalid repository URL “{raw}”: {e}"))?;
     if !u.path().ends_with('/') {
         let p = format!("{}/", u.path());
         u.set_path(&p);
     }
     if !u.username().is_empty() || u.password().is_some() {
-        return Err("URL de dépôt refusée : identifiants intégrés interdits".into());
+        return Err(tr!(
+            "URL de dépôt refusée : identifiants intégrés interdits",
+            "repository URL rejected: embedded credentials are not allowed"
+        ));
     }
     match u.scheme() {
         "https" | "file" => Ok(u),
@@ -72,17 +95,20 @@ pub fn validate_repo_url(raw: &str, allow_insecure_localhost: bool) -> Result<Ur
             if local && allow_insecure_localhost {
                 Ok(u)
             } else {
-                Err(format!(
-                    "URL de dépôt refusée (HTTPS obligatoire{}) : {raw}",
-                    if local {
-                        " ; HTTP local exige allow_insecure_localhost"
-                    } else {
-                        ""
-                    }
-                ))
+                Err(if local {
+                    tr!(
+                        "URL de dépôt refusée (HTTPS obligatoire ; HTTP local exige allow_insecure_localhost) : {raw}",
+                        "repository URL rejected (HTTPS required; local HTTP requires allow_insecure_localhost): {raw}"
+                    )
+                } else {
+                    tr!(
+                        "URL de dépôt refusée (HTTPS obligatoire) : {raw}",
+                        "repository URL rejected (HTTPS required): {raw}"
+                    )
+                })
             }
         }
-        s => Err(format!("schéma d'URL non pris en charge : {s}")),
+        s => Err(tr!("schéma d'URL non pris en charge : {s}", "unsupported URL scheme: {s}")),
     }
 }
 

@@ -20,6 +20,8 @@
 #   DEMO_MODE           « native » (défaut si root sur Debian/Ubuntu : installation .deb réelle via APT)
 #                       ou « files » (profil AuxiNuxOS forcé : copie de fichiers, sans privilèges)
 set -euo pipefail
+# Les vérifications ci-dessous comparent les messages français du client.
+export AUXIPAK_LANG=fr
 
 URL="${AUXIPAK_URL:-http://127.0.0.1:8080}"
 ADMIN_USER="${ADMIN_USER:-admin}"

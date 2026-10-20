@@ -7,6 +7,7 @@
 //! (`1.0~rc1 < 1.0`). Il est déterministe et identique sur toutes les
 //! plateformes.
 
+use crate::tr;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::fmt;
@@ -132,7 +133,10 @@ impl VersionReq {
             };
             let v = rest.trim();
             if !is_valid_version(v) {
-                return Err(format!("contrainte de version invalide : « {part} »"));
+                return Err(tr!(
+                    "contrainte de version invalide : « {part} »",
+                    "invalid version constraint: “{part}”"
+                ));
             }
             clauses.push((op, v.to_string()));
         }

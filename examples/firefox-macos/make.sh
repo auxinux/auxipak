@@ -7,23 +7,41 @@
 # Le paquet ne contient pas Firefox : il référence l'image disque officielle
 # de Mozilla (mode « remote ») avec son empreinte SHA-256, publiée par Mozilla
 # dans SHA256SUMS. Le client vérifie cette empreinte avant toute installation.
+# Messages en français ou en anglais (AUXIPAK_LANG, sinon langue du système) ;
+# textes du paquet dans sa langue (LANG_FF).
 set -euo pipefail
 LANG_FF="${LANG_FF:-fr}"
 OUT="$(pwd)/firefox-macos"
-die() { echo "erreur : $*" >&2; exit 1; }
-command -v auxipak-builder >/dev/null || die "auxipak-builder requis (install.sh --with-builder)"
+case "${AUXIPAK_LANG:-${LC_ALL:-${LC_MESSAGES:-${LANG:-}}}}" in fr*|FR*) FR=1 ;; *) FR=0 ;; esac
+# msg "français" "English"
+msg() { if [[ $FR == 1 ]]; then echo "$1"; else echo "$2"; fi; }
+die() { if [[ $FR == 1 ]]; then echo "erreur : $1" >&2; else echo "error: $2" >&2; fi; exit 1; }
+command -v auxipak-builder >/dev/null \
+  || die "auxipak-builder requis (install.sh --with-builder)" "auxipak-builder is required (install.sh --with-builder)"
 
 v=$(curl -fsSL https://product-details.mozilla.org/1.0/firefox_versions.json \
   | python3 -c 'import json,sys; print(json.load(sys.stdin)["LATEST_FIREFOX_VERSION"])')
-[[ "$v" =~ ^[0-9][0-9A-Za-z.]*$ ]] || die "version inattendue : $v"
+[[ "$v" =~ ^[0-9][0-9A-Za-z.]*$ ]] || die "version inattendue : $v" "unexpected version: $v"
 base="https://download-installer.cdn.mozilla.net/pub/firefox/releases/$v"
 rel="mac/$LANG_FF/Firefox $v.dmg"
 sha=$(curl -fsSL "$base/SHA256SUMS" | awk -v f="$rel" 'substr($0, 67) == f { print $1 }')
-[[ "$sha" =~ ^[0-9a-f]{64}$ ]] || die "empreinte introuvable pour $rel"
+[[ "$sha" =~ ^[0-9a-f]{64}$ ]] || die "empreinte introuvable pour $rel" "digest not found for $rel"
 url="$base/mac/$LANG_FF/Firefox%20$v.dmg"
 size=$(curl -fsSIL "$url" | awk 'tolower($1) == "content-length:" { n = $2 } END { gsub(/\r/, "", n); print n }')
-[[ "$size" =~ ^[0-9]+$ ]] || die "taille introuvable pour $url"
-echo "Firefox $v ($LANG_FF) — $size octets — sha256 $sha"
+[[ "$size" =~ ^[0-9]+$ ]] || die "taille introuvable pour $url" "size not found for $url"
+msg "Firefox $v ($LANG_FF) — $size octets — sha256 $sha" "Firefox $v ($LANG_FF) — $size bytes — sha256 $sha"
+
+if [[ $LANG_FF == fr* ]]; then
+  summary="Navigateur Web libre et indépendant"
+  description="Navigateur Web de la fondation Mozilla. Image disque officielle téléchargée
+  depuis les serveurs de Mozilla et vérifiée par son empreinte SHA-256."
+  privacy="Télémétrie activée par défaut, désactivable dans les paramètres de Firefox."
+else
+  summary="Free and independent web browser"
+  description="Web browser from the Mozilla Foundation. Official disk image downloaded
+  from Mozilla's servers and verified by its SHA-256 digest."
+  privacy="Telemetry enabled by default, can be turned off in Firefox settings."
+fi
 
 rm -rf "$OUT"
 mkdir -p "$OUT"
@@ -33,17 +51,16 @@ id: firefox
 name: "Firefox"
 version: "$v"
 publisher: "Mozilla"
-summary: "Navigateur Web libre et indépendant"
+summary: "$summary"
 description: |
-  Navigateur Web de la fondation Mozilla. Image disque officielle téléchargée
-  depuis les serveurs de Mozilla et vérifiée par son empreinte SHA-256.
+  $description
 license: "MPL-2.0"
 homepage: "https://www.mozilla.org/firefox/"
 languages: [${LANG_FF%%-*}]
 categories: [internet]
 privacy:
   telemetry: opt_out
-  details: "Télémétrie activée par défaut, désactivable dans les paramètres de Firefox."
+  details: "$privacy"
 targets:
   - name: macos
     platform: macos
@@ -66,5 +83,6 @@ auxipak-builder build "$OUT"
 aupak=$(ls -t Firefox-"$v"-*.aupak | head -n 1)
 auxipak-builder test "$aupak"
 echo
-echo "Paquet prêt : $aupak"
-echo "Soumission : auxipak-builder submit \"$aupak\" --note \"Firefox $v\""
+msg "Paquet prêt : $aupak" "Package ready: $aupak"
+msg "Soumission : auxipak-builder submit \"$aupak\" --note \"Firefox $v\"" \
+    "Submit with: auxipak-builder submit \"$aupak\" --note \"Firefox $v\""

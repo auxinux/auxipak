@@ -12,6 +12,7 @@
 
 use crate::ids;
 use crate::platform::{Arch, Distribution, Os, SystemProfile};
+use crate::tr;
 use crate::version::{self, VersionReq};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
@@ -562,22 +563,32 @@ impl Target {
     /// Indique si la variante convient au profil donné, sinon pourquoi.
     pub fn matches(&self, p: &SystemProfile) -> Result<MatchQuality, String> {
         if self.platform != p.os {
-            return Err(format!("plateforme {} ≠ {}", self.platform, p.os));
+            return Err(tr!("plateforme {} ≠ {}", "platform {} ≠ {}", self.platform, p.os));
         }
         if p.os == Os::Linux && !self.distributions.contains(&p.distribution) {
-            return Err(format!(
+            return Err(tr!(
                 "distribution {} non visée ({})",
+                "distribution {} not targeted ({})",
                 p.distribution,
                 self.distributions.iter().map(|d| d.as_str()).collect::<Vec<_>>().join(", ")
             ));
         }
         let arch_exact = self.architectures.contains(&p.arch);
         if !arch_exact && !self.architectures.contains(&Arch::Any) {
-            return Err(format!("architecture {} non prise en charge", p.arch));
+            return Err(tr!(
+                "architecture {} non prise en charge",
+                "unsupported architecture {}",
+                p.arch
+            ));
         }
         if let Some(req) = &self.os_version {
             if !req.matches(&p.version) {
-                return Err(format!("version du système {} hors de « {} »", p.version, req));
+                return Err(tr!(
+                    "version du système {} hors de « {} »",
+                    "system version {} outside “{}”",
+                    p.version,
+                    req
+                ));
             }
         }
         Ok(MatchQuality {
@@ -604,26 +615,48 @@ pub struct Issue {
 
 impl fmt::Display for Issue {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "[{}] {} : {}",
-            if self.fatal { "ERREUR" } else { "AVERTISSEMENT" },
-            self.path,
-            self.message
-        )
+        let (fr, en) = if self.fatal {
+            ("ERREUR", "ERROR")
+        } else {
+            ("AVERTISSEMENT", "WARNING")
+        };
+        f.write_str(&tr!("[{fr}] {} : {}", "[{en}] {}: {}", self.path, self.message))
     }
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum ManifestError {
-    #[error("manifeste trop volumineux ({0} octets, maximum {MAX_MANIFEST_SIZE})")]
     TooLarge(usize),
-    #[error("YAML invalide : {0}")]
     Yaml(String),
-    #[error("manifeste non conforme au schéma :\n{}", .0.join("\n"))]
     Schema(Vec<String>),
-    #[error("manifeste invalide :\n{}", .0.iter().filter(|i| i.fatal).map(|i| i.to_string()).collect::<Vec<_>>().join("\n"))]
     Invalid(Vec<Issue>),
+}
+
+impl fmt::Display for ManifestError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = match self {
+            ManifestError::TooLarge(n) => tr!(
+                "manifeste trop volumineux ({n} octets, maximum {MAX_MANIFEST_SIZE})",
+                "manifest too large ({n} bytes, maximum {MAX_MANIFEST_SIZE})"
+            ),
+            ManifestError::Yaml(e) => tr!("YAML invalide : {e}", "invalid YAML: {e}"),
+            ManifestError::Schema(v) => tr!(
+                "manifeste non conforme au schéma :\n{}",
+                "manifest does not match the schema:\n{}",
+                v.join("\n")
+            ),
+            ManifestError::Invalid(v) => tr!(
+                "manifeste invalide :\n{}",
+                "invalid manifest:\n{}",
+                v.iter()
+                    .filter(|i| i.fatal)
+                    .map(|i| i.to_string())
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            ),
+        };
+        f.write_str(&s)
+    }
 }
 
 impl Manifest {
@@ -658,8 +691,9 @@ impl Manifest {
         if self.format != MANIFEST_FORMAT {
             v.err(
                 "format",
-                format!(
+                tr!(
                     "version de format {} non prise en charge (attendu {MANIFEST_FORMAT})",
+                    "unsupported format version {} (expected {MANIFEST_FORMAT})",
                     self.format
                 ),
             );
@@ -667,13 +701,19 @@ impl Manifest {
         if !ids::is_valid_app_id(&self.id) {
             v.err(
                 "id",
-                "identifiant invalide (minuscules, chiffres, « . », « - », « + », 2 à 64 caractères)",
+                tr!(
+                    "identifiant invalide (minuscules, chiffres, « . », « - », « + », 2 à 64 caractères)",
+                    "invalid identifier (lowercase letters, digits, “.”, “-”, “+”, 2 to 64 characters)"
+                ),
             );
         }
         if !version::is_valid_version(&self.version) {
             v.err(
                 "version",
-                "version invalide (doit commencer par un chiffre ; caractères autorisés : alphanumériques et .+-~_)",
+                tr!(
+                    "version invalide (doit commencer par un chiffre ; caractères autorisés : alphanumériques et .+-~_)",
+                    "invalid version (must start with a digit; allowed characters: alphanumerics and .+-~_)"
+                ),
             );
         }
         for (field, val, max) in [
@@ -683,64 +723,109 @@ impl Manifest {
             ("license", &self.license, 128),
         ] {
             if val.trim().is_empty() {
-                v.err(field, "champ obligatoire vide");
+                v.err(field, tr!("champ obligatoire vide", "required field is empty"));
             } else if val.chars().count() > max || val.chars().any(|c| c.is_control()) {
                 v.err(
                     field,
-                    format!("valeur invalide (maximum {max} caractères, sans caractère de contrôle)"),
+                    tr!(
+                        "valeur invalide (maximum {max} caractères, sans caractère de contrôle)",
+                        "invalid value (at most {max} characters, no control characters)"
+                    ),
                 );
             }
         }
         if let Some(h) = &self.homepage {
             if !h.starts_with("https://") {
-                v.warn("homepage", "la page d'accueil devrait utiliser HTTPS");
+                v.warn(
+                    "homepage",
+                    tr!("la page d'accueil devrait utiliser HTTPS", "the homepage should use HTTPS"),
+                );
             }
         }
         if self.languages.is_empty() {
-            v.err("languages", "au moins une langue est requise (« mul » pour multilingue)");
+            v.err(
+                "languages",
+                tr!(
+                    "au moins une langue est requise (« mul » pour multilingue)",
+                    "at least one language is required (“mul” for multilingual)"
+                ),
+            );
         }
         for (i, l) in self.languages.iter().enumerate() {
             if !ids::is_valid_language(l) {
-                v.err(format!("languages[{i}]"), format!("code de langue invalide : {l}"));
+                v.err(
+                    format!("languages[{i}]"),
+                    tr!("code de langue invalide : {l}", "invalid language code: {l}"),
+                );
             }
         }
         let mut dep_ids = BTreeSet::new();
         for (i, d) in self.dependencies.iter().enumerate() {
             if !ids::is_valid_app_id(&d.id) {
-                v.err(format!("dependencies[{i}].id"), "identifiant invalide");
+                v.err(
+                    format!("dependencies[{i}].id"),
+                    tr!("identifiant invalide", "invalid identifier"),
+                );
             }
             if d.id == self.id {
                 v.err(
                     format!("dependencies[{i}]"),
-                    "une application ne peut pas dépendre d'elle-même",
+                    tr!(
+                        "une application ne peut pas dépendre d'elle-même",
+                        "an application cannot depend on itself"
+                    ),
                 );
             }
             if !dep_ids.insert(&d.id) {
-                v.err(format!("dependencies[{i}]"), "dépendance dupliquée");
+                v.err(
+                    format!("dependencies[{i}]"),
+                    tr!("dépendance dupliquée", "duplicate dependency"),
+                );
             }
         }
         let mut content_paths = BTreeSet::new();
         for (i, c) in self.contents.iter().enumerate() {
             let p = format!("contents[{i}]");
             if !ids::is_safe_relative_path(&c.path) {
-                v.err(&p, format!("chemin dangereux ou invalide : {}", c.path));
+                v.err(
+                    &p,
+                    tr!("chemin dangereux ou invalide : {}", "dangerous or invalid path: {}", c.path),
+                );
             } else if !(c.path.starts_with("payload/") || c.path.starts_with("scripts/")) {
-                v.err(&p, "les fichiers doivent se trouver dans payload/ ou scripts/");
+                v.err(
+                    &p,
+                    tr!(
+                        "les fichiers doivent se trouver dans payload/ ou scripts/",
+                        "files must be under payload/ or scripts/"
+                    ),
+                );
             }
             if !is_sha256_hex(&c.sha256) {
-                v.err(&p, "empreinte SHA-256 invalide (64 caractères hexadécimaux minuscules)");
+                v.err(
+                    &p,
+                    tr!(
+                        "empreinte SHA-256 invalide (64 caractères hexadécimaux minuscules)",
+                        "invalid SHA-256 digest (64 lowercase hexadecimal characters)"
+                    ),
+                );
             }
             if !content_paths.insert(c.path.as_str()) {
-                v.err(&p, "chemin dupliqué");
+                v.err(&p, tr!("chemin dupliqué", "duplicate path"));
             }
         }
         if self.targets.is_empty() {
-            v.err("targets", "au moins une variante est requise");
+            v.err(
+                "targets",
+                tr!("au moins une variante est requise", "at least one target is required"),
+            );
         }
         let mut names = BTreeSet::new();
         for (i, t) in self.targets.iter().enumerate() {
             if !names.insert(&t.name) {
-                v.err(format!("targets[{i}].name"), "nom de variante dupliqué");
+                v.err(
+                    format!("targets[{i}].name"),
+                    tr!("nom de variante dupliqué", "duplicate target name"),
+                );
             }
             validate_target(&mut v, &format!("targets[{i}]"), t, &content_paths);
         }
@@ -764,12 +849,13 @@ impl Manifest {
                         best = Some((q, t));
                     }
                 }
-                Err(e) => reasons.push(format!("{} : {}", t.name, e)),
+                Err(e) => reasons.push(tr!("{} : {}", "{}: {}", t.name, e)),
             }
         }
         best.map(|(_, t)| t).ok_or_else(|| {
-            format!(
+            tr!(
                 "aucune variante de {} {} ne correspond à {} {} ({}) :\n  {}",
+                "no target of {} {} matches {} {} ({}):\n  {}",
                 self.id,
                 self.version,
                 profile.distribution,
@@ -839,28 +925,46 @@ fn validate_target(v: &mut Validator, p: &str, t: &Target, contents: &BTreeSet<&
     if !ids::is_valid_repo_name(&t.name) {
         v.err(
             format!("{p}.name"),
-            "nom de variante invalide (minuscules, chiffres, « - », « _ »)",
+            tr!(
+                "nom de variante invalide (minuscules, chiffres, « - », « _ »)",
+                "invalid target name (lowercase letters, digits, “-”, “_”)"
+            ),
         );
     }
     if t.architectures.is_empty() {
-        v.err(format!("{p}.architectures"), "au moins une architecture est requise");
+        v.err(
+            format!("{p}.architectures"),
+            tr!(
+                "au moins une architecture est requise",
+                "at least one architecture is required"
+            ),
+        );
     }
     if t.architectures.contains(&Arch::Any) && t.architectures.len() > 1 {
         v.err(
             format!("{p}.architectures"),
-            "« any » ne peut pas être combiné à d'autres architectures",
+            tr!(
+                "« any » ne peut pas être combiné à d'autres architectures",
+                "“any” cannot be combined with other architectures"
+            ),
         );
     }
     match t.platform {
         Os::Linux => {
             if t.distributions.is_empty() {
-                v.err(format!("{p}.distributions"), "obligatoire pour une variante Linux");
+                v.err(
+                    format!("{p}.distributions"),
+                    tr!("obligatoire pour une variante Linux", "required for a Linux target"),
+                );
             }
             for d in &t.distributions {
                 if d.os() != Os::Linux || *d == Distribution::Unknown {
                     v.err(
                         format!("{p}.distributions"),
-                        format!("{d} n'est pas une distribution Linux prise en charge"),
+                        tr!(
+                            "{d} n'est pas une distribution Linux prise en charge",
+                            "{d} is not a supported Linux distribution"
+                        ),
                     );
                 }
             }
@@ -870,7 +974,10 @@ fn validate_target(v: &mut Validator, p: &str, t: &Target, contents: &BTreeSet<&
                 if d.os() != os {
                     v.err(
                         format!("{p}.distributions"),
-                        format!("{d} incompatible avec la plateforme {os}"),
+                        tr!(
+                            "{d} incompatible avec la plateforme {os}",
+                            "{d} is incompatible with platform {os}"
+                        ),
                     );
                 }
             }
@@ -889,21 +996,36 @@ fn validate_target(v: &mut Validator, p: &str, t: &Target, contents: &BTreeSet<&
     match &t.install {
         Install::PackageManager { manager, packages } => {
             if t.mode != Mode::Native {
-                v.err(&ip, "la méthode package_manager exige le mode native");
+                v.err(
+                    &ip,
+                    tr!(
+                        "la méthode package_manager exige le mode native",
+                        "the package_manager method requires native mode"
+                    ),
+                );
             }
             check_manager(v, &ip, *manager, &target_dists);
             if packages.is_empty() {
-                v.err(format!("{ip}.packages"), "au moins un paquet est requis");
+                v.err(
+                    format!("{ip}.packages"),
+                    tr!("au moins un paquet est requis", "at least one package is required"),
+                );
             }
             for pk in packages {
                 if !ids::is_valid_native_package(pk) {
-                    v.err(format!("{ip}.packages"), format!("nom de paquet natif invalide : {pk}"));
+                    v.err(
+                        format!("{ip}.packages"),
+                        tr!("nom de paquet natif invalide : {pk}", "invalid native package name: {pk}"),
+                    );
                 }
             }
         }
         Install::Deb { package, source } => {
             if t.platform != Os::Linux {
-                v.err(&ip, "la méthode deb est réservée à Linux");
+                v.err(
+                    &ip,
+                    tr!("la méthode deb est réservée à Linux", "the deb method is for Linux only"),
+                );
             }
             if t.distributions
                 .iter()
@@ -911,12 +1033,19 @@ fn validate_target(v: &mut Validator, p: &str, t: &Target, contents: &BTreeSet<&
             {
                 v.warn(
                     &ip,
-                    "sur AuxiNuxOS/VirtuaOS, un .deb ne s'installe que si l'adaptateur système définit install_local_deb \
-                     (APT est bloqué) ; préférez package_manager (auxi) ou files",
+                    tr!(
+                        "sur AuxiNuxOS/VirtuaOS, un .deb ne s'installe que si l'adaptateur système définit install_local_deb \
+                         (APT est bloqué) ; préférez package_manager (auxi) ou files",
+                        "on AuxiNuxOS/VirtuaOS, a .deb can only be installed if the system adapter defines install_local_deb \
+                         (APT is blocked); prefer package_manager (auxi) or files"
+                    ),
                 );
             }
             if !ids::is_valid_native_package(package) {
-                v.err(format!("{ip}.package"), "nom de paquet Debian invalide");
+                v.err(
+                    format!("{ip}.package"),
+                    tr!("nom de paquet Debian invalide", "invalid Debian package name"),
+                );
             }
             check_source(v, &ip, t.mode, source, contents, &[".deb"]);
         }
@@ -930,17 +1059,26 @@ fn validate_target(v: &mut Validator, p: &str, t: &Target, contents: &BTreeSet<&
             check_source(v, &ip, t.mode, source, contents, &[".msi"]);
             if let Some(pc) = product_code {
                 if !ids::is_valid_msi_product_code(pc) {
-                    v.err(format!("{ip}.product_code"), "code produit MSI invalide ({GUID})");
+                    v.err(
+                        format!("{ip}.product_code"),
+                        tr!("code produit MSI invalide ({{GUID}})", "invalid MSI product code ({{GUID}})"),
+                    );
                 }
             } else if t.remove.is_none() {
                 v.warn(
                     format!("{ip}.product_code"),
-                    "sans product_code, la désinstallation doit être déclarée explicitement",
+                    tr!(
+                        "sans product_code, la désinstallation doit être déclarée explicitement",
+                        "without product_code, uninstallation must be declared explicitly"
+                    ),
                 );
             }
             for (k, val) in properties {
                 if !ids::is_valid_msi_property(k) || !ids::is_valid_installer_arg(val) {
-                    v.err(format!("{ip}.properties"), format!("propriété MSI invalide : {k}"));
+                    v.err(
+                        format!("{ip}.properties"),
+                        tr!("propriété MSI invalide : {k}", "invalid MSI property: {k}"),
+                    );
                 }
             }
         }
@@ -951,7 +1089,10 @@ fn validate_target(v: &mut Validator, p: &str, t: &Target, contents: &BTreeSet<&
             if t.privileges.is_none() {
                 v.warn(
                     format!("{p}.privileges"),
-                    "privilèges non déclarés pour un installateur exe (admin supposé)",
+                    tr!(
+                        "privilèges non déclarés pour un installateur exe (admin supposé)",
+                        "privileges not declared for an exe installer (admin assumed)"
+                    ),
                 );
             }
         }
@@ -959,37 +1100,63 @@ fn validate_target(v: &mut Validator, p: &str, t: &Target, contents: &BTreeSet<&
             require_platform(v, &ip, t.platform, Os::Macos, "pkg");
             check_source(v, &ip, t.mode, source, contents, &[".pkg"]);
             if !ids::is_valid_reverse_dns(package_id) {
-                v.err(format!("{ip}.package_id"), "identifiant de reçu invalide");
+                v.err(
+                    format!("{ip}.package_id"),
+                    tr!("identifiant de reçu invalide", "invalid receipt identifier"),
+                );
             }
         }
         Install::Dmg { source, app } => {
             require_platform(v, &ip, t.platform, Os::Macos, "dmg");
             check_source(v, &ip, t.mode, source, contents, &[".dmg"]);
             if !ids::is_safe_file_name(app) || !app.ends_with(".app") {
-                v.err(format!("{ip}.app"), "nom de bundle invalide (ex. « Firefox.app »)");
+                v.err(
+                    format!("{ip}.app"),
+                    tr!(
+                        "nom de bundle invalide (ex. « Firefox.app »)",
+                        "invalid bundle name (e.g. “Firefox.app”)"
+                    ),
+                );
             }
         }
         Install::Files { files } => {
             if t.mode != Mode::Embedded {
-                v.err(&ip, "la méthode files exige le mode embedded");
+                v.err(
+                    &ip,
+                    tr!(
+                        "la méthode files exige le mode embedded",
+                        "the files method requires embedded mode"
+                    ),
+                );
             }
             if files.is_empty() {
-                v.err(format!("{ip}.files"), "au moins un fichier est requis");
+                v.err(
+                    format!("{ip}.files"),
+                    tr!("au moins un fichier est requis", "at least one file is required"),
+                );
             }
             for (i, f) in files.iter().enumerate() {
                 let fp = format!("{ip}.files[{i}]");
                 if !f.source.starts_with("payload/") || !ids::is_safe_relative_path(&f.source) {
-                    v.err(&fp, format!("source invalide : {}", f.source));
+                    v.err(&fp, tr!("source invalide : {}", "invalid source: {}", f.source));
                 } else if !contents.contains(f.source.as_str())
                     && !contents.iter().any(|c| c.starts_with(&format!("{}/", f.source)))
                 {
-                    v.err(&fp, format!("source absente de contents : {}", f.source));
+                    v.err(
+                        &fp,
+                        tr!(
+                            "source absente de contents : {}",
+                            "source missing from contents: {}",
+                            f.source
+                        ),
+                    );
                 }
                 if !is_valid_templated_path(&f.destination, &FILE_DEST_ROOTS) {
                     v.err(
                         &fp,
-                        format!(
+                        tr!(
                             "destination invalide (doit commencer par {{app}}, {{bin}} ou {{data}}) : {}",
+                            "invalid destination (must start with {{app}}, {{bin}} or {{data}}): {}",
                             f.destination
                         ),
                     );
@@ -998,14 +1165,23 @@ fn validate_target(v: &mut Validator, p: &str, t: &Target, contents: &BTreeSet<&
         }
         Install::Script { script, args } => {
             if t.mode != Mode::Embedded {
-                v.err(&ip, "la méthode script exige le mode embedded");
+                v.err(
+                    &ip,
+                    tr!(
+                        "la méthode script exige le mode embedded",
+                        "the script method requires embedded mode"
+                    ),
+                );
             }
             check_script(v, &format!("{ip}.script"), script, t.platform, contents);
             check_args(v, &ip, args);
             if t.remove.is_none() {
                 v.err(
                     format!("{p}.remove"),
-                    "une installation par script exige une désinstallation explicite",
+                    tr!(
+                        "une installation par script exige une désinstallation explicite",
+                        "a script installation requires an explicit uninstallation"
+                    ),
                 );
             }
         }
@@ -1019,32 +1195,38 @@ fn validate_target(v: &mut Validator, p: &str, t: &Target, contents: &BTreeSet<&
                 check_manager(v, &rp, *manager, &target_dists);
                 for pk in packages {
                     if !ids::is_valid_native_package(pk) {
-                        v.err(&rp, format!("nom de paquet natif invalide : {pk}"));
+                        v.err(
+                            &rp,
+                            tr!("nom de paquet natif invalide : {pk}", "invalid native package name: {pk}"),
+                        );
                     }
                 }
             }
             Remove::Deb { package } => {
                 if t.platform != Os::Linux || !ids::is_valid_native_package(package) {
-                    v.err(&rp, "désinstallation deb invalide");
+                    v.err(&rp, tr!("désinstallation deb invalide", "invalid deb uninstallation"));
                 }
             }
             Remove::Msi { product_code } => {
                 require_platform(v, &rp, t.platform, Os::Windows, "msi");
                 if !ids::is_valid_msi_product_code(product_code) {
-                    v.err(&rp, "code produit MSI invalide");
+                    v.err(&rp, tr!("code produit MSI invalide", "invalid MSI product code"));
                 }
             }
             Remove::Exe { path, args } => {
                 require_platform(v, &rp, t.platform, Os::Windows, "exe");
                 if !is_valid_templated_path(path, &WINDOWS_PATH_ROOTS) || !path.to_ascii_lowercase().ends_with(".exe") {
-                    v.err(&rp, "chemin de désinstallation invalide (racine {program_files}, {program_files_x86}, {local_app_data} ou {app})");
+                    v.err(&rp, tr!(
+                            "chemin de désinstallation invalide (racine {{program_files}}, {{program_files_x86}}, {{local_app_data}} ou {{app}})",
+                            "invalid uninstaller path (root {{program_files}}, {{program_files_x86}}, {{local_app_data}} or {{app}})"
+                        ));
                 }
                 check_args(v, &rp, args);
             }
             Remove::Pkg { package_id, paths } => {
                 require_platform(v, &rp, t.platform, Os::Macos, "pkg");
                 if !ids::is_valid_reverse_dns(package_id) {
-                    v.err(&rp, "identifiant de reçu invalide");
+                    v.err(&rp, tr!("identifiant de reçu invalide", "invalid receipt identifier"));
                 }
                 for path in paths {
                     let ok = path
@@ -1052,19 +1234,31 @@ fn validate_target(v: &mut Validator, p: &str, t: &Target, contents: &BTreeSet<&
                         .map(ids::is_safe_relative_path)
                         .unwrap_or(false);
                     if !ok {
-                        v.err(&rp, format!("chemin non autorisé (doit être sous /Applications) : {path}"));
+                        v.err(
+                            &rp,
+                            tr!(
+                                "chemin non autorisé (doit être sous /Applications) : {path}",
+                                "path not allowed (must be under /Applications): {path}"
+                            ),
+                        );
                     }
                 }
             }
             Remove::App { app } => {
                 require_platform(v, &rp, t.platform, Os::Macos, "app");
                 if !ids::is_safe_file_name(app) || !app.ends_with(".app") {
-                    v.err(&rp, "nom de bundle invalide");
+                    v.err(&rp, tr!("nom de bundle invalide", "invalid bundle name"));
                 }
             }
             Remove::Files => {
                 if !matches!(t.install, Install::Files { .. }) {
-                    v.err(&rp, "la désinstallation files n'est possible que pour une installation files");
+                    v.err(
+                        &rp,
+                        tr!(
+                            "la désinstallation files n'est possible que pour une installation files",
+                            "files uninstallation is only possible for a files installation"
+                        ),
+                    );
                 }
             }
             Remove::Script { script, args } => {
@@ -1075,7 +1269,10 @@ fn validate_target(v: &mut Validator, p: &str, t: &Target, contents: &BTreeSet<&
     } else if t.effective_remove().is_none() {
         v.err(
             format!("{p}.remove"),
-            "aucune procédure de désinstallation ne peut être déduite : déclarez « remove »",
+            tr!(
+                "aucune procédure de désinstallation ne peut être déduite : déclarez « remove »",
+                "no uninstallation procedure can be inferred: declare “remove”"
+            ),
         );
     }
 
@@ -1085,28 +1282,28 @@ fn validate_target(v: &mut Validator, p: &str, t: &Target, contents: &BTreeSet<&
             Detect::PackageManager { manager, package } => {
                 check_manager(v, &dp, *manager, &target_dists);
                 if !ids::is_valid_native_package(package) {
-                    v.err(&dp, "nom de paquet invalide");
+                    v.err(&dp, tr!("nom de paquet invalide", "invalid package name"));
                 }
             }
             Detect::Msi { product_code } => {
                 if !ids::is_valid_msi_product_code(product_code) {
-                    v.err(&dp, "code produit MSI invalide");
+                    v.err(&dp, tr!("code produit MSI invalide", "invalid MSI product code"));
                 }
             }
             Detect::Pkg { package_id } => {
                 if !ids::is_valid_reverse_dns(package_id) {
-                    v.err(&dp, "identifiant de reçu invalide");
+                    v.err(&dp, tr!("identifiant de reçu invalide", "invalid receipt identifier"));
                 }
             }
             Detect::App { app } => {
                 if !ids::is_safe_file_name(app) {
-                    v.err(&dp, "nom de bundle invalide");
+                    v.err(&dp, tr!("nom de bundle invalide", "invalid bundle name"));
                 }
             }
             Detect::Files { paths } => {
                 for path in paths {
                     if !is_valid_templated_path(path, &FILE_DEST_ROOTS) {
-                        v.err(&dp, format!("chemin invalide : {path}"));
+                        v.err(&dp, tr!("chemin invalide : {path}", "invalid path: {path}"));
                     }
                 }
             }
@@ -1119,43 +1316,70 @@ fn validate_target(v: &mut Validator, p: &str, t: &Target, contents: &BTreeSet<&
     if t.uses_scripts() {
         v.warn(
             p,
-            "cette variante utilise des scripts personnalisés : leur exécution exigera une autorisation explicite",
+            tr!(
+                "cette variante utilise des scripts personnalisés : leur exécution exigera une autorisation explicite",
+                "this target uses custom scripts: running them will require explicit permission"
+            ),
         );
     }
     for nd in &t.native_dependencies {
         if !ids::is_valid_native_package(nd) {
             v.err(
                 format!("{p}.native_dependencies"),
-                format!("nom de paquet natif invalide : {nd}"),
+                tr!("nom de paquet natif invalide : {nd}", "invalid native package name: {nd}"),
             );
         }
     }
     if !t.native_dependencies.is_empty() && t.platform != Os::Linux {
         v.err(
             format!("{p}.native_dependencies"),
-            "les dépendances natives ne sont prises en charge que sous Linux",
+            tr!(
+                "les dépendances natives ne sont prises en charge que sous Linux",
+                "native dependencies are only supported on Linux"
+            ),
         );
     }
     if t.success_codes.is_empty() {
-        v.err(format!("{p}.success_codes"), "au moins un code de succès est requis");
+        v.err(
+            format!("{p}.success_codes"),
+            tr!(
+                "au moins un code de succès est requis",
+                "at least one success code is required"
+            ),
+        );
     }
     if let Some(s) = t.timeout_seconds {
         if s == 0 || s > 24 * 3600 {
-            v.err(format!("{p}.timeout_seconds"), "délai invalide (1 à 86400 secondes)");
+            v.err(
+                format!("{p}.timeout_seconds"),
+                tr!("délai invalide (1 à 86400 secondes)", "invalid timeout (1 to 86400 seconds)"),
+            );
         }
     }
 }
 
 fn require_platform(v: &mut Validator, p: &str, actual: Os, expected: Os, what: &str) {
     if actual != expected {
-        v.err(p, format!("la méthode {what} est réservée à {expected}"));
+        v.err(
+            p,
+            tr!(
+                "la méthode {what} est réservée à {expected}",
+                "the {what} method is for {expected} only"
+            ),
+        );
     }
 }
 
 fn check_manager(v: &mut Validator, p: &str, m: Manager, dists: &[Distribution]) {
     for d in dists {
         if !m.allowed_on().contains(d) {
-            v.err(p, format!("le gestionnaire {m} n'est pas autorisé sur {d}"));
+            v.err(
+                p,
+                tr!(
+                    "le gestionnaire {m} n'est pas autorisé sur {d}",
+                    "package manager {m} is not allowed on {d}"
+                ),
+            );
         }
     }
 }
@@ -1163,14 +1387,23 @@ fn check_manager(v: &mut Validator, p: &str, m: Manager, dists: &[Distribution])
 fn check_args(v: &mut Validator, p: &str, args: &[String]) {
     for a in args {
         if !ids::is_valid_installer_arg(a) {
-            v.err(format!("{p}.args"), format!("argument refusé : {a:?}"));
+            v.err(
+                format!("{p}.args"),
+                tr!("argument refusé : {a:?}", "argument rejected: {a:?}"),
+            );
         }
     }
 }
 
 fn check_script(v: &mut Validator, p: &str, script: &str, platform: Os, contents: &BTreeSet<&str>) {
     if !script.starts_with("scripts/") || !ids::is_safe_relative_path(script) {
-        v.err(p, format!("le script doit se trouver dans scripts/ : {script}"));
+        v.err(
+            p,
+            tr!(
+                "le script doit se trouver dans scripts/ : {script}",
+                "the script must be under scripts/: {script}"
+            ),
+        );
         return;
     }
     let ok_ext = match platform {
@@ -1180,11 +1413,20 @@ fn check_script(v: &mut Validator, p: &str, script: &str, platform: Os, contents
     if !ok_ext {
         v.err(
             p,
-            "extension de script incompatible avec la plateforme (.sh pour Linux/macOS, .ps1 pour Windows)",
+            tr!(
+                "extension de script incompatible avec la plateforme (.sh pour Linux/macOS, .ps1 pour Windows)",
+                "script extension does not match the platform (.sh for Linux/macOS, .ps1 for Windows)"
+            ),
         );
     }
     if !contents.contains(script) {
-        v.err(p, format!("script absent de contents : {script}"));
+        v.err(
+            p,
+            tr!(
+                "script absent de contents : {script}",
+                "script missing from contents: {script}"
+            ),
+        );
     }
 }
 
@@ -1193,28 +1435,49 @@ fn check_source(v: &mut Validator, p: &str, mode: Mode, s: &Source, contents: &B
     match mode {
         Mode::Embedded => {
             if s.url.is_some() || s.sha256.is_some() || !s.allowed_hosts.is_empty() || s.file_name.is_some() {
-                v.err(&sp, "en mode embedded, seul « file » est autorisé");
+                v.err(
+                    &sp,
+                    tr!(
+                        "en mode embedded, seul « file » est autorisé",
+                        "in embedded mode, only “file” is allowed"
+                    ),
+                );
             }
             match &s.file {
-                None => v.err(&sp, "« file » est obligatoire en mode embedded"),
+                None => v.err(
+                    &sp,
+                    tr!(
+                        "« file » est obligatoire en mode embedded",
+                        "“file” is required in embedded mode"
+                    ),
+                ),
                 Some(f) => {
                     if !f.starts_with("payload/") || !ids::is_safe_relative_path(f) {
-                        v.err(&sp, format!("chemin invalide : {f}"));
+                        v.err(&sp, tr!("chemin invalide : {f}", "invalid path: {f}"));
                     } else if !contents.contains(f.as_str()) {
-                        v.err(&sp, format!("fichier absent de contents : {f}"));
+                        v.err(
+                            &sp,
+                            tr!("fichier absent de contents : {f}", "file missing from contents: {f}"),
+                        );
                     }
                     if !exts.iter().any(|e| f.to_ascii_lowercase().ends_with(e)) {
-                        v.err(&sp, format!("extension attendue : {}", exts.join(", ")));
+                        v.err(&sp, tr!("extension attendue : {}", "expected extension: {}", exts.join(", ")));
                     }
                 }
             }
         }
         Mode::Remote => {
             if s.file.is_some() {
-                v.err(&sp, "« file » est interdit en mode remote");
+                v.err(
+                    &sp,
+                    tr!("« file » est interdit en mode remote", "“file” is not allowed in remote mode"),
+                );
             }
             match &s.url {
-                None => v.err(&sp, "« url » est obligatoire en mode remote"),
+                None => v.err(
+                    &sp,
+                    tr!("« url » est obligatoire en mode remote", "“url” is required in remote mode"),
+                ),
                 Some(u) => {
                     if let Err(e) = crate::netpolicy::validate_https_url(u) {
                         v.err(&sp, e);
@@ -1223,17 +1486,26 @@ fn check_source(v: &mut Validator, p: &str, mode: Mode, s: &Source, contents: &B
             }
             match &s.sha256 {
                 Some(h) if is_sha256_hex(h) => {}
-                _ => v.err(&sp, "« sha256 » valide est obligatoire en mode remote"),
+                _ => v.err(
+                    &sp,
+                    tr!(
+                        "« sha256 » valide est obligatoire en mode remote",
+                        "a valid “sha256” is required in remote mode"
+                    ),
+                ),
             }
             if s.size.is_none() {
                 v.warn(
                     &sp,
-                    "taille non déclarée : la limite de téléchargement par défaut s'appliquera",
+                    tr!(
+                        "taille non déclarée : la limite de téléchargement par défaut s'appliquera",
+                        "size not declared: the default download limit will apply"
+                    ),
                 );
             }
             for h in &s.allowed_hosts {
                 if !crate::netpolicy::is_valid_host(h) {
-                    v.err(&sp, format!("hôte invalide : {h}"));
+                    v.err(&sp, tr!("hôte invalide : {h}", "invalid host: {h}"));
                 }
             }
             let name = s.file_name.clone().or_else(|| {
@@ -1247,14 +1519,30 @@ fn check_source(v: &mut Validator, p: &str, mode: Mode, s: &Source, contents: &B
                     if !exts.iter().any(|e| n.to_ascii_lowercase().ends_with(e)) {
                         v.err(
                             &sp,
-                            format!("le fichier téléchargé doit avoir l'extension {}", exts.join(", ")),
+                            tr!(
+                                "le fichier téléchargé doit avoir l'extension {}",
+                                "the downloaded file must have the extension {}",
+                                exts.join(", ")
+                            ),
                         );
                     }
                 }
-                _ => v.err(&sp, "nom de fichier local indéterminable : déclarez « file_name »"),
+                _ => v.err(
+                    &sp,
+                    tr!(
+                        "nom de fichier local indéterminable : déclarez « file_name »",
+                        "cannot determine the local file name: declare “file_name”"
+                    ),
+                ),
             }
         }
-        Mode::Native => v.err(p, "le mode native exige la méthode package_manager"),
+        Mode::Native => v.err(
+            p,
+            tr!(
+                "le mode native exige la méthode package_manager",
+                "native mode requires the package_manager method"
+            ),
+        ),
     }
 }
 
@@ -1371,8 +1659,9 @@ targets:
             pretty_name: "macOS".into(),
             immutable: false,
         };
+        crate::i18n::set(crate::i18n::Lang::En);
         let err = m.select_target(&mac).unwrap_err();
-        assert!(err.contains("aucune variante"));
+        assert!(err.contains("no target of"), "{err}");
     }
 
     #[test]
@@ -1384,8 +1673,9 @@ targets:
     #[test]
     fn rejects_apt_on_auxinuxos() {
         let bad = DEMO.replace("      manager: auxi", "      manager: apt");
+        crate::i18n::set(crate::i18n::Lang::En);
         let err = Manifest::parse(bad.as_bytes()).unwrap_err().to_string();
-        assert!(err.contains("apt n'est pas autorisé sur auxinuxos"), "{err}");
+        assert!(err.contains("apt is not allowed on auxinuxos"), "{err}");
     }
 
     #[test]
@@ -1467,7 +1757,8 @@ targets:
       method: script
       script: scripts/install.sh
 "#;
+        crate::i18n::set(crate::i18n::Lang::En);
         let err = Manifest::parse(s.as_bytes()).unwrap_err().to_string();
-        assert!(err.contains("désinstallation explicite"), "{err}");
+        assert!(err.contains("explicit uninstallation"), "{err}");
     }
 }

@@ -5,6 +5,7 @@
 use crate::archive::{self, BuildFile, Inspection, Limits};
 use crate::manifest::{Install, Manifest, ManifestError, MANIFEST_FILE};
 use crate::platform::{Arch, Distribution, Os, SystemProfile};
+use crate::tr;
 use anyhow::{anyhow, bail, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -34,9 +35,40 @@ targets:
           executable: true
 "#;
 
+/// Modèle de manifeste, version anglaise (mêmes clés et valeurs).
+pub const MANIFEST_TEMPLATE_EN: &str = r#"# AuxiPak manifest — see docs/MANIFEST_SPEC.md
+format: 1
+id: {id}
+name: "{name}"
+version: "{version}"
+publisher: "{publisher}"
+summary: "Short description of the application"
+license: "{license}"
+languages: [{language}]
+targets:
+  # Example: file copy (works without privileges).
+  - name: linux
+    platform: linux
+    distributions: [debian, ubuntu, auxinuxos, virtuaos]
+    architectures: [any]
+    mode: embedded
+    install:
+      method: files
+      files:
+        - source: payload/bin/{id}
+          destination: "{bin}/{id}"
+          executable: true
+"#;
+
+/// Manifeste d'un nouveau projet, commenté dans la langue de l'interface.
 pub fn render_template(id: &str, name: &str, version: &str, publisher: &str, language: &str, license: &str) -> String {
     let clean = |s: &str| s.replace(['"', '\n', '\r', '\\'], "");
-    MANIFEST_TEMPLATE
+    let template = if crate::i18n::is_fr() {
+        MANIFEST_TEMPLATE
+    } else {
+        MANIFEST_TEMPLATE_EN
+    };
+    template
         .replace("{id}", id)
         .replace("{name}", &clean(name))
         .replace("{version}", &clean(version))
@@ -69,7 +101,10 @@ fn walk(dir: &Path, prefix: &str, out: &mut Vec<BuildFile>) -> Result<()> {
         let ft = e.file_type()?;
         let rel = format!("{prefix}{name}");
         if ft.is_symlink() {
-            bail!("lien symbolique refusé dans le projet : {rel}");
+            bail!(tr!(
+                "lien symbolique refusé dans le projet : {rel}",
+                "symbolic link rejected in the project: {rel}"
+            ));
         } else if ft.is_dir() {
             walk(&e.path(), &format!("{rel}/"), out)?;
         } else if ft.is_file() {
@@ -86,8 +121,13 @@ fn walk(dir: &Path, prefix: &str, out: &mut Vec<BuildFile>) -> Result<()> {
 /// Charge le manifeste source d'un projet et (re)calcule `contents` à partir
 /// des fichiers réels.
 pub fn load_manifest(dir: &Path) -> Result<(Manifest, Vec<crate::manifest::Issue>)> {
-    let text = std::fs::read_to_string(dir.join(MANIFEST_FILE))
-        .with_context(|| format!("{MANIFEST_FILE} introuvable dans {}", dir.display()))?;
+    let text = std::fs::read_to_string(dir.join(MANIFEST_FILE)).with_context(|| {
+        tr!(
+            "{MANIFEST_FILE} introuvable dans {}",
+            "{MANIFEST_FILE} not found in {}",
+            dir.display()
+        )
+    })?;
     manifest_with_contents(&text, &project_files(dir)?)
 }
 
@@ -125,7 +165,10 @@ pub fn manifest_with_contents(text: &str, files: &[BuildFile]) -> Result<(Manife
 /// Construit l'archive d'un projet.
 pub fn build(dir: &Path, out: &Path) -> Result<(Manifest, Inspection)> {
     if out.extension().and_then(|e| e.to_str()) != Some(archive::PACKAGE_EXTENSION) {
-        bail!("le fichier de sortie doit porter l'extension .aupak");
+        bail!(tr!(
+            "le fichier de sortie doit porter l'extension .aupak",
+            "the output file must have the .aupak extension"
+        ));
     }
     let (m, _) = load_manifest(dir)?;
     let files = project_files(dir)?;
@@ -177,24 +220,28 @@ pub fn static_tests(file: &Path, external_tools: bool) -> Result<Vec<Check>> {
     let insp = match archive::inspect(file, &Limits::default()) {
         Ok(i) => i,
         Err(e) => {
-            push("structure et manifeste".into(), false, e.to_string());
+            push(tr!("structure et manifeste", "structure and manifest"), false, e.to_string());
             return Ok(report);
         }
     };
     push(
-        "structure et manifeste".into(),
+        tr!("structure et manifeste", "structure and manifest"),
         true,
-        format!("{} entrées", insp.entries.len()),
+        tr!("{} entrées", "{} entries", insp.entries.len()),
     );
     let tmp = tempfile::tempdir()?;
     if let Err(e) = archive::extract(file, tmp.path(), &Limits::default()) {
-        push("extraction et empreintes".into(), false, e.to_string());
+        push(
+            tr!("extraction et empreintes", "extraction and digests"),
+            false,
+            e.to_string(),
+        );
         return Ok(report);
     }
     push(
-        "extraction et empreintes".into(),
+        tr!("extraction et empreintes", "extraction and digests"),
         true,
-        format!("{} octets", insp.total_unpacked),
+        tr!("{} octets", "{} bytes", insp.total_unpacked),
     );
     let m = &insp.manifest;
     let mut any = false;
@@ -202,15 +249,28 @@ pub fn static_tests(file: &Path, external_tools: bool) -> Result<Vec<Check>> {
         let r = m.select_target(&p);
         any |= r.is_ok();
         push(
-            format!("variante pour {} {} {}", p.distribution, p.version, p.arch),
+            tr!(
+                "variante pour {} {} {}",
+                "target for {} {} {}",
+                p.distribution,
+                p.version,
+                p.arch
+            ),
             true,
             match r {
                 Ok(t) => format!("→ {}", t.name),
-                Err(_) => "aucune (non pris en charge)".into(),
+                Err(_) => tr!("aucune (non pris en charge)", "none (not supported)"),
             },
         );
     }
-    push("au moins une plateforme de référence couverte".into(), any, String::new());
+    push(
+        tr!(
+            "au moins une plateforme de référence couverte",
+            "at least one reference platform covered"
+        ),
+        any,
+        String::new(),
+    );
     for t in &m.targets {
         if let Install::Deb { package, source } = &t.install {
             if let (Some(f), true) = (&source.file, external_tools) {
@@ -224,15 +284,18 @@ pub fn static_tests(file: &Path, external_tools: bool) -> Result<Vec<Check>> {
                     Ok(o) if o.status.success() => {
                         let actual = String::from_utf8_lossy(&o.stdout).trim().to_string();
                         push(
-                            format!("{} : nom du paquet .deb", t.name),
+                            tr!("{} : nom du paquet .deb", "{}: .deb package name", t.name),
                             &actual == package,
-                            format!("control : {actual}, manifeste : {package}"),
+                            tr!(
+                                "control : {actual}, manifeste : {package}",
+                                "control: {actual}, manifest: {package}"
+                            ),
                         );
                     }
                     _ => push(
-                        format!("{} : contrôle .deb", t.name),
+                        tr!("{} : contrôle .deb", "{}: .deb check", t.name),
                         true,
-                        "dpkg-deb indisponible : non vérifié".into(),
+                        tr!("dpkg-deb indisponible : non vérifié", "dpkg-deb unavailable: not checked"),
                     ),
                 }
             }
@@ -246,21 +309,24 @@ pub fn static_tests(file: &Path, external_tools: bool) -> Result<Vec<Check>> {
             if s.ends_with(".sh") && external_tools {
                 match std::process::Command::new("bash").arg("-n").arg(&path).output() {
                     Ok(o) => push(
-                        format!("{} : syntaxe de {s}", t.name),
+                        tr!("{} : syntaxe de {s}", "{}: syntax of {s}", t.name),
                         o.status.success(),
                         String::from_utf8_lossy(&o.stderr).trim().into(),
                     ),
                     Err(_) => push(
-                        format!("{} : syntaxe de {s}", t.name),
+                        tr!("{} : syntaxe de {s}", "{}: syntax of {s}", t.name),
                         true,
-                        "bash indisponible : non vérifié".into(),
+                        tr!("bash indisponible : non vérifié", "bash unavailable: not checked"),
                     ),
                 }
             } else {
                 push(
-                    format!("{} : {s}", t.name),
+                    tr!("{} : {s}", "{}: {s}", t.name),
                     true,
-                    "analyse syntaxique non effectuée (examen manuel requis)".into(),
+                    tr!(
+                        "analyse syntaxique non effectuée (examen manuel requis)",
+                        "syntax check not performed (manual review required)"
+                    ),
                 );
             }
         }

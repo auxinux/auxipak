@@ -13,6 +13,7 @@
 //! ligne et n'est utilisée que lors de la cérémonie d'initialisation ou de
 //! rotation.
 
+use crate::tr;
 use anyhow::{anyhow, bail, Context, Result};
 use aws_lc_rs::rand::SystemRandom;
 use ed25519_dalek::pkcs8::EncodePrivateKey;
@@ -44,9 +45,9 @@ pub fn generate_key_pem() -> String {
 }
 
 fn pem_to_der(pem_text: &[u8]) -> Result<Vec<u8>> {
-    let p = pem::parse(pem_text).map_err(|e| anyhow!("PEM invalide : {e}"))?;
+    let p = pem::parse(pem_text).map_err(|e| anyhow!(tr!("PEM invalide : {e}", "invalid PEM: {e}")))?;
     if p.tag() != "PRIVATE KEY" {
-        bail!("étiquette PEM inattendue : {}", p.tag());
+        bail!(tr!("étiquette PEM inattendue : {}", "unexpected PEM label: {}", p.tag()));
     }
     Ok(p.contents().to_vec())
 }
@@ -70,7 +71,7 @@ impl KeySource for PemKeySource {
         _value: &str,
         _key_id_hex: &str,
     ) -> std::result::Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
-        Err("écriture de clé non prise en charge".into())
+        Err(tr!("écriture de clé non prise en charge", "writing keys is not supported").into())
     }
 }
 
@@ -98,14 +99,14 @@ impl KeySource for MemKeySource {
         _value: &str,
         _key_id_hex: &str,
     ) -> std::result::Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
-        Err("écriture de clé non prise en charge".into())
+        Err(tr!("écriture de clé non prise en charge", "writing keys is not supported").into())
     }
 }
 
 /// Clé publique TUF (et son identifiant) correspondant à une clé privée PEM.
 pub fn public_tuf_key(pem_text: &str) -> Result<(String, tough::schema::key::Key)> {
     let der = pem_to_der(pem_text.as_bytes())?;
-    let kp = parse_keypair(&der).map_err(|e| anyhow!("clé refusée : {e}"))?;
+    let kp = parse_keypair(&der).map_err(|e| anyhow!(tr!("clé refusée : {e}", "key rejected: {e}")))?;
     let key = kp.tuf_key();
     let id = key.key_id().map_err(|e| anyhow!("{e}"))?;
     Ok((hex::encode(id.as_ref()), key))
@@ -141,7 +142,7 @@ pub async fn create_root(spec: RootSpec) -> Result<Vec<u8>> {
     };
     let mut add_role = |role: RoleType, keys: Vec<tough::schema::key::Key>, threshold: u64| -> Result<()> {
         if keys.is_empty() {
-            bail!("aucune clé pour le rôle {role}");
+            bail!(tr!("aucune clé pour le rôle {role}", "no key for role {role}"));
         }
         let mut ids = Vec::new();
         for k in keys {
@@ -152,7 +153,7 @@ pub async fn create_root(spec: RootSpec) -> Result<Vec<u8>> {
             }
         }
         if threshold == 0 || threshold > ids.len() as u64 {
-            bail!("seuil invalide pour le rôle {role}");
+            bail!(tr!("seuil invalide pour le rôle {role}", "invalid threshold for role {role}"));
         }
         root.roles.insert(
             role,
@@ -181,9 +182,9 @@ pub async fn create_root(spec: RootSpec) -> Result<Vec<u8>> {
         .collect();
     let signed = SignedRole::new(root.clone(), &KeyHolder::Root(root), &sources, &SystemRandom::new())
         .await
-        .map_err(|e| anyhow!("signature de root.json : {e}"))?;
+        .map_err(|e| anyhow!(tr!("signature de root.json : {e}", "root.json signature: {e}")))?;
     if (signed.signed().signatures.len() as u64) < spec.root_threshold {
-        bail!("nombre de signatures root insuffisant");
+        bail!(tr!("nombre de signatures root insuffisant", "not enough root signatures"));
     }
     Ok(signed.buffer().clone())
 }
@@ -197,7 +198,8 @@ pub struct RootSummary {
 }
 
 pub fn summarize_root(bytes: &[u8]) -> Result<RootSummary> {
-    let signed: tough::schema::Signed<Root> = serde_json::from_slice(bytes).context("root.json invalide")?;
+    let signed: tough::schema::Signed<Root> =
+        serde_json::from_slice(bytes).with_context(|| tr!("root.json invalide", "invalid root.json"))?;
     let r = signed.signed;
     let mut roles: Vec<_> = r
         .roles
@@ -243,16 +245,18 @@ pub async fn publish(spec: PublishSpec) -> Result<()> {
     tokio::fs::create_dir_all(&targets_dir).await?;
     let mut editor = RepositoryEditor::new(&spec.root_path)
         .await
-        .map_err(|e| anyhow!("lecture de root.json : {e}"))?;
+        .map_err(|e| anyhow!(tr!("lecture de root.json : {e}", "reading root.json: {e}")))?;
     let v = NonZeroU64::new(spec.version).context("version > 0")?;
     for (name, path) in &spec.targets {
         if !crate::ids::is_safe_relative_path(name) {
-            bail!("nom de cible dangereux : {name}");
+            bail!(tr!("nom de cible dangereux : {name}", "dangerous target name: {name}"));
         }
-        let t = Target::from_path(path).await.map_err(|e| anyhow!("cible {name} : {e}"))?;
+        let t = Target::from_path(path)
+            .await
+            .map_err(|e| anyhow!(tr!("cible {name} : {e}", "target {name}: {e}")))?;
         editor
             .add_target(name.as_str(), t)
-            .map_err(|e| anyhow!("cible {name} : {e}"))?;
+            .map_err(|e| anyhow!(tr!("cible {name} : {e}", "target {name}: {e}")))?;
     }
     editor
         .targets_version(v)
@@ -263,16 +267,19 @@ pub async fn publish(spec: PublishSpec) -> Result<()> {
         .snapshot_expires(to_jiff(spec.snapshot_expires)?)
         .timestamp_version(v)
         .timestamp_expires(to_jiff(spec.timestamp_expires)?);
-    let signed = editor.sign(&spec.keys).await.map_err(|e| anyhow!("signature TUF : {e}"))?;
+    let signed = editor
+        .sign(&spec.keys)
+        .await
+        .map_err(|e| anyhow!(tr!("signature TUF : {e}", "TUF signing: {e}")))?;
     signed
         .write(&meta_dir)
         .await
-        .map_err(|e| anyhow!("écriture des métadonnées : {e}"))?;
+        .map_err(|e| anyhow!(tr!("écriture des métadonnées : {e}", "writing metadata: {e}")))?;
     // Racines antérieures (N.root.json) : un client peut suivre toute la
     // chaîne de rotation depuis la racine qu'il possède.
     for (name, bytes) in &spec.previous_roots {
         if !name.ends_with(".root.json") || !crate::ids::is_safe_file_name(name) {
-            bail!("nom de racine invalide : {name}");
+            bail!(tr!("nom de racine invalide : {name}", "invalid root name: {name}"));
         }
         let dest = meta_dir.join(name);
         if !dest.exists() {
@@ -301,11 +308,11 @@ pub fn peek_role(bytes: &[u8]) -> Option<(u64, String)> {
 
 /// Vérifie qu'un fichier root.json peut être lu par `tough`.
 pub fn check_root_file(path: &Path) -> Result<RootSummary> {
-    let bytes = std::fs::read(path).with_context(|| format!("lecture de {}", path.display()))?;
+    let bytes = std::fs::read(path).with_context(|| tr!("lecture de {}", "reading {}", path.display()))?;
     let s = summarize_root(&bytes)?;
     for r in ["root", "targets", "snapshot", "timestamp"] {
         if !s.roles.iter().any(|(n, _, _)| n == r) {
-            bail!("rôle {r} absent de root.json");
+            bail!(tr!("rôle {r} absent de root.json", "role {r} missing from root.json"));
         }
     }
     Ok(s)

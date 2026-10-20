@@ -8,6 +8,7 @@
 //! de commande restent prioritaires.
 
 use anyhow::{bail, Context, Result};
+use auxipak_core::tr;
 use serde::{Deserialize, Serialize};
 use std::io::{BufRead, Write};
 use std::path::PathBuf;
@@ -35,11 +36,13 @@ pub fn path() -> Result<PathBuf> {
     #[cfg(windows)]
     let dir = std::env::var_os("APPDATA")
         .map(|d| PathBuf::from(d).join("AuxiPak"))
-        .context("APPDATA non défini")?;
+        .with_context(|| tr!("APPDATA non défini", "APPDATA is not set"))?;
     #[cfg(not(windows))]
     let dir = match std::env::var_os("XDG_CONFIG_HOME").filter(|d| !d.is_empty()) {
         Some(d) => PathBuf::from(d),
-        None => PathBuf::from(std::env::var_os("HOME").context("HOME non défini")?).join(".config"),
+        None => {
+            PathBuf::from(std::env::var_os("HOME").with_context(|| tr!("HOME non défini", "HOME is not set"))?).join(".config")
+        }
     }
     .join("auxipak");
     Ok(dir.join("builder.json"))
@@ -49,9 +52,11 @@ impl Settings {
     pub fn load() -> Result<Settings> {
         let p = path()?;
         match std::fs::read(&p) {
-            Ok(b) => serde_json::from_slice(&b).with_context(|| format!("réglages invalides : {}", p.display())),
+            Ok(b) => {
+                serde_json::from_slice(&b).with_context(|| tr!("réglages invalides : {}", "invalid settings: {}", p.display()))
+            }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Settings::default()),
-            Err(e) => Err(e).with_context(|| format!("lecture de {}", p.display())),
+            Err(e) => Err(e).with_context(|| tr!("lecture de {}", "reading {}", p.display())),
         }
     }
 
@@ -69,7 +74,9 @@ impl Settings {
                 use std::os::unix::fs::OpenOptionsExt;
                 o.mode(0o600);
             }
-            let mut f = o.open(&tmp).with_context(|| format!("écriture de {}", tmp.display()))?;
+            let mut f = o
+                .open(&tmp)
+                .with_context(|| tr!("écriture de {}", "writing {}", tmp.display()))?;
             f.write_all(serde_json::to_string_pretty(self)?.as_bytes())?;
             f.sync_all()?;
         }
@@ -86,21 +93,26 @@ impl Settings {
             }
             "token" => {
                 if value.len() < 8 || value.len() > 512 || !value.chars().all(|c| c.is_ascii_graphic()) {
-                    bail!("jeton invalide");
+                    bail!(tr!("jeton invalide", "invalid token"));
                 }
                 self.token = Some(value.to_string());
             }
             "repository" => {
                 if !auxipak_core::ids::is_valid_repo_name(value) {
-                    bail!("dépôt invalide : {value}");
+                    bail!(tr!("dépôt invalide : {value}", "invalid repository: {value}"));
                 }
                 self.repository = Some(value.to_string());
             }
             "lang" | "language" | "langue" => {
-                let l = auxipak_core::i18n::Lang::parse(value).with_context(|| format!("langue inconnue : {value} (fr, en)"))?;
+                let l = auxipak_core::i18n::Lang::parse(value)
+                    .with_context(|| tr!("langue inconnue : {value} (fr, en)", "unknown language: {value} (fr, en)"))?;
                 self.lang = Some(l.code().to_string());
             }
-            _ => bail!("réglage inconnu : {key} (valeurs possibles : {})", KEYS.join(", ")),
+            _ => bail!(tr!(
+                "réglage inconnu : {key} (valeurs possibles : {})",
+                "unknown setting: {key} (possible values: {})",
+                KEYS.join(", ")
+            )),
         }
         Ok(())
     }
@@ -111,7 +123,11 @@ impl Settings {
             "token" => self.token = None,
             "repository" => self.repository = None,
             "lang" | "language" | "langue" => self.lang = None,
-            _ => bail!("réglage inconnu : {key} (valeurs possibles : {})", KEYS.join(", ")),
+            _ => bail!(tr!(
+                "réglage inconnu : {key} (valeurs possibles : {})",
+                "unknown setting: {key} (possible values: {})",
+                KEYS.join(", ")
+            )),
         }
         Ok(())
     }
@@ -119,10 +135,13 @@ impl Settings {
 
 /// HTTPS obligatoire (HTTP accepté uniquement vers localhost).
 pub fn check_server(server: &str) -> Result<url::Url> {
-    let base = url::Url::parse(server).with_context(|| format!("URL invalide : {server}"))?;
+    let base = url::Url::parse(server).with_context(|| tr!("URL invalide : {server}", "invalid URL: {server}"))?;
     let local = matches!(base.host_str(), Some("localhost") | Some("127.0.0.1"));
     if base.scheme() != "https" && !(base.scheme() == "http" && local) {
-        bail!("HTTPS obligatoire pour le serveur (HTTP accepté uniquement vers localhost)");
+        bail!(tr!(
+            "HTTPS obligatoire pour le serveur (HTTP accepté uniquement vers localhost)",
+            "HTTPS is required for the server (HTTP only accepted for localhost)"
+        ));
     }
     Ok(base)
 }
@@ -130,13 +149,13 @@ pub fn check_server(server: &str) -> Result<url::Url> {
 /// Jeton masqué pour l'affichage.
 pub fn mask(token: &str) -> String {
     let head: String = token.chars().take(8).collect();
-    format!("{head}… ({} caractères)", token.chars().count())
+    tr!("{head}… ({} caractères)", "{head}… ({} characters)", token.chars().count())
 }
 
 /// Lit une valeur sur l'entrée standard (évite de la laisser dans l'historique
 /// du shell).
 pub fn read_value(key: &str) -> Result<String> {
-    eprint!("{key} : ");
+    eprint!("{}", tr!("{key} : ", "{key}: "));
     std::io::stderr().flush()?;
     let mut line = String::new();
     std::io::stdin().lock().read_line(&mut line)?;
@@ -160,6 +179,7 @@ mod tests {
         assert!(s.set("inconnu", "x").is_err());
         s.unset("token").unwrap();
         assert!(s.token.is_none());
-        assert_eq!(mask("apk_abcdefghijkl"), "apk_abcd… (16 caractères)");
+        auxipak_core::i18n::set(auxipak_core::i18n::Lang::En);
+        assert_eq!(mask("apk_abcdefghijkl"), "apk_abcd… (16 characters)");
     }
 }

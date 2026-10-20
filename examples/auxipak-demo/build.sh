@@ -7,7 +7,7 @@ VERSION="${1:?version requise}"
 OUT="${2:-$PWD/dist}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 BUILDER="${AUXIPAK_BUILDER:-auxipak-builder}"
-[[ "$VERSION" =~ ^[0-9][A-Za-z0-9.+~-]*$ ]] || { echo "version invalide" >&2; exit 1; }
+[[ "$VERSION" =~ ^[0-9][A-Za-z0-9.+~-]*$ ]] || { echo "version invalide / invalid version: $VERSION" >&2; exit 1; }
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 PROJ="$WORK/project"

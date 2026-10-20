@@ -14,6 +14,7 @@
 //! (« Vérifié », « Compatible ») : cette évaluation est un mécanisme distinct,
 //! attribué par le serveur.
 
+use crate::tr;
 use base64::engine::general_purpose::STANDARD as B64;
 use base64::Engine;
 use chrono::{DateTime, Utc};
@@ -28,26 +29,43 @@ const DOMAIN: &[u8] = b"AUXIPAK-SIGNATURE-V1\n";
 
 #[derive(Debug, thiserror::Error)]
 pub enum SignatureError {
-    #[error("format de signature non pris en charge : {0}")]
     Format(String),
-    #[error("clé de signature inconnue : {0}")]
     UnknownKey(String),
-    #[error("clé {0} révoquée")]
     RevokedKey(String),
-    #[error("clé {0} hors de sa période de validité")]
     KeyNotValid(String),
-    #[error("usage de clé incorrect pour {0}")]
     WrongPurpose(String),
-    #[error("la signature ne correspond pas au paquet : {0}")]
     Mismatch(String),
-    #[error("signature cryptographique invalide")]
     BadSignature,
-    #[error("clé invalide : {0}")]
     Key(String),
-    #[error("entrée/sortie : {0}")]
     Io(#[from] std::io::Error),
-    #[error("JSON : {0}")]
     Json(#[from] serde_json::Error),
+}
+
+impl std::fmt::Display for SignatureError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            SignatureError::Format(e) => tr!(
+                "format de signature non pris en charge : {e}",
+                "unsupported signature format: {e}"
+            ),
+            SignatureError::UnknownKey(k) => tr!("clé de signature inconnue : {k}", "unknown signing key: {k}"),
+            SignatureError::RevokedKey(k) => tr!("clé {k} révoquée", "key {k} is revoked"),
+            SignatureError::KeyNotValid(k) => tr!(
+                "clé {k} hors de sa période de validité",
+                "key {k} is outside its validity period"
+            ),
+            SignatureError::WrongPurpose(k) => tr!("usage de clé incorrect pour {k}", "wrong key purpose for {k}"),
+            SignatureError::Mismatch(e) => tr!(
+                "la signature ne correspond pas au paquet : {e}",
+                "the signature does not match the package: {e}"
+            ),
+            SignatureError::BadSignature => tr!("signature cryptographique invalide", "invalid cryptographic signature"),
+            SignatureError::Key(e) => tr!("clé invalide : {e}", "invalid key: {e}"),
+            SignatureError::Io(e) => tr!("entrée/sortie : {e}", "I/O: {e}"),
+            SignatureError::Json(e) => format!("JSON : {e}"),
+        };
+        f.write_str(&s)
+    }
 }
 
 /// Usage d'une clé publique.
@@ -80,19 +98,21 @@ pub struct PublicKeyInfo {
 impl PublicKeyInfo {
     pub fn verifying_key(&self) -> Result<VerifyingKey, SignatureError> {
         if self.algorithm != "ed25519" {
-            return Err(SignatureError::Key(format!(
+            return Err(SignatureError::Key(tr!(
                 "algorithme non pris en charge : {}",
+                "unsupported algorithm: {}",
                 self.algorithm
             )));
         }
         let raw = B64.decode(&self.public_key).map_err(|e| SignatureError::Key(e.to_string()))?;
         let arr: [u8; 32] = raw
             .try_into()
-            .map_err(|_| SignatureError::Key("longueur de clé invalide".into()))?;
+            .map_err(|_| SignatureError::Key(tr!("longueur de clé invalide", "invalid key length")))?;
         let vk = VerifyingKey::from_bytes(&arr).map_err(|e| SignatureError::Key(e.to_string()))?;
         if key_id_for(&vk) != self.key_id {
-            return Err(SignatureError::Key(format!(
+            return Err(SignatureError::Key(tr!(
                 "identifiant de clé incohérent : {}",
+                "inconsistent key identifier: {}",
                 self.key_id
             )));
         }
@@ -254,7 +274,10 @@ pub struct VerifiedSignature {
 impl PackageSignature {
     pub fn from_json(bytes: &[u8]) -> Result<Self, SignatureError> {
         if bytes.len() > 64 * 1024 {
-            return Err(SignatureError::Format("document de signature trop volumineux".into()));
+            return Err(SignatureError::Format(tr!(
+                "document de signature trop volumineux",
+                "signature document too large"
+            )));
         }
         Ok(serde_json::from_slice(bytes)?)
     }
@@ -286,7 +309,7 @@ impl PackageSignature {
             return Err(SignatureError::WrongPurpose(key.key_id.clone()));
         }
         let signed_at = DateTime::parse_from_rfc3339(&p.signed_at)
-            .map_err(|e| SignatureError::Format(format!("date de signature : {e}")))?
+            .map_err(|e| SignatureError::Format(tr!("date de signature : {e}", "signature date: {e}")))?
             .with_timezone(&Utc);
         if key.not_before.map(|nb| signed_at < nb).unwrap_or(false) || key.not_after.map(|na| signed_at > na).unwrap_or(false) {
             return Err(SignatureError::KeyNotValid(key.key_id.clone()));

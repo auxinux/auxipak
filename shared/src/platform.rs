@@ -6,6 +6,7 @@
 //! fonctions pures (analyse de `os-release`, calcul du canal) afin qu'elles
 //! soient testables sur n'importe quel hôte.
 
+use crate::tr;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt;
@@ -53,7 +54,7 @@ impl FromStr for Os {
             "linux" => Ok(Os::Linux),
             "windows" => Ok(Os::Windows),
             "macos" | "darwin" | "osx" => Ok(Os::Macos),
-            other => Err(format!("système inconnu : {other}")),
+            other => Err(tr!("système inconnu : {other}", "unknown operating system: {other}")),
         }
     }
 }

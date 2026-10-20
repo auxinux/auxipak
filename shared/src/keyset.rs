@@ -13,6 +13,7 @@
 //! ```
 
 use crate::signature::{KeyPurpose, PackageSigner, TrustedKeys};
+use crate::tr;
 use crate::tuf;
 use anyhow::{bail, Result};
 use std::path::Path;
@@ -25,7 +26,11 @@ pub struct KeysetSummary {
 /// Écrit un fichier secret (0600), sans jamais écraser un fichier existant.
 pub fn write_secret(path: &Path, data: &str) -> Result<()> {
     if path.exists() {
-        bail!("{} existe déjà : refus d'écraser une clé", path.display());
+        bail!(tr!(
+            "{} existe déjà : refus d'écraser une clé",
+            "{} already exists: refusing to overwrite a key",
+            path.display()
+        ));
     }
     if let Some(p) = path.parent().filter(|p| !p.as_os_str().is_empty() && *p != Path::new(".")) {
         std::fs::create_dir_all(p)?;

@@ -6,6 +6,8 @@
 #
 # Options : DEMO_MODE=native|files (voir demo.sh), BIN_DIR, PORT.
 set -euo pipefail
+# Les vérifications ci-dessous comparent les messages français du client.
+export AUXIPAK_LANG=fr
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 BIN_DIR="${BIN_DIR:-$ROOT/target/debug}"
 PG_ADMIN_URL="${PG_ADMIN_URL:?PG_ADMIN_URL requis (connexion administrateur PostgreSQL)}"

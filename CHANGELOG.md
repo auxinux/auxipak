@@ -5,6 +5,16 @@ le projet applique le [versionnage sémantique](https://semver.org/lang/fr/).
 
 ## [Non publié]
 
+## [1.0.3] — 2026-10-20
+
+### Ajouté
+
+- Bilinguisme anglais / français de tout le projet (anglais par défaut) :
+  client, Builder, bibliothèque commune, serveur (API, pages, rapports de
+  validation), scripts d'installation et de déploiement. Langue : choix
+  explicite (`auxipak set lang fr|en`, `auxipak-builder set lang=…`, sélecteur
+  du site), sinon `AUXIPAK_LANG`, sinon la langue du système ou du navigateur.
+
 ### Ajouté
 
 - `auxipak upgrade` met d'abord à jour AuxiPak lui-même (et

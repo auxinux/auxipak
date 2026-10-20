@@ -1,5 +1,6 @@
 //! Calculs d'empreintes SHA-256.
 
+use crate::tr;
 use sha2::{Digest, Sha256};
 use std::io::{self, Read, Write};
 use std::path::Path;
@@ -61,7 +62,11 @@ impl<W: Write> HashingWriter<W> {
 impl<W: Write> Write for HashingWriter<W> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         if self.written + buf.len() as u64 > self.limit {
-            return Err(io::Error::other(format!("limite de taille dépassée ({} octets)", self.limit)));
+            return Err(io::Error::other(tr!(
+                "limite de taille dépassée ({} octets)",
+                "size limit exceeded ({} bytes)",
+                self.limit
+            )));
         }
         let n = self.inner.write(buf)?;
         self.hasher.update(&buf[..n]);

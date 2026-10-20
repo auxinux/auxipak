@@ -19,6 +19,7 @@
 
 use crate::manifest::{Dependency, Mode, Privileges};
 use crate::platform::{Arch, Channel, Distribution, Os};
+use crate::tr;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -83,7 +84,7 @@ impl FromStr for Status {
             "verified" => Ok(Status::Verified),
             "compatible" => Ok(Status::Compatible),
             "unreviewed" => Ok(Status::Unreviewed),
-            o => Err(format!("statut inconnu : {o}")),
+            o => Err(tr!("statut inconnu : {o}", "unknown status: {o}")),
         }
     }
 }
