@@ -602,7 +602,10 @@ mod tests {
     #[test]
     fn extensions_de_paquet() {
         assert!(is_package_name("Firefox-158.0-fr.aupak"));
-        assert!(is_package_name("Firefox-158.0-fr.apak"), "ancienne extension toujours acceptée");
+        assert!(
+            is_package_name("Firefox-158.0-fr.apak"),
+            "ancienne extension toujours acceptée"
+        );
         assert!(!is_package_name("x.pkg") && !is_package_name("x.aupak.sig") && !is_package_name("aupak"));
     }
 
