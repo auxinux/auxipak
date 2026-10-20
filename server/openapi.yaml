@@ -79,7 +79,7 @@ components:
         name: { type: string }
         kind: { type: string, enum: [human, ci, agent] }
         scopes: { type: array, items: { type: string, enum: [read, build, submit, review, evaluate, admin] } }
-        provider: { type: string, description: "Fournisseur de l'agent (ex. claude) — informatif" }
+        provider: { type: string, description: "Fournisseur de l'agent (ex. mon-agent) — informatif" }
         expires_days: { type: integer, minimum: 1, maximum: 366 }
         user_id: { type: string, format: uuid, description: "Administration : propriétaire du jeton" }
     Project:

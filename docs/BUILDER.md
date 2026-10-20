@@ -190,9 +190,9 @@ Bonnes pratiques :
 - pour tester l'installation, utilisez une machine virtuelle ou un conteneur
   jetable (section 5).
 
-## 4. Claude Code et autres agents d'automatisation
+## 4. Agents d'automatisation
 
-Un agent (Claude Code, ou tout autre fournisseur) peut préparer un paquet de
+Un agent d'automatisation (outil ou assistant, quel que soit le fournisseur) peut préparer un paquet de
 bout en bout, avec le Builder CLI ou l'API Builder, à l'aide d'un jeton de
 type **`agent`**.
 
@@ -201,7 +201,7 @@ type **`agent`**.
 Dans `/admin/tokens` ou par l'API (session humaine) :
 
 ```json
-{"name": "claude-code mon-outil", "kind": "agent", "provider": "claude-code",
+{"name": "agent mon-outil", "kind": "agent", "provider": "mon-agent",
  "scopes": ["build", "submit"], "expires_days": 7}
 ```
 

@@ -14,7 +14,7 @@ AuxiPak est le service de distribution d'applications de l'écosystème AuxiNux
 
 | Document | Contenu |
 |---|---|
-| [BUILDER.md](BUILDER.md) | Construire, tester, signer et soumettre un paquet (CLI et API), intégration GitHub Actions et agents (Claude Code, etc.) |
+| [BUILDER.md](BUILDER.md) | Construire, tester, signer et soumettre un paquet (CLI et API), intégration GitHub Actions et agents d'automatisation |
 | [MANIFEST_SPEC.md](MANIFEST_SPEC.md) | Spécification complète du manifeste `instruction.auxipak` |
 | [AUPAK_FORMAT.md](AUPAK_FORMAT.md) | Spécification du format d'archive `.aupak` v1 et de la signature détachée `.aupak.sig` |
 | [API.md](API.md) | API REST du serveur : routes, authentification, portées, politique d'approbation, exemples `curl` |

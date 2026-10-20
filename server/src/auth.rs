@@ -529,7 +529,7 @@ mod tests {
                 id: Uuid::nil(),
                 kind: TokenKind::Agent,
                 scopes: vec![Scope::Build, Scope::Submit, Scope::Review, Scope::Admin],
-                provider: Some("claude".into()),
+                provider: Some("mon-agent".into()),
             },
         );
         assert!(agent.has(Scope::Build));

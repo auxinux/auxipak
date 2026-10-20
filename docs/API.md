@@ -80,7 +80,7 @@ Règles :
   le nouveau jeton ne peut recevoir que des portées que le jeton émetteur
   détient (un jeton ne sert jamais à obtenir davantage de droits) ;
 - le champ facultatif `provider` (≤ 64 caractères) identifie l'outil
-  (ex. `claude-code`, `github-actions`) et apparaît dans le journal d'audit.
+  (ex. `mon-agent`, `github-actions`) et apparaît dans le journal d'audit.
 
 ## 2. Politique d'approbation et de publication
 
@@ -194,7 +194,7 @@ CSRF=$(curl -fsS -c cookies.txt -H 'Content-Type: application/json' \
 
 # 2. Jeton agent limité à build + submit, valable 30 jours
 curl -fsS -b cookies.txt -H "X-CSRF-Token: $CSRF" -H 'Content-Type: application/json' \
-  -d '{"name":"claude-code mon-outil","kind":"agent","provider":"claude-code","scopes":["build","submit"],"expires_days":30}' \
+  -d '{"name":"agent mon-outil","kind":"agent","provider":"mon-agent","scopes":["build","submit"],"expires_days":30}' \
   "$URL/api/v1/tokens"
 # → {"id":"…","token":"apk_…","warning":"ce jeton ne sera plus affiché"}
 
@@ -255,7 +255,7 @@ curl -fsS -X POST -H "Authorization: Bearer $REVIEW_TOKEN" -H 'Content-Type: app
 
 ## 5. Construire un paquet avec l'API Builder (jeton agent)
 
-Scénario : un agent (Claude Code ou autre) dispose d'un jeton `agent`
+Scénario : un agent d'automatisation dispose d'un jeton `agent`
 (`build`, `submit`) et construit le paquet `mon-outil`. Il ne peut ni
 approuver ni publier.
 
