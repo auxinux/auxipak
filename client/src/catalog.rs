@@ -156,7 +156,7 @@ pub struct Selector {
 /// Résout une demande (`firefox`, `Firefox-150.1-fr`, `Firefox`) vers un candidat.
 pub fn resolve<'a>(repos: &'a [RepoData], spec: &str, sel: &Selector, default_lang: &str) -> Result<Candidate<'a>> {
     let lang = sel.language.as_deref().unwrap_or(default_lang);
-    let spec_l = spec.trim().trim_end_matches(".apak").to_lowercase();
+    let spec_l = spec.trim().trim_end_matches(".aupak").to_lowercase();
     let all: Vec<Candidate> = all_candidates(repos)
         .into_iter()
         .filter(|c| sel.repo.as_ref().map(|r| &c.repo.config.name == r).unwrap_or(true))
@@ -164,7 +164,7 @@ pub fn resolve<'a>(repos: &'a [RepoData], spec: &str, sel: &Selector, default_la
     // 1. Nom de fichier exact (`Firefox-150.1-fr`).
     let by_file: Vec<&Candidate> = all
         .iter()
-        .filter(|c| c.release.file_name.trim_end_matches(".apak").to_lowercase() == spec_l)
+        .filter(|c| c.release.file_name.trim_end_matches(".aupak").to_lowercase() == spec_l)
         .collect();
     let pool: Vec<&Candidate> = if !by_file.is_empty() {
         by_file

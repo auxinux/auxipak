@@ -30,7 +30,7 @@ use std::process::ExitCode;
     name = "auxipak",
     version,
     about = "AuxiPak — distribution et gestion d'applications pour l'écosystème AuxiNux",
-    long_about = "AuxiPak installe, met à niveau et désinstalle des applications distribuées au format .apak, \
+    long_about = "AuxiPak installe, met à niveau et désinstalle des applications distribuées au format .aupak, \
                   en utilisant les mécanismes natifs autorisés par chaque système (APT, auxi, MSI, pkg…).\n\
                   AuxiPak ne met jamais à jour le système d'exploitation lui-même."
 )]
@@ -102,7 +102,7 @@ enum Cmd {
         #[arg(long)]
         offline: bool,
     },
-    /// Vérifier un fichier .apak local (structure, manifeste, signature). N'exécute rien.
+    /// Vérifier un fichier .aupak local (structure, manifeste, signature). N'exécute rien.
     Verify {
         file: PathBuf,
         /// Document de signature (par défaut : <fichier>.sig s'il existe).
@@ -680,8 +680,8 @@ fn info(env: &Env, package: &str, json: bool) -> Result<()> {
 }
 
 fn verify(paths: &Paths, file: &std::path::Path, signature: Option<PathBuf>, json: bool) -> Result<()> {
-    if file.extension().and_then(|e| e.to_str()) != Some("apak") {
-        bail!("le fichier doit porter l'extension .apak");
+    if !auxipak_core::archive::is_package_path(file) {
+        bail!("le fichier doit porter l'extension .aupak");
     }
     let insp = archive::inspect(file, &Limits::default()).map_err(|e| anyhow::anyhow!("paquet INVALIDE : {e}"))?;
     let sig_path = signature.or_else(|| {
@@ -729,8 +729,8 @@ fn verify(paths: &Paths, file: &std::path::Path, signature: Option<PathBuf>, jso
         println!("Paquet       : {}", file.display());
         println!("Application  : {} {} ({})", m.name, m.version, m.id);
         println!(
-            "Structure    : conforme au format .apak v{} ({} entrées)",
-            archive::APAK_FORMAT_VERSION,
+            "Structure    : conforme au format .aupak v{} ({} entrées)",
+            archive::AUPAK_FORMAT_VERSION,
             insp.entries.len()
         );
         println!("Manifeste    : valide (schéma et règles sémantiques)");

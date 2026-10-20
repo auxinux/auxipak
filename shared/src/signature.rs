@@ -1,7 +1,7 @@
-//! Signatures de paquets `.apak`.
+//! Signatures de paquets `.aupak`.
 //!
-//! Une signature est un document JSON détaché (`<fichier>.apak.sig`) : le
-//! format `.apak` n'est donc jamais modifié par la signature, ce qui permet
+//! Une signature est un document JSON détaché (`<fichier>.aupak.sig`) : le
+//! format `.aupak` n'est donc jamais modifié par la signature, ce qui permet
 //! d'ajouter plus tard des chaînes de certificats (autorité AuxiNux CA,
 //! `ca.auxinux.ca`) sans rupture.
 //!
@@ -232,7 +232,7 @@ impl SignedPayload {
     }
 }
 
-/// Document de signature détaché (`.apak.sig`).
+/// Document de signature détaché (`.aupak.sig`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PackageSignature {
     #[serde(flatten)]
@@ -317,7 +317,7 @@ mod tests {
         PackageRef {
             id: "auxipak-demo".into(),
             version: "1.0.0".into(),
-            file_name: "AuxiPakDemo-1.0.0-mul.apak".into(),
+            file_name: "AuxiPakDemo-1.0.0-mul.aupak".into(),
             sha256: "ab".repeat(32),
             size: 1234,
         }

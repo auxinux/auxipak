@@ -87,27 +87,27 @@ impl Fixture {
             std::fs::create_dir_all(f.parent().unwrap()).unwrap();
             std::fs::write(&f, data).unwrap();
         }
-        let out = self.p(&format!("pkg-{}.apak", self.packages.len()));
+        let out = self.p(&format!("pkg-{}.aupak", self.packages.len()));
         auxipak_core::project::build(&proj, &out).unwrap();
         self.add_file(&out, signer)
     }
 
     /// Ajoute une archive existante (éventuellement malveillante) au dépôt.
-    fn add_file(&mut self, apak: &Path, signer: Option<&PackageSigner>) -> PathBuf {
+    fn add_file(&mut self, pkg: &Path, signer: Option<&PackageSigner>) -> PathBuf {
         let default = PackageSigner::load(&self.p("keys/online/package-signing.pem")).unwrap();
         let signer = signer.unwrap_or(&default);
-        let (sha256, size) = auxipak_core::hash::sha256_file(apak).unwrap();
+        let (sha256, size) = auxipak_core::hash::sha256_file(pkg).unwrap();
         // Le manifeste est lu sans validation de l'archive (cas malveillants).
-        let manifest = match archive::inspect(apak, &Limits::default()) {
+        let manifest = match archive::inspect(pkg, &Limits::default()) {
             Ok(i) => i.manifest,
             Err(_) => {
-                let mut r = sevenz::reader(apak);
+                let mut r = sevenz::reader(pkg);
                 auxipak_core::manifest::Manifest::parse(&r.read_file("instruction.auxipak").unwrap())
                     .unwrap()
                     .0
             }
         };
-        let file_name = format!("{}-{}.apak", manifest.id, manifest.version);
+        let file_name = format!("{}-{}.aupak", manifest.id, manifest.version);
         let sig = signer.sign(PackageRef {
             id: manifest.id.clone(),
             version: manifest.version.clone(),
@@ -115,7 +115,7 @@ impl Fixture {
             sha256: sha256.clone(),
             size,
         });
-        let sig_path = PathBuf::from(format!("{}.sig", apak.display()));
+        let sig_path = PathBuf::from(format!("{}.sig", pkg.display()));
         std::fs::write(&sig_path, sig.to_json()).unwrap();
         if !self.apps.iter().any(|a| a.id == manifest.id) {
             self.apps.push(AppMeta {
@@ -136,14 +136,14 @@ impl Fixture {
             uses_scripts: manifest.targets.iter().any(|t| t.uses_scripts()),
             manifest,
             file_name,
-            package_path: apak.to_path_buf(),
+            package_path: pkg.to_path_buf(),
             signature_path: sig_path,
             size,
             sha256,
             signature_key_id: signer.key_id().into(),
             published_at: Utc::now(),
         });
-        apak.to_path_buf()
+        pkg.to_path_buf()
     }
 
     /// Signe et publie le dépôt (remplace le précédent).
@@ -390,7 +390,7 @@ fn rejects_wrong_sha256_and_invalid_signature() {
     assert!(out.contains("signature"), "{out}");
     assert!(!f.installed_bin("evil").exists());
     // Paquet remplacé sur le dépôt après publication : empreinte incorrecte.
-    let target = f.repo().join("targets/packages/hello/1.0.0/hello-1.0.0.apak");
+    let target = f.repo().join("targets/packages/hello/1.0.0/hello-1.0.0.aupak");
     let mut data = std::fs::read(&target).unwrap();
     let last = data.len() - 1;
     data[last] ^= 0xff;
@@ -435,7 +435,7 @@ fn rejects_malicious_archive() {
             auxipak_core::hash::sha256_hex(b"x")
         ),
     );
-    let evil = f.p("evil.apak");
+    let evil = f.p("evil.aupak");
     archive::write_raw_7z(
         &evil,
         vec![

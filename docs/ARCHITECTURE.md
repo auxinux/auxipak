@@ -40,7 +40,7 @@ ajouter une distribution Linux.
                          │   comptes, jetons, soumissions,        dépôts gen-N + lien « current »     │
                          │   versions, évaluations, audit         Clés en ligne (lecture seule)       │
                          └────────────────────────────────────────────────────────────────────────┘
-                                                   │ HTTPS (métadonnées TUF, index, .apak, .apak.sig)
+                                                   │ HTTPS (métadonnées TUF, index, .aupak, .aupak.sig)
                                                    ▼
                     auxipak (client) ── vérifie TUF ─ vérifie signature ─ inspecte l'archive
                          │
@@ -52,7 +52,7 @@ ajouter une distribution Linux.
 
 | Répertoire | Crate / binaire | Rôle |
 |---|---|---|
-| `shared/` | `auxipak-core` | Bibliothèque commune : plateformes et canaux (`platform.rs`), versions (`version.rs`), identifiants anti-injection (`ids.rs`), manifeste (`manifest.rs`, `schema.rs` + `schemas/instruction.auxipak.schema.json`), archive `.apak` (`archive.rs`), signatures (`signature.rs`), index (`index.rs`), TUF (`tuf.rs`), cérémonie de clés (`keyset.rs`), projets et tests statiques (`project.rs`), génération des index (`repogen.rs`), politique réseau (`netpolicy.rs`), empreintes (`hash.rs`) |
+| `shared/` | `auxipak-core` | Bibliothèque commune : plateformes et canaux (`platform.rs`), versions (`version.rs`), identifiants anti-injection (`ids.rs`), manifeste (`manifest.rs`, `schema.rs` + `schemas/instruction.auxipak.schema.json`), archive `.aupak` (`archive.rs`), signatures (`signature.rs`), index (`index.rs`), TUF (`tuf.rs`), cérémonie de clés (`keyset.rs`), projets et tests statiques (`project.rs`), génération des index (`repogen.rs`), politique réseau (`netpolicy.rs`), empreintes (`hash.rs`) |
 | `client/` | `auxipak` | Détection (`detect.rs`), chemins (`paths.rs`), configuration et adaptateurs (`config.rs`), synchronisation TUF (`repo.rs`), recherche/résolution (`catalog.rs`), téléchargements (`download.rs`), registre et transactions (`registry.rs`), orchestration (`engine.rs`), méthodes (`methods.rs`), exécution (`executor.rs`), privilèges (`privileges.rs`), ancres embarquées (`build.rs`) |
 | `builder/` | `auxipak-builder` | Création de projets, validation, construction, tests statiques, signature, cérémonie de clés, soumission |
 | `server/` | `auxipak-server` | Configuration (`config.rs`), authentification et autorisation (`auth.rs`), API (`api/*.rs`), publication (`publisher.rs`), analyse des soumissions (`validation.rs`), clés (`keys.rs`), interface Web (`web.rs`), audit (`audit.rs`), migrations (`migrations/0001_init.sql`), OpenAPI (`openapi.yaml`) |
@@ -65,14 +65,14 @@ ajouter une distribution Linux.
 
 | Choix | Justification |
 |---|---|
-| **Rust pour tous les composants** | Un seul langage, une seule bibliothèque commune (`auxipak-core`) partagée par le client, le constructeur et le serveur : le manifeste, le format `.apak`, les signatures et la génération des index sont validés par **le même code** partout. Binaires autonomes, sans environnement d'exécution à installer (important pour un client déployé sur Linux, Windows et macOS, et sur un système immuable). Sûreté mémoire pour un logiciel qui manipule des archives et des métadonnées non fiables. |
+| **Rust pour tous les composants** | Un seul langage, une seule bibliothèque commune (`auxipak-core`) partagée par le client, le constructeur et le serveur : le manifeste, le format `.aupak`, les signatures et la génération des index sont validés par **le même code** partout. Binaires autonomes, sans environnement d'exécution à installer (important pour un client déployé sur Linux, Windows et macOS, et sur un système immuable). Sûreté mémoire pour un logiciel qui manipule des archives et des métadonnées non fiables. |
 | **axum + sqlx / PostgreSQL** | axum (tokio) : serveur asynchrone éprouvé, extracteurs typés (l'acteur authentifié est un extracteur qui impose CSRF et portées). sqlx : requêtes paramétrées, migrations embarquées (`sqlx::migrate!`), pool de connexions. PostgreSQL : transactions, contraintes `CHECK` (rôles, états), verrou consultatif (`pg_advisory_lock`) pour sérialiser la régénération des dépôts entre instances. |
 | **Rendu serveur MiniJinja embarqué** plutôt qu'un framework JavaScript | Aucune chaîne Node.js en production ni en compilation ; gabarits et ressources intégrés au binaire (`rust-embed`) ; échappement HTML automatique ; politique de sécurité du contenu stricte possible (`default-src 'self'; script-src 'self'; style-src 'self'; frame-ancestors 'none'; form-action 'self'; base-uri 'none'`) car aucun script en ligne n'est nécessaire. Thème entièrement piloté par des variables CSS. |
-| **7z via `sevenz-rust2`** | Le format `.apak` est une archive 7z normalisée : bonne compression (LZMA2), outillage répandu pour l'inspection manuelle. La bibliothèque Rust pure évite d'appeler un binaire externe ; AuxiPak n'utilise jamais l'extraction automatique de la bibliothèque mais valide et écrit chaque entrée lui-même (voir [APAK_FORMAT.md](APAK_FORMAT.md)). |
+| **7z via `sevenz-rust2`** | Le format `.aupak` est une archive 7z normalisée : bonne compression (LZMA2), outillage répandu pour l'inspection manuelle. La bibliothèque Rust pure évite d'appeler un binaire externe ; AuxiPak n'utilise jamais l'extraction automatique de la bibliothèque mais valide et écrit chaque entrée lui-même (voir [AUPAK_FORMAT.md](AUPAK_FORMAT.md)). |
 | **TUF via `tough` (AWS)** plutôt qu'un protocole maison | The Update Framework traite les attaques classiques des dépôts (gel, rejeu, retour en arrière, mélange de métadonnées, compromission partielle de clés) ; `tough` est une implémentation maintenue et utilisée en production. Un protocole maison aurait exigé de réinventer et d'auditer ces protections. |
 | **`consistent_snapshot = false` + bascule atomique** | Chaque publication écrit une génération complète `gen-N/` puis remplace atomiquement le lien symbolique `current` (création d'un lien temporaire puis `rename`). Les clients voient soit l'ancienne, soit la nouvelle génération, jamais un mélange ; les deux générations précédentes sont conservées pour les téléchargements en cours. Le client réessaie une fois si une bascule survient entre la lecture de `timestamp.json` et celle de `snapshot.json`. Cela évite la multiplication des fichiers préfixés par version/empreinte qu'impose `consistent_snapshot`. |
 | **Ed25519 via `ed25519-dalek`** | Signatures courtes et rapides, clés de 32 octets, pas de paramètre à choisir ; clés privées stockées en PKCS#8 PEM. Les métadonnées TUF utilisent aussi Ed25519. |
-| **Signature détachée (`.apak.sig`)** | Le paquet n'est jamais modifié par la signature ; plusieurs signatures ou une chaîne de certificats (phase 2, `ca.auxinux.ca`) pourront être ajoutées sans changer le format `.apak`. |
+| **Signature détachée (`.aupak.sig`)** | Le paquet n'est jamais modifié par la signature ; plusieurs signatures ou une chaîne de certificats (phase 2, `ca.auxinux.ca`) pourront être ajoutées sans changer le format `.aupak`. |
 | **Séparation signature / évaluation** | Une clé compromise ne permet pas de s'attribuer « AuxiNux Vérifié » ; inversement, le statut d'évaluation n'a pas besoin de clés. Le client n'affiche un statut officiel que pour un dépôt marqué officiel **dans sa propre configuration**. |
 | **Argon2 pour les mots de passe, jetons hachés (SHA-256)** | Aucun secret en clair en base ; un jeton n'est affiché qu'une fois. |
 
@@ -103,8 +103,8 @@ targets/
   apps.json                     métadonnées communes et statut officiel des applications
   revocations.json              paquets révoqués
   channels/<canal>/<arch>.json  versions disponibles (ex. channels/linux/deb/x86_64.json)
-  packages/<id>/<version>/<Nom>-<version>-<langue>.apak
-  packages/<id>/<version>/<Nom>-<version>-<langue>.apak.sig
+  packages/<id>/<version>/<Nom>-<version>-<langue>.aupak
+  packages/<id>/<version>/<Nom>-<version>-<langue>.aupak.sig
 keys/
   package-keys.json             clés publiques de signature (information ; non couvert par TUF)
 ```
@@ -118,12 +118,12 @@ de chaque dépôt repose sur ses propres métadonnées TUF).
 
 ```text
 $AUXIPAK_DATA_DIR/
-  submissions/<uuid>.apak            soumissions en attente
+  submissions/<uuid>.aupak            soumissions en attente
   packages/<dépôt>/<id>/<version>/   paquets publiés (immuables) + .sig
   repos/<dépôt>/gen-N/               générations signées (metadata/, targets/, keys/)
   repos/<dépôt>/current -> gen-N     lien servi par /repos/<dépôt>/…
   builder/<uuid>/project/            projets de l'API Builder
-  builder/<uuid>/artifact.apak       dernière construction
+  builder/<uuid>/artifact.aupak       dernière construction
   tmp/                               fichiers temporaires
 $AUXIPAK_KEYS_DIR/                   root.json, package-keys.json, targets.pem,
                                      snapshot.pem, timestamp.pem, package-signing.pem
@@ -140,11 +140,11 @@ sequenceDiagram
     participant S as auxipak-server
     participant DB as PostgreSQL
     participant R as Relecteur humain
-    E->>S: POST /api/v1/submissions (corps .apak) ou API Builder /submit
+    E->>S: POST /api/v1/submissions (corps .aupak) ou API Builder /submit
     S->>S: analyse statique (validation.rs) : structure, manifeste, contents, couverture
     S->>DB: submissions (status pending ou invalid) + audit
     opt Signature fournie
-        E->>S: PUT /api/v1/submissions/{id}/signature (.apak.sig)
+        E->>S: PUT /api/v1/submissions/{id}/signature (.aupak.sig)
         S->>S: vérification immédiate (clé package-signing de confiance)
     end
     R->>S: POST /api/v1/submissions/{id}/approve (portée review, humain)

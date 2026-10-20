@@ -73,11 +73,11 @@ if [[ "$code" == 400 ]]; then ok "refus d'un jeton agent avec la portée review 
 publish() { # version
   local v="$1"
   step "1-2. Construction et validation du paquet $v"
-  local apak; apak=$("$ROOT/examples/auxipak-demo/build.sh" "$v" "$WORK/dist" | tail -1)
-  if "$AUXIPAK_BUILDER" validate "$apak" >/dev/null; then ok "manifeste et archive valides : $(basename "$apak")"; else fail "manifeste et archive valides : $(basename "$apak")"; fi
-  if "$AUXIPAK" verify "$apak" >/dev/null; then ok "auxipak verify : structure conforme (aucune exécution)"; else fail "auxipak verify : structure conforme (aucune exécution)"; fi
+  local apak; aupak=$("$ROOT/examples/auxipak-demo/build.sh" "$v" "$WORK/dist" | tail -1)
+  if "$AUXIPAK_BUILDER" validate "$aupak" >/dev/null; then ok "manifeste et archive valides : $(basename "$aupak")"; else fail "manifeste et archive valides : $(basename "$aupak")"; fi
+  if "$AUXIPAK" verify "$aupak" >/dev/null; then ok "auxipak verify : structure conforme (aucune exécution)"; else fail "auxipak verify : structure conforme (aucune exécution)"; fi
   step "3-4. Soumission par l'agent puis approbation humaine (signature serveur)"
-  local sub; sub=$("$AUXIPAK_BUILDER" --json submit "$apak" --server "$URL" --token "$AGENT_TOKEN" --note "démonstration $v")
+  local sub; sub=$("$AUXIPAK_BUILDER" --json submit "$aupak" --server "$URL" --token "$AGENT_TOKEN" --note "démonstration $v")
   local sid; sid=$(jq -r .id <<<"$sub")
   if [[ $(jq -r .status <<<"$sub") == pending ]]; then ok "demande $sid en attente (rien n'est publié)"; else fail "demande $sid en attente (rien n'est publié)"; fi
   code=$(curl -s -o /dev/null -w '%{http_code}' -X POST -H "Authorization: Bearer $AGENT_TOKEN" "$URL/api/v1/submissions/$sid/approve")

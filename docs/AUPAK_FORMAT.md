@@ -1,10 +1,10 @@
-# Format `.apak` — spécification version 1
+# Format `.aupak` — spécification version 1
 
 | | |
 |---|---|
-| Version du format | 1 (`APAK_FORMAT_VERSION`, `shared/src/archive.rs`) |
-| Extension | `.apak` (obligatoire) |
-| Signature détachée | `<fichier>.apak.sig`, format `auxipak-signature/1` |
+| Version du format | 1 (`AUPAK_FORMAT_VERSION`, `shared/src/archive.rs`) |
+| Extension | `.aupak` (obligatoire) |
+| Signature détachée | `<fichier>.aupak.sig`, format `auxipak-signature/1` |
 | Implémentation de référence | `auxipak-core` : `archive.rs`, `signature.rs`, `ids.rs`, `manifest.rs` |
 
 Les mots **DOIT**, **NE DOIT PAS**, **DEVRAIT** ont le sens habituel des
@@ -13,7 +13,7 @@ par le lecteur de référence (client, constructeur, serveur).
 
 ## 1. Conteneur
 
-Un `.apak` est une archive **7z** normalisée.
+Un `.aupak` est une archive **7z** normalisée.
 
 - Méthodes de compression admises à la lecture : **LZMA2**, LZMA, **COPY**
   (stockage). Toute autre méthode ou filtre (dont le chiffrement AES) est
@@ -145,12 +145,12 @@ fichiers et même manifeste → même archive octet pour octet.
   termine par `.sh`, s'il est déclaré `executable` dans `contents` ou dans
   une copie `files`.
 
-Nom de fichier normalisé : `<Nom>-<version>-<langue>.apak`, où `<Nom>` est
+Nom de fichier normalisé : `<Nom>-<version>-<langue>.aupak`, où `<Nom>` est
 le champ `name` réduit aux caractères ASCII alphanumériques, `-` et `_`
 (l'identifiant s'il devient vide) et `<langue>` la langue unique du
-manifeste, ou `mul` s'il y en a plusieurs. Exemple : `Firefox-150.1-fr.apak`.
+manifeste, ou `mul` s'il y en a plusieurs. Exemple : `Firefox-150.1-fr.aupak`.
 
-## 6. Signature détachée (`.apak.sig`)
+## 6. Signature détachée (`.aupak.sig`)
 
 ### 6.1 Format
 
@@ -164,7 +164,7 @@ Document JSON (≤ 64 Kio) :
   "package": {
     "id": "mon-outil",
     "version": "1.0.0",
-    "file_name": "Monoutil-1.0.0-fr.apak",
+    "file_name": "Monoutil-1.0.0-fr.aupak",
     "sha256": "ba792359f31d5cbb43d2b82d6177c7ca1083f8f7a4f8d16a05201404a25e0f57",
     "size": 651
   },
@@ -181,7 +181,7 @@ Document JSON (≤ 64 Kio) :
 | `key_id` | 32 premiers caractères hexadécimaux du SHA-256 de la clé publique brute (32 octets) |
 | `package.id`, `package.version` | identifiant et version du manifeste |
 | `package.file_name` | nom du fichier au moment de la signature (informatif, non vérifié) |
-| `package.sha256`, `package.size` | empreinte et taille **de l'archive `.apak` complète** |
+| `package.sha256`, `package.size` | empreinte et taille **de l'archive `.aupak` complète** |
 | `signed_at` | date RFC 3339 à la seconde, en UTC (`Z`) |
 | `certificate_chain` | réservé à la phase 2 (chaîne `ca.auxinux.ca`) ; vide en V1 |
 | `signature` | signature Ed25519 (64 octets) en base64 standard |
@@ -204,11 +204,11 @@ Vérification indépendante (Python, bibliothèque `cryptography`) :
 import base64, hashlib, json
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
-sig = json.load(open("Monoutil-1.0.0-fr.apak.sig"))
+sig = json.load(open("Monoutil-1.0.0-fr.aupak.sig"))
 key = next(k for k in json.load(open("package-keys.json"))["keys"] if k["key_id"] == sig["key_id"])
 raw = base64.b64decode(key["public_key"])
 assert hashlib.sha256(raw).hexdigest()[:32] == sig["key_id"]
-data = open("Monoutil-1.0.0-fr.apak", "rb").read()
+data = open("Monoutil-1.0.0-fr.aupak", "rb").read()
 assert hashlib.sha256(data).hexdigest() == sig["package"]["sha256"] and len(data) == sig["package"]["size"]
 payload = {k: sig[k] for k in ("format", "algorithm", "key_id", "package", "signed_at")}
 msg = b"AUXIPAK-SIGNATURE-V1\n" + json.dumps(payload, separators=(",", ":"), ensure_ascii=False).encode()
@@ -260,7 +260,7 @@ Le client et le serveur vérifient en outre que `package.id` et
 base64. Les clés privées sont stockées en PKCS#8 PEM
 (`-----BEGIN PRIVATE KEY-----`).
 
-## 7. Créer un `.apak`
+## 7. Créer un `.aupak`
 
 ### 7.1 Avec `auxipak-builder` (recommandé)
 
@@ -269,9 +269,9 @@ $ auxipak-builder init mon-outil --id mon-outil --name "Mon outil" --publisher "
 $ cp dist/mon-outil mon-outil/payload/bin/mon-outil
 $ $EDITOR mon-outil/instruction.auxipak
 $ auxipak-builder validate mon-outil
-$ auxipak-builder build mon-outil -o Monoutil-1.0.0-fr.apak
-$ auxipak-builder test Monoutil-1.0.0-fr.apak
-$ auxipak-builder sign Monoutil-1.0.0-fr.apak --key cle-paquets.pem   # facultatif
+$ auxipak-builder build mon-outil -o Monoutil-1.0.0-fr.aupak
+$ auxipak-builder test Monoutil-1.0.0-fr.aupak
+$ auxipak-builder sign Monoutil-1.0.0-fr.aupak --key cle-paquets.pem   # facultatif
 ```
 
 ### 7.2 Manuellement (outil 7-Zip)
@@ -305,19 +305,19 @@ reproductible octet pour octet.
 
    ```console
    $ 7z a -t7z -m0=LZMA2 -ms=off -mhe=off -mtm=off -mtc=off -mta=off \
-       ../MonOutil-1.0.0-fr.apak instruction.auxipak payload
+       ../MonOutil-1.0.0-fr.aupak instruction.auxipak payload
    ```
 
 5. Contrôler le résultat avec les outils de référence :
 
    ```console
-   $ auxipak verify ../MonOutil-1.0.0-fr.apak
-   $ auxipak-builder validate ../MonOutil-1.0.0-fr.apak
+   $ auxipak verify ../MonOutil-1.0.0-fr.aupak
+   $ auxipak-builder validate ../MonOutil-1.0.0-fr.aupak
    ```
 
 ## 8. Évolution du format
 
-Toute modification incompatible incrémentera `APAK_FORMAT_VERSION` et, pour
+Toute modification incompatible incrémentera `AUPAK_FORMAT_VERSION` et, pour
 le manifeste, le champ `format`. Les ajouts compatibles prévus (chaîne de
 certificats, signatures multiples) passent par le document de signature
 détaché, sans toucher à l'archive.

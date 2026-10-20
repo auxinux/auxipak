@@ -34,6 +34,6 @@ CTRL
 echo "AuxiPak Demo $VERSION — GPL-3.0-or-later" > "$DEB/usr/share/doc/auxipak-demo/copyright"
 SOURCE_DATE_EPOCH=1700000000 dpkg-deb --root-owner-group --build "$DEB" "$PROJ/payload/auxipak-demo_${VERSION}_all.deb" >/dev/null
 
-"$BUILDER" build "$PROJ" -o "$OUT/AuxiPakDemo-$VERSION-mul.apak"
-"$BUILDER" test "$OUT/AuxiPakDemo-$VERSION-mul.apak" >/dev/null
-echo "$OUT/AuxiPakDemo-$VERSION-mul.apak"
+"$BUILDER" build "$PROJ" -o "$OUT/AuxiPakDemo-$VERSION-mul.aupak"
+"$BUILDER" test "$OUT/AuxiPakDemo-$VERSION-mul.aupak" >/dev/null
+echo "$OUT/AuxiPakDemo-$VERSION-mul.aupak"

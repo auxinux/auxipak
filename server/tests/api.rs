@@ -144,7 +144,7 @@ impl Srv {
     async fn submit(&self, token: &str, bytes: Vec<u8>) -> Value {
         let r = self
             .http
-            .post(self.url("/api/v1/submissions?repository=official&file_name=Demo-1.0.0-fr.apak"))
+            .post(self.url("/api/v1/submissions?repository=official&file_name=Demo-1.0.0-fr.aupak"))
             .bearer_auth(token)
             .body(bytes)
             .send()
@@ -155,7 +155,7 @@ impl Srv {
     }
 }
 
-fn demo_apak(version: &str) -> Vec<u8> {
+fn demo_aupak(version: &str) -> Vec<u8> {
     let d = tempfile::tempdir().unwrap();
     std::fs::create_dir_all(d.path().join("payload/bin")).unwrap();
     std::fs::write(
@@ -164,7 +164,7 @@ fn demo_apak(version: &str) -> Vec<u8> {
     )
     .unwrap();
     std::fs::write(d.path().join("payload/bin/demo-app"), b"#!/bin/sh\necho demo\n").unwrap();
-    let out: PathBuf = d.path().join("x.apak");
+    let out: PathBuf = d.path().join("x.aupak");
     auxipak_core::project::build(d.path(), &out).unwrap();
     std::fs::read(out).unwrap()
 }
@@ -403,7 +403,7 @@ async fn publication_policy_classification_and_revocation() {
     let bad = s.submit(&pub_token, b"pas une archive".to_vec()).await;
     assert_eq!(bad["status"], "invalid");
     // Soumission valide par le publieur.
-    let sub = s.submit(&pub_token, demo_apak("1.0.0")).await;
+    let sub = s.submit(&pub_token, demo_aupak("1.0.0")).await;
     assert_eq!(sub["status"], "pending");
     assert_eq!(sub["submitter_kind"], "human");
     let id = sub["id"].as_str().unwrap();
@@ -461,7 +461,7 @@ async fn publication_policy_classification_and_revocation() {
         StatusCode::CONFLICT
     );
     // Republier la même version : conflit.
-    let dup = s.submit(&pub_token, demo_apak("1.0.0")).await;
+    let dup = s.submit(&pub_token, demo_aupak("1.0.0")).await;
     let r = s
         .http
         .post(s.url(&format!("/api/v1/submissions/{}/approve", dup["id"].as_str().unwrap())))

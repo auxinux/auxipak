@@ -518,7 +518,7 @@ async fn upload_page(State(st): State<AppState>, jar: CookieJar, Query(q): Query
     )
 }
 
-/// Import d'un fichier `.apak` depuis l'interface (crée une demande de publication).
+/// Import d'un fichier `.aupak` depuis l'interface (crée une demande de publication).
 async fn upload_post(
     State(st): State<AppState>,
     peer: crate::auth::Peer,
@@ -547,8 +547,8 @@ async fn upload_post(
                 if check_csrf(&a, &csrf).is_err() {
                     return error_page(&st, &jar, ApiError::Forbidden("jeton CSRF invalide".into()));
                 }
-                let name = field.file_name().unwrap_or("paquet.apak").to_string();
-                let tmp = st.config.tmp_dir().join(format!("web-{}.apak", Uuid::new_v4()));
+                let name = field.file_name().unwrap_or("paquet.aupak").to_string();
+                let tmp = st.config.tmp_dir().join(format!("web-{}.aupak", Uuid::new_v4()));
                 let mut out = match tokio::fs::File::create(&tmp).await {
                     Ok(f) => f,
                     Err(e) => return error_page(&st, &jar, e.into()),

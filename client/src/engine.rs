@@ -96,7 +96,7 @@ pub async fn fetch_and_verify(env: &Env, c: &Candidate<'_>) -> Result<VerifiedPa
     let url = base.join(&rel.target)?;
     let dir = env.paths.package_cache_dir().join(&r.config.name);
     std::fs::create_dir_all(&dir)?;
-    let dest = dir.join(format!("{}.apak", rel.sha256));
+    let dest = dir.join(format!("{}.aupak", rel.sha256));
     let policy = RedirectPolicy {
         allowed_hosts: vec![],
         allow_insecure_localhost: r.config.allow_insecure_localhost,

@@ -229,7 +229,7 @@ paths:
         "200": { description: Liste }
     post:
       tags: [submissions]
-      summary: Soumettre un paquet .apak (portée submit) — crée une demande, ne publie jamais
+      summary: Soumettre un paquet .aupak (portée submit) — crée une demande, ne publie jamais
       parameters:
         - { name: repository, in: query, schema: { type: string, default: official } }
         - { name: file_name, in: query, schema: { type: string } }
@@ -368,7 +368,7 @@ paths:
   /api/v1/builder/projects/{id}/build:
     post:
       tags: [builder]
-      summary: Construire l'archive .apak (aucune exécution de code tiers)
+      summary: Construire l'archive .aupak (aucune exécution de code tiers)
       parameters: [ { $ref: "#/components/parameters/Id" } ]
       responses:
         "200": { description: Résultat de construction }
@@ -385,7 +385,7 @@ paths:
       summary: Télécharger la dernière construction
       parameters: [ { $ref: "#/components/parameters/Id" } ]
       responses:
-        "200": { description: Archive .apak }
+        "200": { description: Archive .aupak }
   /api/v1/builder/projects/{id}/submit:
     post:
       tags: [builder]

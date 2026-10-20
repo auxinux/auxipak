@@ -1,5 +1,5 @@
 //! `auxipak-builder` — création, validation, test, signature et soumission de
-//! paquets `.apak`.
+//! paquets `.aupak`.
 //!
 //! La construction d'un paquet n'entraîne jamais sa publication : la commande
 //! `submit` crée une *demande de publication* sur le serveur, qui doit être
@@ -18,7 +18,7 @@ use std::process::ExitCode;
 mod settings;
 
 #[derive(Parser)]
-#[command(name = "auxipak-builder", version, about = "Constructeur de paquets AuxiPak (.apak)")]
+#[command(name = "auxipak-builder", version, about = "Constructeur de paquets AuxiPak (.aupak)")]
 struct Cli {
     /// Sortie JSON (pour l'automatisation : CI, agents).
     #[arg(long, global = true)]
@@ -45,9 +45,9 @@ enum Cmd {
         #[arg(long, default_value = "GPL-3.0-or-later")]
         license: String,
     },
-    /// Valider un manifeste, un projet ou une archive .apak.
+    /// Valider un manifeste, un projet ou une archive .aupak.
     Validate { path: PathBuf },
-    /// Construire une archive .apak normalisée à partir d'un projet.
+    /// Construire une archive .aupak normalisée à partir d'un projet.
     Build {
         dir: PathBuf,
         /// Fichier de sortie (par défaut : nom normalisé dans le répertoire courant).
@@ -318,9 +318,9 @@ fn validate(path: &Path, json: bool) -> Result<()> {
     let (manifest, warnings, kind) = if path.is_dir() {
         // Vérification complète avec les fichiers réels, dans un emplacement temporaire.
         let tmp = tempfile::tempdir()?;
-        let (m2, insp) = project::build(path, &tmp.path().join("check.apak"))?;
+        let (m2, insp) = project::build(path, &tmp.path().join("check.aupak"))?;
         (m2, insp.warnings, "projet")
-    } else if path.extension().and_then(|e| e.to_str()) == Some("apak") {
+    } else if archive::is_package_path(path) {
         let insp = archive::inspect(path, &Limits::default()).map_err(|e| anyhow!("{e}"))?;
         (insp.manifest, insp.warnings, "archive")
     } else {

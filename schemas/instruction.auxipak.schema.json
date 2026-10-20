@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://pak.auxinux.ca/schemas/instruction.auxipak/1.json",
   "title": "Manifeste AuxiPak (instruction.auxipak), format 1",
-  "description": "Manifeste déclaratif d'un paquet .apak. Aucune commande libre n'est acceptée : chaque méthode possède des paramètres structurés.",
+  "description": "Manifeste déclaratif d'un paquet .aupak. Aucune commande libre n'est acceptée : chaque méthode possède des paramètres structurés.",
   "type": "object",
   "additionalProperties": false,
   "required": ["format", "id", "name", "version", "publisher", "summary", "license", "languages", "targets"],

@@ -123,7 +123,7 @@ installée absente des index, affiche l'entrée du registre.
 
 ### `verify FILE [--signature SIG]`
 
-Vérifie un `.apak` local **sans rien exécuter** : extension, structure,
+Vérifie un `.aupak` local **sans rien exécuter** : extension, structure,
 manifeste (schéma et règles), correspondance avec `contents`, empreinte,
 variantes, présence de scripts, avertissements. La signature
 (`<fichier>.sig` par défaut, ou `--signature`) est vérifiée contre les clés
@@ -202,7 +202,7 @@ cache, nombre d'opérations interrompues, et un avertissement si l'adaptateur
 | `<état>/apps/<id>/` | copie du manifeste et des scripts d'une application installée |
 | `<état>/auxipak.lock` | verrou |
 | `<cache>/repos/<dépôt>/` | métadonnées TUF (`tuf/`), index vérifiés (`verified/`), `state.json` |
-| `<cache>/packages/<dépôt>/<sha256>.apak` | paquets téléchargés |
+| `<cache>/packages/<dépôt>/<sha256>.aupak` | paquets téléchargés |
 | `<cache>/work/` | répertoires de travail privés |
 | `<journal>/auxipak.log` | journal (niveau `AUXIPAK_LOG`, `info` par défaut) |
 
@@ -411,24 +411,24 @@ d'utilisation.
 | Commande | Description |
 |---|---|
 | `init <DIR> --id <ID> --name <NOM> [--version 1.0.0] [--publisher "Éditeur inconnu"] [--language fr] [--license GPL-3.0-or-later]` | crée un projet : `instruction.auxipak` (modèle `files` Linux), `payload/bin/<id>` (script d'exemple exécutable), `scripts/` ; refuse un répertoire contenant déjà un manifeste |
-| `validate <CHEMIN>` | valide un **projet** (répertoire : construction complète dans un emplacement temporaire), une **archive** `.apak` ou un **manifeste** isolé (qui doit alors contenir `contents`) ; affiche les avertissements |
-| `build <DIR> [-o, --output <FICHIER.apak>]` | construit une archive normalisée et déterministe ; nom par défaut `<Nom>-<version>-<langue>.apak` dans le répertoire courant ; ne publie rien |
-| `test <FICHIER.apak>` | tests statiques : structure et manifeste, extraction et empreintes, variante choisie pour 12 profils de référence, couverture ; pour les variantes `deb` : `dpkg-deb --field <deb> Package` comparé au manifeste (si `dpkg-deb` est présent) ; pour les scripts `.sh` : `bash -n` (analyse sans exécution). Aucun installateur ni script n'est exécuté. Code 1 si un test échoue |
-| `sign <FICHIER.apak> --key <CLÉ.pem>` | écrit `<FICHIER.apak>.sig` (clé Ed25519 PKCS#8 PEM ; variable `AUXIPAK_SIGNING_KEY`) |
-| `verify-signature <FICHIER.apak> --keys <package-keys.json>` | vérifie `<FICHIER.apak>.sig` (usages `package-signing` et `developer-signing` admis) |
+| `validate <CHEMIN>` | valide un **projet** (répertoire : construction complète dans un emplacement temporaire), une **archive** `.aupak` ou un **manifeste** isolé (qui doit alors contenir `contents`) ; affiche les avertissements |
+| `build <DIR> [-o, --output <FICHIER.aupak>]` | construit une archive normalisée et déterministe ; nom par défaut `<Nom>-<version>-<langue>.aupak` dans le répertoire courant ; ne publie rien |
+| `test <FICHIER.aupak>` | tests statiques : structure et manifeste, extraction et empreintes, variante choisie pour 12 profils de référence, couverture ; pour les variantes `deb` : `dpkg-deb --field <deb> Package` comparé au manifeste (si `dpkg-deb` est présent) ; pour les scripts `.sh` : `bash -n` (analyse sans exécution). Aucun installateur ni script n'est exécuté. Code 1 si un test échoue |
+| `sign <FICHIER.aupak> --key <CLÉ.pem>` | écrit `<FICHIER.aupak>.sig` (clé Ed25519 PKCS#8 PEM ; variable `AUXIPAK_SIGNING_KEY`) |
+| `verify-signature <FICHIER.aupak> --keys <package-keys.json>` | vérifie `<FICHIER.aupak>.sig` (usages `package-signing` et `developer-signing` admis) |
 | `keys generate --out <CLÉ.pem> --public <package-keys.json> [--owner AuxiNux]` | crée une clé de signature de paquets (`0600`, jamais d'écrasement) et ajoute la clé publique au fichier (créé s'il n'existe pas) |
 | `keys init-repository --out <DIR> [--owner AuxiNux] [--root-days 365] [--dev]` | cérémonie : racine TUF, clés en ligne, clé de paquets (voir [SIGNING.md](SIGNING.md)) ; `--dev` omet le rappel de procédure de production |
 | `keys show-root <root.json>` | version, expiration, clés et seuils de chaque rôle |
-| `submit <FICHIER.apak> --server <URL> --token <JETON> [--repository official] [--note ""]` | crée une **demande de publication** (`POST /api/v1/submissions`) puis joint `<FICHIER.apak>.sig` s'il existe (`PUT …/signature`) ; HTTPS obligatoire (HTTP seulement vers `localhost`/`127.0.0.1`) ; variables `AUXIPAK_SERVER` et `AUXIPAK_TOKEN` |
+| `submit <FICHIER.aupak> --server <URL> --token <JETON> [--repository official] [--note ""]` | crée une **demande de publication** (`POST /api/v1/submissions`) puis joint `<FICHIER.aupak>.sig` s'il existe (`PUT …/signature`) ; HTTPS obligatoire (HTTP seulement vers `localhost`/`127.0.0.1`) ; variables `AUXIPAK_SERVER` et `AUXIPAK_TOKEN` |
 
 Exemples :
 
 ```console
 $ auxipak-builder init mon-outil --id mon-outil --name "Mon outil" --publisher "Exemple inc." --license MIT
 $ auxipak-builder validate mon-outil
-$ auxipak-builder --json build mon-outil -o Monoutil-1.0.0-fr.apak
-$ auxipak-builder test Monoutil-1.0.0-fr.apak
-$ AUXIPAK_SERVER=https://pak.auxinux.ca AUXIPAK_TOKEN=apk_… auxipak-builder submit Monoutil-1.0.0-fr.apak --note "version 1.0.0"
+$ auxipak-builder --json build mon-outil -o Monoutil-1.0.0-fr.aupak
+$ auxipak-builder test Monoutil-1.0.0-fr.aupak
+$ AUXIPAK_SERVER=https://pak.auxinux.ca AUXIPAK_TOKEN=apk_… auxipak-builder submit Monoutil-1.0.0-fr.aupak --note "version 1.0.0"
 ```
 
 Pour `keys generate`, indiquez un chemin `--out` situé dans un

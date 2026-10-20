@@ -7,7 +7,7 @@
 //! - [`version`] : comparaison et contraintes de versions ;
 //! - [`ids`] : validation des identifiants (barrière anti-injection) ;
 //! - [`manifest`] : manifeste `instruction.auxipak` ;
-//! - [`archive`] : format `.apak` (7z normalisé) et extraction sécurisée ;
+//! - [`archive`] : format `.aupak` (7z normalisé) et extraction sécurisée ;
 //! - [`signature`] : signatures Ed25519 détachées des paquets ;
 //! - [`index`] : index des dépôts ;
 //! - [`tuf`] : métadonnées de dépôt TUF (via `tough`) ;
@@ -15,6 +15,7 @@
 
 pub mod archive;
 pub mod hash;
+pub mod i18n;
 pub mod ids;
 pub mod index;
 pub mod keyset;

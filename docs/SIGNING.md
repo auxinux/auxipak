@@ -6,8 +6,8 @@ en Ed25519 :
 1. **TUF** (The Update Framework, bibliothèque `tough`) protège les **index
    des dépôts** : authenticité, fraîcheur, protection contre le gel, le rejeu
    et le retour à une version antérieure.
-2. Les **signatures détachées de paquets** (`.apak.sig`) attestent l'origine
-   et l'intégrité de chaque archive `.apak`.
+2. Les **signatures détachées de paquets** (`.aupak.sig`) attestent l'origine
+   et l'intégrité de chaque archive `.aupak`.
 
 > **Signature ≠ « AuxiNux Vérifié ».** Une signature dit *qui* a publié un
 > paquet et qu'il n'a pas été modifié. Le statut « AuxiNux Vérifié »,
@@ -26,7 +26,7 @@ en Ed25519 :
 | `targets` | `targets.json` | `targets.pem` | serveur (en ligne) | 30 jours |
 | `snapshot` | `snapshot.json` | `snapshot.pem` | serveur (en ligne) | 7 jours |
 | `timestamp` | `timestamp.json` | `timestamp.pem` | serveur (en ligne) | `AUXIPAK_TIMESTAMP_HOURS` (24 h par défaut, 1–168) |
-| signature des paquets | `.apak.sig` | `package-signing.pem` | serveur (en ligne, facultative) | `not_before`/`not_after` facultatifs |
+| signature des paquets | `.aupak.sig` | `package-signing.pem` | serveur (en ligne, facultative) | `not_before`/`not_after` facultatifs |
 
 - `root.json` désigne les clés et seuils des autres rôles ; il est signé par
   la clé racine. La cérémonie standard crée **une** clé racine avec un seuil
@@ -228,17 +228,17 @@ de l'approbation. Un paquet peut aussi être signé **avant** la soumission par
 une clé `package-signing` listée dans le `package-keys.json` du serveur :
 
 ```console
-$ auxipak-builder sign MonOutil-1.0.0-fr.apak --key secrets/cle-paquets.pem
-$ auxipak-builder verify-signature MonOutil-1.0.0-fr.apak --keys package-keys.json
-$ auxipak-builder submit MonOutil-1.0.0-fr.apak --server https://pak.auxinux.ca --token "$AUXIPAK_TOKEN"
+$ auxipak-builder sign MonOutil-1.0.0-fr.aupak --key secrets/cle-paquets.pem
+$ auxipak-builder verify-signature MonOutil-1.0.0-fr.aupak --keys package-keys.json
+$ auxipak-builder submit MonOutil-1.0.0-fr.aupak --server https://pak.auxinux.ca --token "$AUXIPAK_TOKEN"
 ```
 
-`submit` joint automatiquement `MonOutil-1.0.0-fr.apak.sig`. Pour une
+`submit` joint automatiquement `MonOutil-1.0.0-fr.aupak.sig`. Pour une
 demande existante :
 
 ```console
 $ curl -fsS -X PUT -H "Authorization: Bearer $AUXIPAK_TOKEN" \
-    --data-binary @MonOutil-1.0.0-fr.apak.sig \
+    --data-binary @MonOutil-1.0.0-fr.aupak.sig \
     https://pak.auxinux.ca/api/v1/submissions/<id>/signature
 ```
 
@@ -246,14 +246,14 @@ La signature est vérifiée immédiatement (clé connue, non révoquée, usage
 `package-signing`, période de validité, empreinte et taille, identifiant et
 version), puis de nouveau à l'approbation. Les signatures `developer-signing`
 ne sont pas acceptées pour la publication en V1. Format exact :
-[APAK_FORMAT.md](APAK_FORMAT.md#6-signature-détachée-apaksig).
+[AUPAK_FORMAT.md](AUPAK_FORMAT.md#6-signature-détachée-aupaksig).
 
 ## 8. Préparation de la phase 2 (`ca.auxinux.ca`)
 
 Les éléments suivants sont déjà présents pour accueillir une autorité de
 certification AuxiNux sans changer les formats :
 
-- champ `certificate_chain` du document `.apak.sig` (vide en V1, non signé) ;
+- champ `certificate_chain` du document `.aupak.sig` (vide en V1, non signé) ;
 - usage de clé `developer-signing` (`KeyPurpose::DeveloperSigning`), admis
   par `auxipak-builder verify-signature` ;
 - période de validité (`not_before`, `not_after`) et révocation par clé dans

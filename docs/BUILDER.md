@@ -1,6 +1,6 @@
 # Construire et publier une application
 
-AuxiPak propose deux façons équivalentes de produire un paquet `.apak` :
+AuxiPak propose deux façons équivalentes de produire un paquet `.aupak` :
 
 - le **Builder CLI** `auxipak-builder`, sur le poste de l'éditeur ou en CI ;
 - l'**API Builder** du serveur (`/api/v1/builder/…`), pilotable par un
@@ -49,9 +49,9 @@ symbolique fait échouer la construction.
 
 ```console
 $ auxipak-builder validate mon-outil
-$ auxipak-builder build mon-outil                # → ./Monoutil-1.0.0-fr.apak
-$ auxipak-builder test Monoutil-1.0.0-fr.apak
-$ auxipak verify Monoutil-1.0.0-fr.apak          # contrôle côté client, sans exécution
+$ auxipak-builder build mon-outil                # → ./Monoutil-1.0.0-fr.aupak
+$ auxipak-builder test Monoutil-1.0.0-fr.aupak
+$ auxipak verify Monoutil-1.0.0-fr.aupak          # contrôle côté client, sans exécution
 ```
 
 - `validate` sur un répertoire construit le paquet dans un emplacement
@@ -71,8 +71,8 @@ dont la clé `package-signing` figure dans le `package-keys.json` **du
 serveur** peut signer lui-même :
 
 ```console
-$ auxipak-builder sign Monoutil-1.0.0-fr.apak --key secrets/cle-paquets.pem
-$ auxipak-builder verify-signature Monoutil-1.0.0-fr.apak --keys package-keys.json
+$ auxipak-builder sign Monoutil-1.0.0-fr.aupak --key secrets/cle-paquets.pem
+$ auxipak-builder verify-signature Monoutil-1.0.0-fr.aupak --keys package-keys.json
 ```
 
 Voir [SIGNING.md](SIGNING.md#7-ajouter-une-signature-à-un-paquet).
@@ -97,11 +97,11 @@ token` l'efface. Les variables `AUXIPAK_SERVER` / `AUXIPAK_TOKEN` et les
 options `--server` / `--token` restent prioritaires (CI, agents).
 
 ```console
-$ auxipak-builder submit Monoutil-1.0.0-fr.apak --note "Version 1.0.0"
+$ auxipak-builder submit Monoutil-1.0.0-fr.aupak --note "Version 1.0.0"
 Demande de publication créée : 7c1e… (statut : pending). Elle doit être approuvée par un relecteur.
 ```
 
-`submit` envoie l'archive, joint `Monoutil-1.0.0-fr.apak.sig` s'il existe,
+`submit` envoie l'archive, joint `Monoutil-1.0.0-fr.aupak.sig` s'il existe,
 et affiche l'identifiant de la demande. Le serveur analyse le paquet sans
 l'exécuter ; une analyse en échec donne le statut `invalid` (détails dans
 `GET /api/v1/submissions/{id}`).
@@ -157,7 +157,7 @@ on:
   push:
     tags: ["v*"]
 jobs:
-  apak:
+  aupak:
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -170,13 +170,13 @@ jobs:
         run: |
           mkdir -p dist
           auxipak-builder validate packaging/
-          auxipak-builder --json build packaging/ -o dist/MonOutil.apak | tee build.json
-          auxipak-builder test dist/MonOutil.apak
+          auxipak-builder --json build packaging/ -o dist/MonOutil.aupak | tee build.json
+          auxipak-builder test dist/MonOutil.aupak
       - name: Soumettre (demande de publication)
         env:
           AUXIPAK_SERVER: https://pak.auxinux.ca
           AUXIPAK_TOKEN: ${{ secrets.AUXIPAK_TOKEN }}
-        run: auxipak-builder --json submit dist/MonOutil.apak --note "CI ${GITHUB_REF_NAME} ${GITHUB_SHA}"
+        run: auxipak-builder --json submit dist/MonOutil.aupak --note "CI ${GITHUB_REF_NAME} ${GITHUB_SHA}"
 ```
 
 Bonnes pratiques :

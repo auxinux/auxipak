@@ -55,7 +55,7 @@ fn project_dir(st: &AppState, id: Uuid) -> PathBuf {
 }
 
 fn artifact_path(st: &AppState, id: Uuid) -> PathBuf {
-    st.config.builder_dir().join(id.to_string()).join("artifact.apak")
+    st.config.builder_dir().join(id.to_string()).join("artifact.aupak")
 }
 
 async fn load(st: &AppState, actor: &Actor, id: Uuid) -> ApiResult<ProjectRow> {
@@ -392,7 +392,7 @@ pub async fn submit(
         return Err(bad("aucune construction disponible"));
     }
     std::fs::create_dir_all(st.config.tmp_dir())?;
-    let tmp = st.config.tmp_dir().join(format!("builder-{}.apak", Uuid::new_v4()));
+    let tmp = st.config.tmp_dir().join(format!("builder-{}.aupak", Uuid::new_v4()));
     std::fs::copy(&out, &tmp)?;
     let (sha, size) = auxipak_core::hash::sha256_file(&tmp)?;
     let r = crate::api::submissions::create_from_file(&st, &actor, &req.repository, None, &req.note, &tmp, sha, size).await;

@@ -134,9 +134,9 @@ Règles :
 | Méthode | Chemin | Portée | Description |
 |---|---|---|---|
 | GET | `/api/v1/submissions` | `submit` (les siennes) ou `review` (toutes) | paramètre `status` (`invalid`, `pending`, `rejected`, `published`) |
-| POST | `/api/v1/submissions` | `submit` | corps : octets du `.apak` (`Content-Type: application/octet-stream`) ; paramètres `repository` (défaut `official`), `file_name` (nom `.apak` sûr, sinon nom normalisé), `note` (≤ 2000) → `Submission` |
+| POST | `/api/v1/submissions` | `submit` | corps : octets du `.aupak` (`Content-Type: application/octet-stream`) ; paramètres `repository` (défaut `official`), `file_name` (nom `.aupak` sûr, sinon nom normalisé), `note` (≤ 2000) → `Submission` |
 | GET | `/api/v1/submissions/{id}` | auteur ou `review` | détail, rapport d'analyse (`validation` : `checks`, `warnings`, `review_flags`, `targets`, `uses_scripts`) |
-| PUT | `/api/v1/submissions/{id}/signature` | auteur ou `review` | corps : document `.apak.sig` ; vérifié immédiatement ; demande `pending` uniquement |
+| PUT | `/api/v1/submissions/{id}/signature` | auteur ou `review` | corps : document `.aupak.sig` ; vérifié immédiatement ; demande `pending` uniquement |
 | POST | `/api/v1/submissions/{id}/approve` | `review` (humain) | corps facultatif `{"note"}` → `{"status":"published","releases":[…]}` |
 | POST | `/api/v1/submissions/{id}/reject` | `review` (humain) | `{"note"}` obligatoire → `{"status":"rejected"}` |
 
@@ -218,10 +218,10 @@ qu'après vérification TUF (ce que fait le client).
 
 ```bash
 curl -fsS -X POST -H "Authorization: Bearer $TOKEN" \
-  -H 'Content-Type: application/octet-stream' --data-binary @MonOutil-1.0.0-fr.apak \
-  "$URL/api/v1/submissions?repository=official&file_name=MonOutil-1.0.0-fr.apak&note=premi%C3%A8re%20version"
+  -H 'Content-Type: application/octet-stream' --data-binary @MonOutil-1.0.0-fr.aupak \
+  "$URL/api/v1/submissions?repository=official&file_name=MonOutil-1.0.0-fr.aupak&note=premi%C3%A8re%20version"
 # Signature détachée facultative :
-curl -fsS -X PUT -H "Authorization: Bearer $TOKEN" --data-binary @MonOutil-1.0.0-fr.apak.sig \
+curl -fsS -X PUT -H "Authorization: Bearer $TOKEN" --data-binary @MonOutil-1.0.0-fr.aupak.sig \
   "$URL/api/v1/submissions/<id>/signature"
 ```
 
@@ -325,7 +325,7 @@ curl -fsS -X POST -H "$AUTH" "$URL/api/v1/builder/projects/$P/validate"
 
 ```bash
 curl -fsS -X POST -H "$AUTH" "$URL/api/v1/builder/projects/$P/build"
-# → {"ok":true,"file_name":"Monoutil-1.0.0-fr.apak","sha256":"…","size":…,"entries":3,…}
+# → {"ok":true,"file_name":"Monoutil-1.0.0-fr.aupak","sha256":"…","size":…,"entries":3,…}
 ```
 
 **6. Tester** (statique : structure, extraction, empreintes, sélection de
@@ -334,7 +334,7 @@ exécuté côté serveur) :
 
 ```bash
 curl -fsS -X POST -H "$AUTH" "$URL/api/v1/builder/projects/$P/test" | jq '.ok, .checks[] | select(.ok == false)'
-curl -fsS -H "$AUTH" -o Monoutil-1.0.0-fr.apak "$URL/api/v1/builder/projects/$P/artifact"   # facultatif
+curl -fsS -H "$AUTH" -o Monoutil-1.0.0-fr.aupak "$URL/api/v1/builder/projects/$P/artifact"   # facultatif
 ```
 
 **7. Soumettre** (crée une demande `pending`, rien n'est publié) :

@@ -47,7 +47,7 @@ impl Report {
     }
 }
 
-/// Analyse un fichier `.apak`.
+/// Analyse un fichier `.aupak`.
 pub fn analyze(path: &Path) -> (Option<Inspection>, Report) {
     let mut r = Report::default();
     let insp = match archive::inspect(path, &Limits::default()) {

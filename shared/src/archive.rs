@@ -1,6 +1,6 @@
-//! Format d'archive `.apak` (version 1).
+//! Format d'archive `.aupak` (version 1).
 //!
-//! Un `.apak` est une archive 7z **normalisée** :
+//! Un `.aupak` est une archive 7z **normalisée** :
 //! - compression LZMA2 (ou stockage sans compression), non solide, sans chiffrement ;
 //! - entrées triées, `instruction.auxipak` en premier, chemins en `/` ;
 //! - aucune date, aucun attribut de lien symbolique, aucun « anti-item » ;
@@ -22,9 +22,25 @@ use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 
 /// Version du format d'archive.
-pub const APAK_FORMAT_VERSION: u32 = 1;
+pub const AUPAK_FORMAT_VERSION: u32 = 1;
 /// Extension obligatoire.
-pub const APAK_EXTENSION: &str = "apak";
+/// Extension des paquets AuxiPak.
+pub const PACKAGE_EXTENSION: &str = "aupak";
+/// Ancienne extension (avant la 1.0.3), toujours acceptée en lecture.
+pub const LEGACY_EXTENSION: &str = "pkg";
+
+/// Le chemin porte-t-il une extension de paquet (actuelle ou ancienne) ?
+pub fn is_package_path(p: &std::path::Path) -> bool {
+    matches!(
+        p.extension().and_then(|e| e.to_str()),
+        Some(PACKAGE_EXTENSION | LEGACY_EXTENSION)
+    )
+}
+
+/// Nom de fichier de paquet (actuel ou ancien).
+pub fn is_package_name(name: &str) -> bool {
+    is_package_path(std::path::Path::new(name))
+}
 
 const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
 const FILE_ATTRIBUTE_UNIX_EXTENSION: u32 = 0x8000;
@@ -390,7 +406,7 @@ pub struct BuildFile {
     pub executable: bool,
 }
 
-/// Construit une archive `.apak` normalisée. Les entrées `contents` du
+/// Construit une archive `.aupak` normalisée. Les entrées `contents` du
 /// manifeste sont recalculées à partir des fichiers fournis. Retourne le
 /// manifeste final et l'inspection de l'archive produite.
 pub fn build(manifest: &Manifest, files: &[BuildFile], out: &Path) -> Result<(Manifest, Inspection), ApakError> {
@@ -429,7 +445,7 @@ pub fn build(manifest: &Manifest, files: &[BuildFile], out: &Path) -> Result<(Ma
     let (parsed, _) = Manifest::parse(yaml.as_bytes())?;
 
     let parent = out.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or(Path::new("."));
-    let tmp = tempfile::Builder::new().prefix(".apak-build-").tempfile_in(parent)?;
+    let tmp = tempfile::Builder::new().prefix(".aupak-build-").tempfile_in(parent)?;
     {
         let file = tmp.reopen()?;
         let mut w = ArchiveWriter::new(file)?;
@@ -527,7 +543,7 @@ targets:
         let src = dir.join("hello");
         fs::write(&src, b"#!/bin/sh\necho bonjour\n").unwrap();
         let (m, _) = Manifest::parse(MANIFEST.replace("targets:", "contents:\n  - path: payload/bin/hello\n    sha256: \"0000000000000000000000000000000000000000000000000000000000000000\"\n    size: 0\ntargets:").as_bytes()).unwrap();
-        let out = dir.join("Test-1.0.0-fr.apak");
+        let out = dir.join("Test-1.0.0-fr.aupak");
         build(
             &m,
             &[BuildFile {
@@ -544,14 +560,14 @@ targets:
     #[test]
     fn build_inspect_extract_roundtrip() {
         let dir = tempfile::tempdir().unwrap();
-        let apak = build_sample(dir.path());
-        let insp = inspect(&apak, &Limits::default()).unwrap();
+        let pkg = build_sample(dir.path());
+        let insp = inspect(&pkg, &Limits::default()).unwrap();
         assert_eq!(insp.manifest.id, "test-app");
         assert_eq!(insp.manifest.contents.len(), 1);
         assert!(insp.manifest.contents[0].executable);
         let out = dir.path().join("x");
         fs::create_dir(&out).unwrap();
-        extract(&apak, &out, &Limits::default()).unwrap();
+        extract(&pkg, &out, &Limits::default()).unwrap();
         assert_eq!(fs::read(out.join("payload/bin/hello")).unwrap(), b"#!/bin/sh\necho bonjour\n");
         assert!(out.join(MANIFEST_FILE).exists());
         #[cfg(unix)]
@@ -594,13 +610,13 @@ targets:
     install: { method: package_manager, manager: apt, packages: [firefox-esr] }
 "#;
         let (m, _) = Manifest::parse(native.as_bytes()).unwrap();
-        let out = dir.path().join("Firefox-150.1-fr.apak");
+        let out = dir.path().join("Firefox-150.1-fr.aupak");
         let (_, insp) = build(&m, &[], &out).unwrap();
         assert_eq!(insp.entries.len(), 1);
     }
 
     fn raw(dir: &Path, entries: Vec<(ArchiveEntry, Option<Vec<u8>>)>) -> PathBuf {
-        let p = dir.join("evil.apak");
+        let p = dir.join("evil.aupak");
         write_raw_7z(&p, entries).unwrap();
         p
     }
@@ -740,17 +756,17 @@ targets:
     #[test]
     fn extraction_requires_empty_destination() {
         let dir = tempfile::tempdir().unwrap();
-        let apak = build_sample(dir.path());
+        let pkg = build_sample(dir.path());
         let out = dir.path().join("o");
         fs::create_dir(&out).unwrap();
         fs::write(out.join("x"), b"").unwrap();
-        assert!(extract(&apak, &out, &Limits::default()).is_err());
+        assert!(extract(&pkg, &out, &Limits::default()).is_err());
     }
 
     #[test]
     fn rejects_non_7z_and_truncated_files() {
         let dir = tempfile::tempdir().unwrap();
-        let p = dir.path().join("x.apak");
+        let p = dir.path().join("x.aupak");
         fs::write(&p, b"PK\x03\x04 not a 7z").unwrap();
         assert!(matches!(inspect(&p, &Limits::default()), Err(ApakError::Archive(_))));
         let good = fs::read(build_sample(dir.path())).unwrap();

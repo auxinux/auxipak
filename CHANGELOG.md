@@ -5,6 +5,13 @@ le projet applique le [versionnage sémantique](https://semver.org/lang/fr/).
 
 ## [Non publié]
 
+### Modifié
+
+- Extension des paquets : `.aupak` (au lieu de `.apak`, déjà utilisée par
+  un autre gestionnaire de paquets). Les fichiers `.apak` existants restent
+  acceptés en lecture (validation, installation locale, soumission) et les
+  paquets déjà publiés ne changent pas.
+
 ## [1.0.2] — 2026-10-20
 
 ### Ajouté

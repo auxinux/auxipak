@@ -70,7 +70,7 @@ pub fn is_valid_installer_arg(s: &str) -> bool {
             .any(|c| c.is_control() || matches!(c, '"' | '\'' | '`' | '$' | ';' | '|' | '&' | '<' | '>' | '%' | '^'))
 }
 
-/// Chemin relatif sûr à l'intérieur d'une archive `.apak` :
+/// Chemin relatif sûr à l'intérieur d'une archive `.aupak` :
 /// séparateur `/`, pas de composant vide, `.` ou `..`, pas de chemin absolu,
 /// pas de lettre de lecteur, pas de caractères interdits sous Windows,
 /// longueur bornée.

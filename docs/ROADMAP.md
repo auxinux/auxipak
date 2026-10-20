@@ -4,7 +4,7 @@
 
 | Chantier | Objectif | Points d'appui existants en V1 |
 |---|---|---|
-| **Autorité de certification `ca.auxinux.ca`** | Émettre des certificats aux développeurs et vérifier des chaînes de certificats | champ `certificate_chain` du `.apak.sig` (vide, non signé), signature détachée |
+| **Autorité de certification `ca.auxinux.ca`** | Émettre des certificats aux développeurs et vérifier des chaînes de certificats | champ `certificate_chain` du `.aupak.sig` (vide, non signé), signature détachée |
 | **Certificats développeurs** | Permettre la publication de paquets signés par leur éditeur, avec une identité vérifiée | usage de clé `developer-signing`, accepté par `auxipak-builder verify-signature` ; refusé pour la publication en V1 |
 | **Révocation centralisée** | Révoquer clés et certificats et diffuser la révocation de façon authentifiée (via TUF), sans mise à jour manuelle des clients | `revoked`, `not_before`, `not_after` dans `package-keys.json` ; `revocations.json` (paquets) |
 | **Rotation des clés** | Commande de rotation de la racine TUF (N+1 signée par l'ancienne et la nouvelle racine), conservation de toutes les versions `N.root.json`, seuils multi-clés, diffusion des clés de paquets par TUF | `auxipak-core::tuf::create_root` (version, plusieurs clés, seuil) |

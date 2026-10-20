@@ -77,9 +77,9 @@ pub async fn create_from_file(
     let id = Uuid::new_v4();
     let (insp, report) = crate::validation::analyze(tmp_path);
     let file_name = match (file_name, &insp) {
-        (Some(f), _) if auxipak_core::ids::is_safe_file_name(f) && f.ends_with(".apak") => f.to_string(),
+        (Some(f), _) if auxipak_core::ids::is_safe_file_name(f) && auxipak_core::archive::is_package_name(f) => f.to_string(),
         (_, Some(i)) => i.manifest.suggested_file_name(),
-        _ => format!("{id}.apak"),
+        _ => format!("{id}.aupak"),
     };
     let status = if report.ok { "pending" } else { "invalid" };
     let dest = publisher::submission_file(st, id);
@@ -134,7 +134,7 @@ pub async fn create(
 ) -> ApiResult<Json<SubmissionView>> {
     actor.require(Scope::Submit)?;
     std::fs::create_dir_all(st.config.tmp_dir())?;
-    let tmp = st.config.tmp_dir().join(format!("upload-{}.apak", Uuid::new_v4()));
+    let tmp = st.config.tmp_dir().join(format!("upload-{}.aupak", Uuid::new_v4()));
     let (sha, size) = crate::api::body_to_file(body, &tmp, st.config.max_upload_bytes).await?;
     let repo = q.repository.unwrap_or_else(|| "official".into());
     let r = create_from_file(&st, &actor, &repo, q.file_name.as_deref(), &q.note, &tmp, sha, size).await;

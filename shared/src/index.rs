@@ -7,7 +7,7 @@
 //! - `channels/<canal>/<arch>.json` : versions disponibles pour un canal et
 //!   une architecture (les paquets `any` figurent dans chaque architecture) ;
 //! - `revocations.json` : paquets révoqués ;
-//! - `packages/<id>/<version>/<fichier>.apak` et `.apak.sig`.
+//! - `packages/<id>/<version>/<fichier>.aupak` et `.aupak.sig`.
 //!
 //! Les métadonnées communes ne sont pas dupliquées dans les sous-index : un
 //! client ne télécharge que `index.json`, `apps.json`, `revocations.json` et le
@@ -158,7 +158,7 @@ pub struct AppsIndex {
 /// Référence à la signature détachée d'un paquet.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SignatureRef {
-    /// Nom de cible TUF du document `.apak.sig`.
+    /// Nom de cible TUF du document `.aupak.sig`.
     pub target: String,
     pub key_id: String,
 }
@@ -172,7 +172,7 @@ pub struct Release {
     pub platform: Os,
     pub distributions: Vec<Distribution>,
     pub architectures: Vec<Arch>,
-    /// Nom de fichier du paquet (`Firefox-150.1-fr.apak`).
+    /// Nom de fichier du paquet (`Firefox-150.1-fr.aupak`).
     pub file_name: String,
     /// Nom de cible TUF du paquet (chemin relatif à `targets/`).
     pub target: String,

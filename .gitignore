@@ -1,5 +1,5 @@
 /target
-*.apak.part
+*.aupak.part
 /dev-data
 /.env
 *.pem

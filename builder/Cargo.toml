@@ -1,6 +1,6 @@
 [package]
 name = "auxipak-builder"
-description = "Constructeur AuxiPak : création, validation, tests, signature et soumission de paquets .apak"
+description = "Constructeur AuxiPak : création, validation, tests, signature et soumission de paquets .aupak"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

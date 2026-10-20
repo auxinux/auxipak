@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Prépare le paquet AuxiPak de Firefox pour macOS (dernière version publiée).
 #
-#   ./make.sh            # → firefox-macos/ + Firefox-<version>-fr.apak
+#   ./make.sh            # → firefox-macos/ + Firefox-<version>-fr.aupak
 #   LANG_FF=en-US ./make.sh
 #
 # Le paquet ne contient pas Firefox : il référence l'image disque officielle
@@ -63,8 +63,8 @@ YAML
 
 auxipak-builder validate "$OUT"
 auxipak-builder build "$OUT"
-apak=$(ls -t Firefox-"$v"-*.apak | head -n 1)
-auxipak-builder test "$apak"
+aupak=$(ls -t Firefox-"$v"-*.aupak | head -n 1)
+auxipak-builder test "$aupak"
 echo
-echo "Paquet prêt : $apak"
-echo "Soumission : auxipak-builder submit \"$apak\" --note \"Firefox $v\""
+echo "Paquet prêt : $aupak"
+echo "Soumission : auxipak-builder submit \"$aupak\" --note \"Firefox $v\""

@@ -326,7 +326,7 @@ mod tests {
             repo: "official".into(),
             source: "x".into(),
             package_sha256: "0".repeat(64),
-            file_name: "x.apak".into(),
+            file_name: "x.aupak".into(),
             target: "t".into(),
             mode: "embedded".into(),
             method: "files".into(),

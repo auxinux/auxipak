@@ -33,7 +33,13 @@ pub struct SubmissionRow {
 }
 
 pub fn submission_file(state: &AppState, id: Uuid) -> PathBuf {
-    state.config.submissions_dir().join(format!("{id}.apak"))
+    let p = state.config.submissions_dir().join(format!("{id}.aupak"));
+    // Demandes déposées avant la 1.0.3 (extension .apak).
+    let legacy = p.with_extension(auxipak_core::archive::LEGACY_EXTENSION);
+    if !p.exists() && legacy.exists() {
+        return legacy;
+    }
+    p
 }
 
 /// Approuve une demande et publie le paquet.

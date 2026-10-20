@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
-/// Nom du fichier manifeste à la racine d'une archive `.apak`.
+/// Nom du fichier manifeste à la racine d'une archive `.aupak`.
 pub const MANIFEST_FILE: &str = "instruction.auxipak";
 /// Version courante du format de manifeste.
 pub const MANIFEST_FORMAT: u32 = 1;
@@ -784,7 +784,7 @@ impl Manifest {
         self.contents.iter().find(|c| c.path == path)
     }
 
-    /// Nom de fichier normalisé : `<Nom>-<version>-<langue>.apak`.
+    /// Nom de fichier normalisé : `<Nom>-<version>-<langue>.aupak`.
     pub fn suggested_file_name(&self) -> String {
         let name: String = self
             .name
@@ -797,7 +797,7 @@ impl Manifest {
         } else {
             "mul".into()
         };
-        format!("{}-{}-{}.apak", name, self.version, lang)
+        format!("{}-{}-{}.aupak", name, self.version, lang)
     }
 }
 

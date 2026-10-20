@@ -114,9 +114,9 @@ versions étiquetées `v*`.
   `server/openapi.yaml` et [API.md](API.md).
 - **Dépendances** : n'en ajouter qu'en cas de nécessité, versions dans
   `[workspace.dependencies]`, `Cargo.lock` versionné (`--locked`).
-- **Compatibilité** : une évolution incompatible du format `.apak`, du
+- **Compatibilité** : une évolution incompatible du format `.aupak`, du
   manifeste ou des index incrémente la version correspondante
-  (`APAK_FORMAT_VERSION`, `format`, `meta_version`).
+  (`AUPAK_FORMAT_VERSION`, `format`, `meta_version`).
 
 ## 5. Règles de sécurité
 

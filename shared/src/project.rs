@@ -124,8 +124,8 @@ pub fn manifest_with_contents(text: &str, files: &[BuildFile]) -> Result<(Manife
 
 /// Construit l'archive d'un projet.
 pub fn build(dir: &Path, out: &Path) -> Result<(Manifest, Inspection)> {
-    if out.extension().and_then(|e| e.to_str()) != Some(archive::APAK_EXTENSION) {
-        bail!("le fichier de sortie doit porter l'extension .apak");
+    if out.extension().and_then(|e| e.to_str()) != Some(archive::PACKAGE_EXTENSION) {
+        bail!("le fichier de sortie doit porter l'extension .aupak");
     }
     let (m, _) = load_manifest(dir)?;
     let files = project_files(dir)?;
@@ -282,7 +282,7 @@ mod tests {
         )
         .unwrap();
         std::fs::write(d.path().join("payload/bin/hello"), b"#!/bin/sh\necho hi\n").unwrap();
-        let out = d.path().join("hello.apak");
+        let out = d.path().join("hello.aupak");
         let (m, insp) = build(d.path(), &out).unwrap();
         assert_eq!(m.name, "Hello x");
         assert_eq!(insp.manifest.contents.len(), 1);

@@ -5,7 +5,7 @@ l'écosystème AuxiNux : <https://pak.auxinux.ca>.
 
 Il permet de rechercher, installer, mettre à niveau et désinstaller des
 applications sur Debian, Ubuntu, AuxiNuxOS, VirtuaOS, Windows et macOS, à
-partir de paquets `.apak` signés et d'index authentifiés par TUF.
+partir de paquets `.aupak` signés et d'index authentifiés par TUF.
 
 ## Philosophie
 
@@ -46,7 +46,7 @@ Les dépôts ajoutés par l'utilisateur sont toujours affichés comme
 | `auxipak` (`client/`) | client en ligne de commande : `search`, `install`, `remove`, `update`, `upgrade`, `list`, `info`, `verify`, `clean`, `repo`, `repair`, `doctor` |
 | `auxipak-builder` (`builder/`) | création, validation, construction, tests statiques, signature et soumission de paquets ; cérémonie de clés |
 | `auxipak-server` (`server/`) | API REST, interface Web bilingue (fr/en), relecture et publication, signature, génération des index et métadonnées TUF |
-| `auxipak-core` (`shared/`) | bibliothèque commune : manifeste, format `.apak`, signatures, index, TUF |
+| `auxipak-core` (`shared/`) | bibliothèque commune : manifeste, format `.aupak`, signatures, index, TUF |
 | `web/` | gabarits, traductions et thème de l'interface Web |
 | `deploy/` | Docker, Compose, Nginx, systemd, scripts d'exploitation |
 | `examples/auxipak-demo/` | application de démonstration |
@@ -81,7 +81,7 @@ $ curl -fsS http://127.0.0.1:8080/api/v1/health
 
 # Construire le paquet de démonstration
 $ AUXIPAK_BUILDER=$PWD/target/debug/auxipak-builder examples/auxipak-demo/build.sh 1.0.0 dist/
-$ target/debug/auxipak verify dist/AuxiPakDemo-1.0.0-mul.apak
+$ target/debug/auxipak verify dist/AuxiPakDemo-1.0.0-mul.aupak
 
 # Démonstration complète de bout en bout (serveur et base éphémères)
 $ PG_ADMIN_URL=postgres://postgres:motdepasse@127.0.0.1:5432/postgres tests/e2e/run-local.sh
@@ -97,7 +97,7 @@ Interface Web : <http://127.0.0.1:8080> (administration : `/admin`).
 | [Référence des commandes](docs/CLI_REFERENCE.md) | `auxipak`, `auxipak-builder`, configuration, adaptateurs `auxi` et VirtuaOS |
 | [Construire et publier](docs/BUILDER.md) | Builder CLI et API, GitHub Actions, agents IA |
 | [Manifeste](docs/MANIFEST_SPEC.md) | spécification de `instruction.auxipak` |
-| [Format .apak](docs/APAK_FORMAT.md) | archive et signature détachée |
+| [Format .aupak](docs/AUPAK_FORMAT.md) | archive et signature détachée |
 | [API](docs/API.md) | API REST du serveur |
 | [Déploiement](docs/DEPLOYMENT.md) | Debian 13, Docker Compose, Nginx, sauvegardes |
 | [Signatures et clés](docs/SIGNING.md) | TUF, cérémonie de clés, rotation, révocation |

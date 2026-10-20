@@ -6,7 +6,7 @@ l'installer, la détecter et la désinstaller. Il est entièrement
 méthode a des paramètres structurés que le client traduit en appels de
 processus à vecteur d'arguments, sans interpréteur de commandes.
 
-- Fichier : `instruction.auxipak`, à la racine de l'archive `.apak`, YAML
+- Fichier : `instruction.auxipak`, à la racine de l'archive `.aupak`, YAML
   UTF-8, 256 Kio au plus.
 - Schéma JSON officiel : `schemas/instruction.auxipak.schema.json`
   (`$id` : `https://pak.auxinux.ca/schemas/instruction.auxipak/1.json`),
@@ -105,7 +105,7 @@ contents:
 Liste exhaustive des fichiers de l'archive hors manifeste, sous `payload/`
 ou `scripts/`, avec SHA-256 et taille ; chemins sûrs et uniques. Le
 constructeur la calcule ; elle est vérifiée à l'inspection et à l'extraction
-(voir [APAK_FORMAT.md](APAK_FORMAT.md)). Un paquet sans fichier (mode
+(voir [AUPAK_FORMAT.md](AUPAK_FORMAT.md)). Un paquet sans fichier (mode
 `native` uniquement) n'a pas de `contents`.
 
 ## 3. Variantes (`targets`)
