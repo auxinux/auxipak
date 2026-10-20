@@ -15,6 +15,8 @@ use clap::{Parser, Subcommand};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
+mod settings;
+
 #[derive(Parser)]
 #[command(name = "auxipak-builder", version, about = "Constructeur de paquets AuxiPak (.apak)")]
 struct Cli {
@@ -75,17 +77,32 @@ enum Cmd {
     /// Soumettre un paquet au serveur (crée une demande de publication, jamais une publication directe).
     Submit {
         file: PathBuf,
-        /// URL du serveur (ex. https://pak.auxinux.ca).
+        /// URL du serveur (sinon AUXIPAK_SERVER, puis « auxipak-builder set server=… »).
         #[arg(long, env = "AUXIPAK_SERVER")]
-        server: String,
-        /// Jeton d'API (variable d'environnement recommandée).
+        server: Option<String>,
+        /// Jeton d'API (sinon AUXIPAK_TOKEN, puis « auxipak-builder set token=… »).
         #[arg(long, env = "AUXIPAK_TOKEN", hide_env_values = true)]
-        token: String,
-        #[arg(long, default_value = "official")]
-        repository: String,
+        token: Option<String>,
+        /// Dépôt cible (défaut : réglage « repository », sinon official).
+        #[arg(long)]
+        repository: Option<String>,
         #[arg(long, default_value = "")]
         note: String,
     },
+    /// Enregistrer des réglages : server, token, repository
+    /// (ex. « set server=https://auxipak.auxinux.ca token=apk_… » ; « set token »
+    /// sans valeur la demande, hors de l'historique du shell).
+    Set {
+        #[arg(required = true, value_name = "CLÉ=VALEUR")]
+        assignments: Vec<String>,
+    },
+    /// Supprimer des réglages enregistrés.
+    Unset {
+        #[arg(required = true, value_name = "CLÉ")]
+        keys: Vec<String>,
+    },
+    /// Afficher les réglages enregistrés (jeton masqué).
+    Config,
 }
 
 #[derive(Subcommand)]
@@ -207,7 +224,51 @@ async fn run(cli: Cli) -> Result<()> {
             token,
             repository,
             note,
-        } => submit(&file, &server, &token, &repository, &note, cli.json).await,
+        } => {
+            let saved = settings::Settings::load()?;
+            let server = server
+                .or(saved.server)
+                .context("serveur non défini : auxipak-builder set server=https://…")?;
+            let token = token
+                .or(saved.token)
+                .context("jeton non défini : auxipak-builder set token=apk_…")?;
+            let repository = repository.or(saved.repository).unwrap_or_else(|| "official".into());
+            submit(&file, &server, &token, &repository, &note, cli.json).await
+        }
+        Cmd::Set { assignments } => {
+            let mut s = settings::Settings::load()?;
+            for a in &assignments {
+                let (k, v) = match a.split_once('=') {
+                    Some((k, v)) => (k.trim().to_string(), v.to_string()),
+                    None => (a.trim().to_string(), settings::read_value(a.trim())?),
+                };
+                s.set(&k, &v)?;
+            }
+            let p = s.save()?;
+            println!("Réglages enregistrés : {}", p.display());
+            Ok(())
+        }
+        Cmd::Unset { keys } => {
+            let mut s = settings::Settings::load()?;
+            for k in &keys {
+                s.unset(k)?;
+            }
+            let p = s.save()?;
+            println!("Réglages enregistrés : {}", p.display());
+            Ok(())
+        }
+        Cmd::Config => {
+            let s = settings::Settings::load()?;
+            let none = "(non défini)".to_string();
+            println!("Fichier    : {}", settings::path()?.display());
+            println!("server     : {}", s.server.clone().unwrap_or(none.clone()));
+            println!(
+                "token      : {}",
+                s.token.as_deref().map(settings::mask).unwrap_or(none.clone())
+            );
+            println!("repository : {}", s.repository.clone().unwrap_or("official (défaut)".into()));
+            Ok(())
+        }
     }
 }
 
@@ -359,11 +420,7 @@ async fn keys(cmd: KeysCmd) -> Result<()> {
 
 async fn submit(file: &Path, server: &str, token: &str, repository: &str, note: &str, json: bool) -> Result<()> {
     let insp = archive::inspect(file, &Limits::default()).map_err(|e| anyhow!("paquet invalide : {e}"))?;
-    let base = url::Url::parse(server)?;
-    let local = matches!(base.host_str(), Some("localhost") | Some("127.0.0.1"));
-    if base.scheme() != "https" && !(base.scheme() == "http" && local) {
-        bail!("HTTPS obligatoire pour la soumission (HTTP accepté uniquement vers localhost)");
-    }
+    let base = settings::check_server(server)?;
     if !auxipak_core::ids::is_valid_repo_name(repository) {
         bail!("dépôt invalide");
     }

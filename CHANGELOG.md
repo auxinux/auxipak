@@ -5,7 +5,16 @@ le projet applique le [versionnage sémantique](https://semver.org/lang/fr/).
 
 ## [Non publié]
 
+## [1.0.1] — 2026-10-20
+
 ### Ajouté
+
+- `auxipak-builder set server=… token=…`, `unset` et `config` : réglages
+  persistants de la soumission (fichier `builder.json`, droits 0600) ;
+  `submit` n'exige plus `--server` ni `--token`.
+- Binaires du client récupérables par git (branche `client-dist`) avec
+  `deploy/scripts/fetch-client.sh`, sans jeton d'API ; exemple de paquet
+  Firefox pour macOS (`examples/firefox-macos/make.sh`).
 
 - Installation du client en une commande : le serveur publie `/install.sh`,
   `/uninstall.sh` (Linux, macOS) et `/install.ps1`, `/uninstall.ps1`

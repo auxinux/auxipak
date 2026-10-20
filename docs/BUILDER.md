@@ -82,10 +82,22 @@ Voir [SIGNING.md](SIGNING.md#7-ajouter-une-signature-à-un-paquet).
 Un jeton portant la portée `submit` est nécessaire (créé par un humain dans
 l'interface `/admin/tokens` ou via `POST /api/v1/tokens`).
 
+Enregistrez une fois le serveur et le jeton (fichier
+`~/.config/auxipak/builder.json`, droits 0600 ; `%APPDATA%\AuxiPak\builder.json`
+sous Windows) :
+
 ```console
-$ export AUXIPAK_SERVER=https://pak.auxinux.ca
-$ export AUXIPAK_TOKEN=apk_…            # jamais sur la ligne de commande partagée ni dans Git
-$ auxipak-builder submit Monoutil-1.0.0-fr.apak --repository official --note "Version 1.0.0"
+$ auxipak-builder set server=https://pak.auxinux.ca
+$ auxipak-builder set token             # demande le jeton (hors de l'historique du shell)
+$ auxipak-builder config                # affiche les réglages, jeton masqué
+```
+
+`auxipak-builder set token=apk_…` fonctionne aussi ; `auxipak-builder unset
+token` l'efface. Les variables `AUXIPAK_SERVER` / `AUXIPAK_TOKEN` et les
+options `--server` / `--token` restent prioritaires (CI, agents).
+
+```console
+$ auxipak-builder submit Monoutil-1.0.0-fr.apak --note "Version 1.0.0"
 Demande de publication créée : 7c1e… (statut : pending). Elle doit être approuvée par un relecteur.
 ```
 

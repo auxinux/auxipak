@@ -67,4 +67,4 @@ apak=$(ls -t Firefox-"$v"-*.apak | head -n 1)
 auxipak-builder test "$apak"
 echo
 echo "Paquet prêt : $apak"
-echo "Soumission : auxipak-builder submit \"$apak\" --repository official --note \"Firefox $v\""
+echo "Soumission : auxipak-builder submit \"$apak\" --note \"Firefox $v\""
