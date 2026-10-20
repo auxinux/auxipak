@@ -29,7 +29,7 @@ services:
     build:
       context: ..
       dockerfile: deploy/docker/Dockerfile
-    image: auxipak-server:1.0.0
+    image: auxipak-server:local
     restart: unless-stopped
     depends_on:
       db:
