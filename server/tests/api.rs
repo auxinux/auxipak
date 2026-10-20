@@ -231,7 +231,19 @@ async fn public_endpoints_and_openapi_completeness() {
             "route non documentée : {method} {path}"
         );
     }
+    // Anglais par défaut ; français si le navigateur le préfère.
     let html = s.http.get(s.url("/")).send().await.unwrap().text().await.unwrap();
+    assert!(html.contains("<html lang=\"en\">") && html.contains("Catalog"));
+    let html = s
+        .http
+        .get(s.url("/"))
+        .header("accept-language", "fr-CA,fr;q=0.9,en;q=0.8")
+        .send()
+        .await
+        .unwrap()
+        .text()
+        .await
+        .unwrap();
     assert!(html.contains("<html lang=\"fr\">") && html.contains("Catalogue"));
     let r = s.http.get(s.url("/lang/en")).send().await.unwrap();
     let cookie = r
@@ -836,7 +848,7 @@ async fn web_admin_requires_session_and_csrf() {
     let html = s
         .http
         .get(s.url("/admin"))
-        .header(COOKIE, &cookie)
+        .header(COOKIE, format!("{cookie}; lang=fr"))
         .send()
         .await
         .unwrap()

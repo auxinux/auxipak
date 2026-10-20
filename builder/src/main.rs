@@ -138,6 +138,20 @@ enum KeysCmd {
 
 #[tokio::main]
 async fn main() -> ExitCode {
+    // Langue : AUXIPAK_LANG, puis « auxipak-builder set lang=… », puis système.
+    if std::env::var("AUXIPAK_LANG")
+        .ok()
+        .and_then(|v| auxipak_core::i18n::Lang::parse(&v))
+        .is_none()
+    {
+        if let Some(l) = settings::Settings::load()
+            .ok()
+            .and_then(|s| s.lang)
+            .and_then(|l| auxipak_core::i18n::Lang::parse(&l))
+        {
+            auxipak_core::i18n::set(l);
+        }
+    }
     let cli = Cli::parse();
     match run(cli).await {
         Ok(()) => ExitCode::SUCCESS,
@@ -267,6 +281,7 @@ async fn run(cli: Cli) -> Result<()> {
                 s.token.as_deref().map(settings::mask).unwrap_or(none.clone())
             );
             println!("repository : {}", s.repository.clone().unwrap_or("official (défaut)".into()));
+            println!("lang       : {}", auxipak_core::i18n::current().code());
             Ok(())
         }
     }

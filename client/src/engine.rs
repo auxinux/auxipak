@@ -214,7 +214,7 @@ fn visit<'a>(
             language: None,
             repo: None,
         };
-        let dc = catalog::resolve(&env.repos, &d.id, &sel, &env.config.language)
+        let dc = catalog::resolve(&env.repos, &d.id, &sel, &env.config.package_language())
             .with_context(|| format!("dépendance {} ({}) de {}", d.id, d.version, c.release.id))?;
         visit(env, dc, registry, out, visiting, true)?;
     }
@@ -742,7 +742,11 @@ pub async fn upgrade(env: &Env, only: Option<&str>, opts: &InstallOpts, registry
             msgs.push(format!("{id} : adopté, mise à niveau laissée au gestionnaire d'origine"));
             continue;
         }
-        let lang = app.languages.first().cloned().unwrap_or_else(|| env.config.language.clone());
+        let lang = app
+            .languages
+            .first()
+            .cloned()
+            .unwrap_or_else(|| env.config.package_language());
         match catalog::best_update(&env.repos, &id, &app.repo, &app.version, &lang) {
             None => msgs.push(format!("{id} {} est à jour", app.version)),
             Some(c) => {
@@ -762,7 +766,7 @@ pub async fn upgrade(env: &Env, only: Option<&str>, opts: &InstallOpts, registry
 
 /// `auxipak install`.
 pub async fn install(env: &Env, spec: &str, opts: &InstallOpts, registry: &mut Registry) -> Result<Vec<String>> {
-    let root = catalog::resolve(&env.repos, spec, &opts.selector, &env.config.language)?;
+    let root = catalog::resolve(&env.repos, spec, &opts.selector, &env.config.package_language())?;
     let steps = plan(env, root, registry)?;
     let mut msgs = Vec::new();
     for (c, is_dep) in steps {

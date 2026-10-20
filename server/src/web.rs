@@ -2,7 +2,8 @@
 //!
 //! - Gabarits MiniJinja (échappement HTML automatique) embarqués dans le binaire
 //!   depuis `web/templates`, feuilles de style et thèmes depuis `web/static`.
-//! - Bilingue : français par défaut, anglais via le cookie `lang`
+//! - Bilingue : langue du navigateur (`Accept-Language`, anglais par défaut),
+//!   ou choix explicite mémorisé dans le cookie `lang`
 //!   (`web/i18n/fr.json`, `web/i18n/en.json`).
 //! - Administration : session (cookie HttpOnly, SameSite=Strict) et jeton
 //!   CSRF obligatoire sur chaque formulaire.
@@ -68,7 +69,7 @@ impl Templates {
     }
 
     pub fn render(&self, name: &str, lang: &str, ctx: Value) -> Response {
-        let tr = Value::from_serialize(self.i18n.get(lang).or_else(|| self.i18n.get("fr")));
+        let tr = Value::from_serialize(self.i18n.get(lang).or_else(|| self.i18n.get("en")));
         let full = context! { lang => lang, tr => tr, ..ctx };
         match self.env.get_template(name).and_then(|t| t.render(full)) {
             Ok(html) => Html(html).into_response(),
@@ -122,11 +123,10 @@ pub fn router() -> Router<AppState> {
         .route("/admin/audit", get(audit_page))
 }
 
-fn lang_of(st: &AppState, jar: &CookieJar) -> String {
-    jar.get("lang")
-        .map(|c| c.value().to_string())
-        .filter(|l| st.web.has_lang(l))
-        .unwrap_or_else(|| "fr".into())
+/// Langue de la page : celle de la requête (cookie `lang`, sinon
+/// `Accept-Language`, sinon anglais ; voir `crate::request_lang`).
+fn lang_of(_st: &AppState, _jar: &CookieJar) -> String {
+    auxipak_core::i18n::current().code().to_string()
 }
 
 fn page(st: &AppState, jar: &CookieJar, name: &str, ctx: Value) -> Response {
@@ -171,7 +171,7 @@ struct LangQuery {
 }
 
 async fn set_lang(State(st): State<AppState>, Path(lang): Path<String>, Query(q): Query<LangQuery>, jar: CookieJar) -> Response {
-    let lang = if st.web.has_lang(&lang) { lang } else { "fr".into() };
+    let lang = if st.web.has_lang(&lang) { lang } else { "en".into() };
     // Redirection locale uniquement (pas de redirection ouverte).
     let next = q
         .next

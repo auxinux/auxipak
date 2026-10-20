@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use std::io::{BufRead, Write};
 use std::path::PathBuf;
 
-pub const KEYS: &[&str] = &["server", "token", "repository"];
+pub const KEYS: &[&str] = &["server", "token", "repository", "lang"];
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -23,6 +23,9 @@ pub struct Settings {
     pub token: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub repository: Option<String>,
+    /// Langue de l'interface (`fr`, `en`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lang: Option<String>,
 }
 
 pub fn path() -> Result<PathBuf> {
@@ -93,6 +96,10 @@ impl Settings {
                 }
                 self.repository = Some(value.to_string());
             }
+            "lang" | "language" | "langue" => {
+                let l = auxipak_core::i18n::Lang::parse(value).with_context(|| format!("langue inconnue : {value} (fr, en)"))?;
+                self.lang = Some(l.code().to_string());
+            }
             _ => bail!("réglage inconnu : {key} (valeurs possibles : {})", KEYS.join(", ")),
         }
         Ok(())
@@ -103,6 +110,7 @@ impl Settings {
             "server" => self.server = None,
             "token" => self.token = None,
             "repository" => self.repository = None,
+            "lang" | "language" | "langue" => self.lang = None,
             _ => bail!("réglage inconnu : {key} (valeurs possibles : {})", KEYS.join(", ")),
         }
         Ok(())

@@ -64,12 +64,40 @@ pub async fn initial_publish(state: &AppState) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Langue de la requête : cookie `lang` (choix fait sur le site), sinon
+/// `Accept-Language`, sinon anglais. Les messages de l'API et des pages
+/// (`auxipak_core::tr!`) l'utilisent.
+pub fn request_lang(headers: &axum::http::HeaderMap) -> auxipak_core::i18n::Lang {
+    use auxipak_core::i18n::Lang;
+    let from_cookie = headers
+        .get_all(header::COOKIE)
+        .iter()
+        .filter_map(|v| v.to_str().ok())
+        .flat_map(|v| v.split(';'))
+        .filter_map(|c| c.trim().strip_prefix("lang="))
+        .find_map(Lang::parse);
+    from_cookie
+        .or_else(|| {
+            headers
+                .get(header::ACCEPT_LANGUAGE)
+                .and_then(|v| v.to_str().ok())
+                .and_then(Lang::from_accept_language)
+        })
+        .unwrap_or(Lang::En)
+}
+
+async fn with_request_lang(req: axum::extract::Request, next: axum::middleware::Next) -> axum::response::Response {
+    let lang = request_lang(req.headers());
+    auxipak_core::i18n::scope(lang, next.run(req)).await
+}
+
 /// Application complète.
 pub fn app(state: AppState) -> Router {
     Router::new()
         .merge(api::router())
         .merge(web::router())
         .merge(install::router())
+        .layer(axum::middleware::from_fn(with_request_lang))
         .layer(DefaultBodyLimit::max(2 * 1024 * 1024))
         .layer(SetResponseHeaderLayer::if_not_present(header::X_CONTENT_TYPE_OPTIONS, HeaderValue::from_static("nosniff")))
         .layer(SetResponseHeaderLayer::if_not_present(header::X_FRAME_OPTIONS, HeaderValue::from_static("DENY")))

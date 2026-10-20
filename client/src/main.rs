@@ -85,6 +85,13 @@ enum Cmd {
     },
     /// Forcer la synchronisation des index de tous les dépôts (ne met pas à jour les applications).
     Update,
+    /// Régler une préférence : « auxipak set lang fr » ou « auxipak set lang en ».
+    Set {
+        /// Préférence (lang) ; « lang=fr » est aussi accepté.
+        key: String,
+        /// Valeur (fr, en) ; absente : affiche la valeur actuelle.
+        value: Option<String>,
+    },
     /// Mettre à niveau AuxiPak lui-même puis toutes les applications gérées, ou celle indiquée.
     Upgrade {
         package: Option<String>,
@@ -172,6 +179,25 @@ fn init_logging(paths: &Paths) {
     }
 }
 
+/// Langue de l'interface : `AUXIPAK_LANG`, puis « auxipak set lang »
+/// (utilisateur, puis système), puis langue du système, puis anglais.
+fn apply_language(paths: &Paths) {
+    use auxipak_core::i18n::{self, Lang};
+    if std::env::var("AUXIPAK_LANG").ok().and_then(|v| Lang::parse(&v)).is_some() {
+        return;
+    }
+    let files = [
+        Some(paths.config_dir.join("language")),
+        paths.system_config_dir.as_ref().map(|d| d.join("language")),
+    ];
+    for f in files.into_iter().flatten() {
+        if let Some(l) = std::fs::read_to_string(&f).ok().and_then(|s| Lang::parse(&s)) {
+            i18n::set(l);
+            return;
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() -> ExitCode {
     let cli = Cli::parse();
@@ -180,6 +206,7 @@ async fn main() -> ExitCode {
         eprintln!("erreur : impossible de préparer {} : {e}", paths.state_dir.display());
         return ExitCode::from(1);
     }
+    apply_language(&paths);
     init_logging(&paths);
     selfupdate::cleanup_old();
     tracing::info!(args = ?std::env::args().collect::<Vec<_>>(), "démarrage");
@@ -250,7 +277,7 @@ async fn run(cli: Cli, paths: Paths) -> Result<()> {
                     );
                 }
             }
-            let hits = catalog::search(&env.repos, query.as_deref().unwrap_or(""), &env.config.language);
+            let hits = catalog::search(&env.repos, query.as_deref().unwrap_or(""), &env.config.package_language());
             if cli.json {
                 let v: Vec<_> = hits
                     .iter()
@@ -334,6 +361,36 @@ async fn run(cli: Cli, paths: Paths) -> Result<()> {
             for m in engine::remove(&env, &package, force, autoremove, allow_scripts, &mut reg).await? {
                 println!("{m}");
             }
+        }
+        Cmd::Set { key, value } => {
+            use auxipak_core::i18n::{self, Lang};
+            let (key, value) = match key.split_once('=') {
+                Some((k, v)) => (k.to_string(), Some(v.to_string())),
+                None => (key, value),
+            };
+            if !matches!(key.to_ascii_lowercase().as_str(), "lang" | "language" | "langue") {
+                bail!(auxipak_core::tr!(
+                    "préférence inconnue : {key} (disponible : lang)",
+                    "unknown setting: {key} (available: lang)"
+                ));
+            }
+            let Some(value) = value else {
+                println!("lang = {}", i18n::current().code());
+                return Ok(());
+            };
+            let l = Lang::parse(&value).ok_or_else(|| {
+                anyhow::anyhow!(auxipak_core::tr!(
+                    "langue inconnue : {value} (fr, en)",
+                    "unknown language: {value} (fr, en)"
+                ))
+            })?;
+            let file = paths.config_dir.join("language");
+            paths::atomic_write(&file, format!("{}\n", l.code()).as_bytes())?;
+            i18n::set(l);
+            println!(
+                "{}",
+                auxipak_core::tr!("Langue : français ({})", "Language: English ({})", file.display())
+            );
         }
         Cmd::Update => {
             let config = Config::load(&paths)?;
@@ -653,7 +710,7 @@ fn remove_dir_size(p: &std::path::Path) -> Result<u64> {
 fn info(env: &Env, package: &str, json: bool) -> Result<()> {
     let reg = Registry::load(&env.paths)?;
     let installed = reg.get(package);
-    let c = catalog::resolve(&env.repos, package, &Default::default(), &env.config.language);
+    let c = catalog::resolve(&env.repos, package, &Default::default(), &env.config.package_language());
     let c = match (c, installed) {
         (Ok(c), _) => c,
         (Err(e), None) => return Err(e),

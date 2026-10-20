@@ -122,7 +122,6 @@ $SUDO install -m 0644 "$tmp/root.json" "$CONF_DIR/trust/official/root.json"
 $SUDO install -m 0644 "$tmp/package-keys.json" "$CONF_DIR/trust/official/package-keys.json"
 
 # Configuration (conservée si elle existe déjà).
-case "${LC_ALL:-${LC_MESSAGES:-${LANG:-}}}" in en*) lang=en ;; *) lang=fr ;; esac
 if $SUDO test -f "$CONF_DIR/config.toml"; then
   say "Configuration existante conservée : $CONF_DIR/config.toml"
   $SUDO grep -q "$AUXIPAK_URL/repos/official/" "$CONF_DIR/config.toml" \
@@ -133,7 +132,6 @@ else
   cat > "$tmp/config.toml" <<AUXIPAK_EOF
 # Configuration du client AuxiPak (créée par install.sh).
 cache_ttl_seconds = 3600
-language = "$lang"
 
 [[repository]]
 name = "official"

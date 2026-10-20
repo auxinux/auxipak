@@ -20,9 +20,10 @@ pub mod embedded {
 pub struct Config {
     #[serde(default = "default_ttl")]
     pub cache_ttl_seconds: u64,
-    /// Langue préférée pour le choix des paquets (`fr` par défaut).
-    #[serde(default = "default_lang")]
-    pub language: String,
+    /// Langue préférée pour le choix des paquets ; à défaut, la langue de
+    /// l'interface (`auxipak set lang`, puis langue du système).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
     #[serde(default, rename = "repository")]
     pub repositories: Vec<RepoConfig>,
     #[serde(default)]
@@ -33,9 +34,6 @@ pub struct Config {
 
 fn default_ttl() -> u64 {
     DEFAULT_TTL
-}
-fn default_lang() -> String {
-    "fr".into()
 }
 fn yes() -> bool {
     true
@@ -155,7 +153,7 @@ impl Default for Config {
     fn default() -> Self {
         Config {
             cache_ttl_seconds: DEFAULT_TTL,
-            language: default_lang(),
+            language: None,
             repositories: vec![RepoConfig {
                 name: "official".into(),
                 url: OFFICIAL_URL.into(),
@@ -225,6 +223,13 @@ impl Config {
             }
         }
         Ok(())
+    }
+
+    /// Langue retenue pour choisir la variante linguistique d'un paquet.
+    pub fn package_language(&self) -> String {
+        self.language
+            .clone()
+            .unwrap_or_else(|| auxipak_core::i18n::current().code().to_string())
     }
 
     pub fn repo(&self, name: &str) -> Option<&RepoConfig> {

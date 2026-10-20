@@ -113,11 +113,9 @@ function Install-AuxiPak {
         if (Test-Path -LiteralPath $configFile) {
             Write-Host "Configuration existante conservee : $configFile"
         } else {
-            $lang = if ((Get-UICulture).TwoLetterISOLanguageName -eq 'en') { 'en' } else { 'fr' }
             $text = @(
                 '# Configuration du client AuxiPak (creee par install.ps1).',
                 'cache_ttl_seconds = 3600',
-                "language = `"$lang`"",
                 '',
                 '[[repository]]',
                 'name = "official"',
