@@ -4,24 +4,42 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::Json;
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug)]
 pub enum ApiError {
-    #[error("{0}")]
     BadRequest(String),
-    #[error("authentification requise")]
     Unauthorized,
-    #[error("{0}")]
     Forbidden(String),
-    #[error("ressource introuvable")]
     NotFound,
-    #[error("{0}")]
     Conflict(String),
-    #[error("contenu trop volumineux")]
     TooLarge,
-    #[error("trop de tentatives, réessayez plus tard")]
     TooManyRequests,
-    #[error("erreur interne")]
-    Internal(#[from] anyhow::Error),
+    Internal(anyhow::Error),
+}
+
+impl std::fmt::Display for ApiError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use auxipak_core::tr;
+        let s = match self {
+            ApiError::BadRequest(m) | ApiError::Forbidden(m) | ApiError::Conflict(m) => m.clone(),
+            ApiError::Unauthorized => tr!("authentification requise", "authentication required"),
+            ApiError::NotFound => tr!("ressource introuvable", "resource not found"),
+            ApiError::TooLarge => tr!("contenu trop volumineux", "content too large"),
+            ApiError::TooManyRequests => tr!(
+                "trop de tentatives, réessayez plus tard",
+                "too many attempts, try again later"
+            ),
+            ApiError::Internal(_) => tr!("erreur interne", "internal error"),
+        };
+        f.write_str(&s)
+    }
+}
+
+impl std::error::Error for ApiError {}
+
+impl From<anyhow::Error> for ApiError {
+    fn from(e: anyhow::Error) -> Self {
+        ApiError::Internal(e)
+    }
 }
 
 impl From<sqlx::Error> for ApiError {
@@ -71,7 +89,7 @@ impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
         if let ApiError::Internal(e) = &self {
             // Le détail interne est journalisé, jamais renvoyé au client.
-            tracing::error!(error = %format!("{e:#}"), "erreur interne");
+            tracing::error!(error = %format!("{e:#}"), "{}", auxipak_core::tr!("erreur interne", "internal error"));
         }
         let body = serde_json::json!({ "error": self.code(), "message": self.to_string() });
         (self.status(), Json(body)).into_response()

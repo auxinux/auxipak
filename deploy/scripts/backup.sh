@@ -5,7 +5,10 @@
 # Les clés privées ne sont PAS incluses : elles se sauvegardent séparément,
 # chiffrées, selon docs/SIGNING.md.
 set -euo pipefail
-DEST="${1:?répertoire de destination requis}"
+# shellcheck source=i18n.sh
+. "$(dirname "$0")/i18n.sh"
+need "${1:-}" "répertoire de destination requis" "destination directory required"
+DEST="$1"
 COMPOSE=(docker compose -f "$(dirname "$0")/../docker-compose.yml" --env-file "${ENV_FILE:-$(dirname "$0")/../.env}")
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 OUT="$DEST/auxipak-$STAMP"
@@ -14,4 +17,4 @@ mkdir -p "$OUT"
 "${COMPOSE[@]}" exec -T db pg_dump -U auxipak -d auxipak --format=custom > "$OUT/database.dump"
 "${COMPOSE[@]}" exec -T server tar -C /var/lib/auxipak-server -cf - . > "$OUT/data.tar"
 sha256sum "$OUT"/* > "$OUT/SHA256SUMS"
-echo "Sauvegarde : $OUT"
+msg "Sauvegarde : $OUT" "Backup: $OUT"

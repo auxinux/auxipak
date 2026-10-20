@@ -20,7 +20,7 @@
 <h2>{{ tr.create }}</h2>
 <form class="card stack" method="post" action="/admin/repositories">
   <input type="hidden" name="csrf" value="{{ user.csrf }}">
-  <div class="row"><input name="name" placeholder="{{ tr.name }} (ex. community)" required pattern="[a-z0-9][a-z0-9_-]{0,31}"><input name="title" placeholder="{{ tr.title }}" required></div>
+  <div class="row"><input name="name" placeholder="{{ tr.name }} ({{ tr.example_abbr }} community)" required pattern="[a-z0-9][a-z0-9_-]{0,31}"><input name="title" placeholder="{{ tr.title }}" required></div>
   <textarea name="description" placeholder="{{ tr.description }}"></textarea>
   <label><input type="checkbox" name="official" value="1"> {{ tr.official }}</label>
   <button type="submit">{{ tr.create }}</button>

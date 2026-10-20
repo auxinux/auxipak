@@ -8,7 +8,7 @@
 <div class="grid">
   <section class="card">
     <dl class="kv">
-      <dt>{{ tr.state }}</dt><dd><strong>{{ s.status }}</strong></dd>
+      <dt>{{ tr.state }}</dt><dd><strong>{{ tr['sub_' ~ s.status] or s.status }}</strong></dd>
       <dt>{{ tr.version }}</dt><dd>{{ s.app_id or '?' }} {{ s.version or '' }}</dd>
       <dt>{{ tr.repository }}</dt><dd>{{ s.repository }}</dd>
       <dt>{{ tr.size }}</dt><dd>{{ s.size|filesize }}</dd>
@@ -29,7 +29,7 @@
 {% if s.validation.targets %}
 <h2>{{ tr.targets }}</h2>
 <div class="table-wrap"><table>
-  <thead><tr><th>{{ tr.name }}</th><th>{{ tr.platforms }}</th><th>{{ tr.mode }}</th><th>Méthode</th><th>Privilèges</th></tr></thead>
+  <thead><tr><th>{{ tr.name }}</th><th>{{ tr.platforms }}</th><th>{{ tr.mode }}</th><th>{{ tr.method }}</th><th>{{ tr.privileges }}</th></tr></thead>
   <tbody>{% for t in s.validation.targets %}<tr><td>{{ t.name }}</td><td>{{ t.platform }} {{ t.distributions|join(', ') }} [{{ t.architectures|join(', ') }}]</td><td>{{ t.mode }}</td><td>{{ t.method }}</td><td>{{ t.privileges }}</td></tr>{% endfor %}</tbody>
 </table></div>
 {% endif %}

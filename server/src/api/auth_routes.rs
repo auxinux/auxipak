@@ -4,6 +4,7 @@ use crate::audit;
 use crate::auth::{self, Actor, Role, Scope, TokenKind, Via};
 use crate::error::{bad, forbidden, ApiError, ApiResult};
 use crate::state::AppState;
+use auxipak_core::tr;
 use axum::extract::{Path, State};
 use axum::http::HeaderMap;
 use axum::Json;
@@ -173,42 +174,57 @@ pub async fn issue_token(
     req: &TokenReq,
 ) -> ApiResult<(Uuid, String)> {
     if !actor.is_human() {
-        return Err(forbidden("seul un humain peut créer des jetons"));
+        return Err(forbidden(tr!(
+            "seul un humain peut créer des jetons",
+            "only a human can create tokens"
+        )));
     }
     // Un jeton ne peut jamais servir à obtenir davantage de droits : seule une
     // session interactive, ou un jeton humain de portée « admin », peut émettre
     // un jeton, et uniquement avec des portées que l'émetteur détient lui-même.
     if let Via::Token { .. } = &actor.via {
         if !actor.has(Scope::Admin) {
-            return Err(forbidden(
+            return Err(forbidden(tr!(
                 "la création de jetons exige une session ou un jeton administrateur",
-            ));
+                "creating tokens requires a session or an administrator token"
+            )));
         }
         for s in &req.scopes {
             if !Scope::parse(s).map(|sc| actor.has(sc)).unwrap_or(false) {
-                return Err(forbidden(format!("portée « {s} » non détenue par le jeton émetteur")));
+                return Err(forbidden(tr!(
+                    "portée « {s} » non détenue par le jeton émetteur",
+                    "scope '{s}' is not held by the issuing token"
+                )));
             }
         }
     }
     let name = req.name.trim();
     if name.is_empty() || name.len() > 64 {
-        return Err(bad("nom de jeton invalide"));
+        return Err(bad(tr!("nom de jeton invalide", "invalid token name")));
     }
-    let kind = TokenKind::parse(&req.kind).ok_or_else(|| bad("type de jeton invalide (human, ci, agent)"))?;
+    let kind = TokenKind::parse(&req.kind).ok_or_else(|| {
+        bad(tr!(
+            "type de jeton invalide (human, ci, agent)",
+            "invalid token type (human, ci, agent)"
+        ))
+    })?;
     let scopes: Vec<Scope> = req
         .scopes
         .iter()
-        .map(|s| Scope::parse(s).ok_or_else(|| bad(format!("portée inconnue : {s}"))))
+        .map(|s| Scope::parse(s).ok_or_else(|| bad(tr!("portée inconnue : {s}", "unknown scope: {s}"))))
         .collect::<ApiResult<_>>()?;
     auth::validate_token_request(owner_role, kind, &scopes).map_err(bad)?;
     if let Some(p) = &req.provider {
         if p.len() > 64 || p.chars().any(|c| c.is_control()) {
-            return Err(bad("fournisseur invalide"));
+            return Err(bad(tr!("fournisseur invalide", "invalid provider")));
         }
     }
     let days = req.expires_days.unwrap_or(90);
     if !(1..=366).contains(&days) {
-        return Err(bad("durée de validité : 1 à 366 jours"));
+        return Err(bad(tr!(
+            "durée de validité : 1 à 366 jours",
+            "validity period: 1 to 366 days"
+        )));
     }
     let token = auth::random_token("apk_");
     let id = Uuid::new_v4();
@@ -242,11 +258,14 @@ pub async fn create_own_token(
     Json(req): Json<TokenReq>,
 ) -> ApiResult<Json<serde_json::Value>> {
     if req.user_id.is_some_and(|u| u != actor.user_id) {
-        return Err(forbidden("utilisez /api/v1/admin/tokens pour un autre utilisateur"));
+        return Err(forbidden(tr!(
+            "utilisez /api/v1/admin/tokens pour un autre utilisateur",
+            "use /api/v1/admin/tokens for another user"
+        )));
     }
     let (id, token) = issue_token(&st, &actor, actor.user_id, actor.role, &req).await?;
     Ok(Json(
-        serde_json::json!({"id": id, "token": token, "warning": "ce jeton ne sera plus affiché"}),
+        serde_json::json!({"id": id, "token": token, "warning": tr!("ce jeton ne sera plus affiché", "this token will not be shown again")}),
     ))
 }
 

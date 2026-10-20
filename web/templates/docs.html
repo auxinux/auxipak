@@ -6,21 +6,21 @@
   <h2>{{ tr.docs_client }}</h2>
   <p>{{ tr.docs_client_text }}</p>
   <h2>{{ tr.docs_commands }}</h2>
-<pre>auxipak update                  # synchroniser les index / sync indexes
+<pre>auxipak update                  # {{ tr.docs_cmd_update }}
 auxipak search firefox
 auxipak info firefox
 auxipak install firefox
 auxipak install Firefox-150.1-fr
 auxipak list
-auxipak upgrade                 # toutes les applications / all applications
+auxipak upgrade                 # {{ tr.docs_cmd_upgrade }}
 auxipak remove firefox
-auxipak verify fichier.aupak
+auxipak verify {{ tr.docs_file }}.aupak
 auxipak repo list</pre>
 </section>
 <section class="card">
   <h2>{{ tr.docs_repo }}</h2>
   <p>{{ tr.docs_repo_text }}</p>
-  <pre>auxipak repo add {{ base }}repos/NOM/ --name NOM --root root.json --keys package-keys.json</pre>
+  <pre>auxipak repo add {{ base }}repos/{{ tr.docs_name }}/ --name {{ tr.docs_name }} --root root.json --keys package-keys.json</pre>
   <p class="meta">{{ tr.docs_more }}</p>
 </section>
 {% endblock %}

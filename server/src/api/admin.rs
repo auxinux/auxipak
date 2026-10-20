@@ -5,6 +5,7 @@ use crate::audit;
 use crate::auth::{self, Actor, Role, Scope};
 use crate::error::{bad, forbidden, ApiError, ApiResult};
 use crate::state::AppState;
+use auxipak_core::tr;
 use axum::extract::{Path, Query, State};
 use axum::Json;
 use chrono::{DateTime, Utc};
@@ -58,7 +59,10 @@ pub async fn insert_user(st: &AppState, username: &str, display: &str, password:
             .chars()
             .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '.' | '_' | '-'));
     if !valid {
-        return Err(bad("identifiant invalide (minuscules, chiffres, . _ -, 2 à 32 caractères)"));
+        return Err(bad(tr!(
+            "identifiant invalide (minuscules, chiffres, . _ -, 2 à 32 caractères)",
+            "invalid username (lowercase letters, digits, . _ -, 2 to 32 characters)"
+        )));
     }
     auth::check_password_strength(password).map_err(bad)?;
     let id = Uuid::new_v4();
@@ -73,7 +77,10 @@ pub async fn insert_user(st: &AppState, username: &str, display: &str, password:
         .await;
     match r {
         Ok(_) => Ok(id),
-        Err(sqlx::Error::Database(e)) if e.is_unique_violation() => Err(ApiError::Conflict("cet identifiant existe déjà".into())),
+        Err(sqlx::Error::Database(e)) if e.is_unique_violation() => Err(ApiError::Conflict(tr!(
+            "cet identifiant existe déjà",
+            "this username already exists"
+        ))),
         Err(e) => Err(e.into()),
     }
 }
@@ -84,7 +91,12 @@ pub async fn create_user(
     Json(req): Json<CreateUserReq>,
 ) -> ApiResult<Json<serde_json::Value>> {
     require_admin(&actor)?;
-    let role = Role::parse(&req.role).ok_or_else(|| bad("rôle invalide (admin, reviewer, publisher)"))?;
+    let role = Role::parse(&req.role).ok_or_else(|| {
+        bad(tr!(
+            "rôle invalide (admin, reviewer, publisher)",
+            "invalid role (admin, reviewer, publisher)"
+        ))
+    })?;
     let id = insert_user(&st, &req.username, &req.display_name, &req.password, role).await?;
     audit::log(
         &st.db,
@@ -108,12 +120,13 @@ pub struct UpdateUserReq {
 pub async fn apply_user_update(st: &AppState, actor: &Actor, id: Uuid, req: &UpdateUserReq) -> ApiResult<()> {
     require_admin(actor)?;
     if id == actor.user_id && (req.active == Some(false) || req.role.as_deref().is_some_and(|r| r != "admin")) {
-        return Err(forbidden(
+        return Err(forbidden(tr!(
             "un administrateur ne peut pas se désactiver ni se rétrograder lui-même",
-        ));
+            "an administrator cannot deactivate or demote themselves"
+        )));
     }
     if let Some(r) = &req.role {
-        let role = Role::parse(r).ok_or_else(|| bad("rôle invalide"))?;
+        let role = Role::parse(r).ok_or_else(|| bad(tr!("rôle invalide", "invalid role")))?;
         sqlx::query("UPDATE users SET role = $2 WHERE id = $1")
             .bind(id)
             .bind(role.as_str())
@@ -208,7 +221,7 @@ pub async fn create_token(
     let role = Role::parse(&role.0).ok_or(ApiError::NotFound)?;
     let (id, token) = issue_token(&st, &actor, owner, role, &req).await?;
     Ok(Json(
-        serde_json::json!({"id": id, "token": token, "warning": "ce jeton ne sera plus affiché"}),
+        serde_json::json!({"id": id, "token": token, "warning": tr!("ce jeton ne sera plus affiché", "this token will not be shown again")}),
     ))
 }
 
@@ -266,7 +279,7 @@ pub async fn create_repository(
 ) -> ApiResult<Json<serde_json::Value>> {
     require_admin(&actor)?;
     if !auxipak_core::ids::is_valid_repo_name(&req.name) {
-        return Err(bad("nom de dépôt invalide"));
+        return Err(bad(tr!("nom de dépôt invalide", "invalid repository name")));
     }
     let r = sqlx::query("INSERT INTO repositories (name, title, description, official) VALUES ($1, $2, $3, $4)")
         .bind(&req.name)
@@ -277,7 +290,10 @@ pub async fn create_repository(
         .await;
     if let Err(sqlx::Error::Database(e)) = &r {
         if e.is_unique_violation() {
-            return Err(ApiError::Conflict("ce dépôt existe déjà".into()));
+            return Err(ApiError::Conflict(tr!(
+                "ce dépôt existe déjà",
+                "this repository already exists"
+            )));
         }
     }
     r?;
@@ -422,9 +438,10 @@ pub async fn apply_evaluation(st: &AppState, actor: &Actor, app_id: &str, req: &
     actor.require(Scope::Evaluate)?;
     let status: auxipak_core::index::Status = req.status.parse().map_err(bad)?;
     if status == auxipak_core::index::Status::Compatible && req.note.as_deref().unwrap_or("").trim().is_empty() {
-        return Err(bad(
+        return Err(bad(tr!(
             "le statut « compatible » exige que les réserves soient documentées dans la note",
-        ));
+            "the 'compatible' status requires the reservations to be documented in the note"
+        )));
     }
     let exists: Option<(String,)> = sqlx::query_as("SELECT id FROM apps WHERE id = $1")
         .bind(app_id)

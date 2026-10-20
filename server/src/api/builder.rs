@@ -13,6 +13,7 @@ use crate::state::AppState;
 use auxipak_core::ids;
 use auxipak_core::manifest::MANIFEST_FILE;
 use auxipak_core::project;
+use auxipak_core::tr;
 use axum::body::Body;
 use axum::extract::{Path, State};
 use axum::http::header;
@@ -119,21 +120,30 @@ pub async fn create(State(st): State<AppState>, actor: Actor, Json(req): Json<Cr
     actor.require(Scope::Build)?;
     let name = req.name.trim();
     if name.is_empty() || name.len() > 128 {
-        return Err(bad("nom de projet invalide"));
+        return Err(bad(tr!("nom de projet invalide", "invalid project name")));
     }
     let manifest = match req.manifest {
         Some(m) => m,
         None => {
-            let app_id = req.id.clone().ok_or_else(|| bad("« id » ou « manifest » est requis"))?;
+            let app_id = req
+                .id
+                .clone()
+                .ok_or_else(|| bad(tr!("« id » ou « manifest » est requis", "'id' or 'manifest' is required")))?;
             if !ids::is_valid_app_id(&app_id) {
-                return Err(bad("identifiant d'application invalide"));
+                return Err(bad(tr!(
+                    "identifiant d'application invalide",
+                    "invalid application identifier"
+                )));
             }
             project::render_template(
                 &app_id,
                 name,
                 req.version.as_deref().unwrap_or("1.0.0"),
-                req.publisher.as_deref().unwrap_or("Éditeur inconnu"),
-                req.language.as_deref().unwrap_or("fr"),
+                req.publisher
+                    .clone()
+                    .unwrap_or_else(|| tr!("Éditeur inconnu", "Unknown publisher"))
+                    .as_str(),
+                req.language.as_deref().unwrap_or(auxipak_core::i18n::current().code()),
                 req.license.as_deref().unwrap_or("GPL-3.0-or-later"),
             )
         }
@@ -247,7 +257,10 @@ pub async fn patch_manifest(
 
 fn file_path(st: &AppState, id: Uuid, path: &str) -> ApiResult<PathBuf> {
     if !ids::is_safe_relative_path(path) || !(path.starts_with("payload/") || path.starts_with("scripts/")) {
-        return Err(bad("chemin invalide : payload/... ou scripts/... attendu"));
+        return Err(bad(tr!(
+            "chemin invalide : payload/... ou scripts/... attendu",
+            "invalid path: payload/... or scripts/... expected"
+        )));
     }
     let mut p = project_dir(st, id);
     for c in path.split('/') {
@@ -269,7 +282,10 @@ pub async fn put_file(
         std::fs::create_dir_all(parent)?;
     }
     if std::fs::symlink_metadata(&dest).map(|m| m.is_dir()).unwrap_or(false) {
-        return Err(bad("un répertoire existe à cet emplacement"));
+        return Err(bad(tr!(
+            "un répertoire existe à cet emplacement",
+            "a directory exists at this location"
+        )));
     }
     let tmp = dest.with_file_name(format!(".upload-{}", Uuid::new_v4()));
     let (sha256, size) = crate::api::body_to_file(body, &tmp, MAX_PROJECT_FILE.min(st.config.max_upload_bytes)).await?;
@@ -341,7 +357,10 @@ pub async fn test(State(st): State<AppState>, actor: Actor, Path(id): Path<Uuid>
     load(&st, &actor, id).await?;
     let out = artifact_path(&st, id);
     if !out.exists() {
-        return Err(bad("aucune construction disponible : appelez /build d'abord"));
+        return Err(bad(tr!(
+            "aucune construction disponible : appelez /build d'abord",
+            "no build available: call /build first"
+        )));
     }
     // Tests purement statiques côté serveur : aucun outil externe n'est invoqué.
     let checks = tokio::task::spawn_blocking(move || project::static_tests(&out, false))
@@ -351,7 +370,10 @@ pub async fn test(State(st): State<AppState>, actor: Actor, Path(id): Path<Uuid>
     let ok = checks.iter().all(|c| c.ok);
     Ok(Json(serde_json::json!({
         "ok": ok, "checks": checks,
-        "note": "tests statiques uniquement ; les tests d'installation s'exécutent dans un environnement isolé (CI)",
+        "note": tr!(
+            "tests statiques uniquement ; les tests d'installation s'exécutent dans un environnement isolé (CI)",
+            "static tests only; installation tests run in an isolated environment (CI)"
+        ),
     })))
 }
 
@@ -389,7 +411,7 @@ pub async fn submit(
     actor.require(Scope::Submit)?;
     let out = artifact_path(&st, id);
     if !out.exists() {
-        return Err(bad("aucune construction disponible"));
+        return Err(bad(tr!("aucune construction disponible", "no build available")));
     }
     std::fs::create_dir_all(st.config.tmp_dir())?;
     let tmp = st.config.tmp_dir().join(format!("builder-{}.aupak", Uuid::new_v4()));

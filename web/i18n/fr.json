@@ -163,5 +163,21 @@
   "purge_confirm": "Supprimer les fichiers de cette ou ces versions révoquées ? Elles resteront refusées par les clients.",
   "purge_help": "Les versions supprimées disparaissent de la liste mais restent dans la liste de révocation : les clients continuent de les refuser.",
   "cleanup_submissions": "Supprimer les demandes terminées",
-  "cleanup_submissions_help": "Demandes invalides, rejetées, en échec ou déjà publiées (la version publiée garde sa propre copie). Les demandes en attente ne sont jamais supprimées."
+  "cleanup_submissions_help": "Demandes invalides, rejetées, en échec ou déjà publiées (la version publiée garde sa propre copie). Les demandes en attente ne sont jamais supprimées.",
+  "application": "Application",
+  "method": "Méthode",
+  "privileges": "Privilèges",
+  "example_abbr": "ex.",
+  "navigation": "Navigation",
+  "days": "jours",
+  "docs_cmd_update": "synchroniser les index",
+  "docs_cmd_upgrade": "AuxiPak et toutes les applications",
+  "docs_file": "fichier",
+  "docs_name": "NOM",
+  "sub_pending": "en attente",
+  "sub_invalid": "invalide",
+  "sub_approved": "approuvée",
+  "sub_published": "publiée",
+  "sub_rejected": "rejetée",
+  "sub_failed": "en échec"
 }

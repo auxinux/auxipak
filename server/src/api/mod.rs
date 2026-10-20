@@ -137,7 +137,7 @@ pub async fn body_to_file(body: Body, dest: &Path, limit: u64) -> ApiResult<(Str
     let mut h = Sha256::new();
     let mut n = 0u64;
     while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|e| ApiError::BadRequest(format!("corps de requête : {e}")))?;
+        let chunk = chunk.map_err(|e| ApiError::BadRequest(auxipak_core::tr!("corps de requête : {e}", "request body: {e}")))?;
         n += chunk.len() as u64;
         if n > limit {
             drop(f);

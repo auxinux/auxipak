@@ -7,12 +7,16 @@
 # Option : $env:AUXIPAK_PURGE = "1" supprime aussi configuration, registre,
 # cache et journaux. Les applications installees par AuxiPak ne sont jamais
 # supprimees par ce script : retirez-les d'abord avec "auxipak remove".
+# Langue des messages : $env:AUXIPAK_LANG (fr, en), sinon celle de Windows.
 #
 # Ce fichier est volontairement en ASCII (compatibilite PowerShell 5.1).
 
 function Uninstall-AuxiPak {
     $ErrorActionPreference = 'Stop'
     $Purge = ($env:AUXIPAK_PURGE -eq '1')
+    $fr = if ($env:AUXIPAK_LANG) { $env:AUXIPAK_LANG -like 'fr*' } else { (Get-UICulture).TwoLetterISOLanguageName -eq 'fr' }
+    # Message dans la langue de l'utilisateur (francais sans accents : ASCII).
+    function Msg([string]$f, [string]$e) { if ($fr) { $f } else { $e } }
 
     $principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
     $isAdmin = $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
@@ -24,12 +28,12 @@ function Uninstall-AuxiPak {
         $root = Join-Path $env:LOCALAPPDATA 'AuxiPak'
         $binDir = Join-Path $env:LOCALAPPDATA 'AuxiPak\bin'
         $pathScope = 'User'
-        Write-Host "Desinstallation pour l'utilisateur courant (console non administrateur)."
+        Write-Host (Msg "Desinstallation pour l'utilisateur courant (console non administrateur)." "Uninstalling for the current user (non-administrator console).")
     }
 
     $exe = Join-Path $binDir 'auxipak.exe'
     if ((Test-Path -LiteralPath $exe) -and (Test-Path -LiteralPath (Join-Path $root 'state\registry.json'))) {
-        Write-Host "Applications encore enregistrees (elles resteront installees) :"
+        Write-Host (Msg "Applications encore enregistrees (elles resteront installees) :" "Applications still registered (they will stay installed):")
         $ErrorActionPreference = 'Continue'
         try { & $exe list } catch { }
         $ErrorActionPreference = 'Stop'
@@ -40,7 +44,7 @@ function Uninstall-AuxiPak {
         $f = Join-Path $binDir $b
         if (Test-Path -LiteralPath $f) {
             Remove-Item -LiteralPath $f -Force
-            Write-Host "Supprime : $f"
+            Write-Host (Msg "Supprime : $f" "Deleted: $f")
         }
     }
     if ((Test-Path -LiteralPath $binDir) -and -not (Get-ChildItem -LiteralPath $binDir -Force)) {
@@ -53,7 +57,7 @@ function Uninstall-AuxiPak {
         $new = ($parts -join ';')
         if ($new -ne $current) {
             [Environment]::SetEnvironmentVariable('Path', $new, $pathScope)
-            Write-Host "Retire du PATH ($pathScope) : $binDir"
+            Write-Host (Msg "Retire du PATH ($pathScope) : $binDir" "Removed from PATH ($pathScope): $binDir")
         }
     }
 
@@ -66,11 +70,11 @@ function Uninstall-AuxiPak {
         if ((Test-Path -LiteralPath $root) -and -not (Get-ChildItem -LiteralPath $root -Force)) {
             Remove-Item -LiteralPath $root -Force
         }
-        Write-Host "Configuration, registre, cache et journaux supprimes."
+        Write-Host (Msg "Configuration, registre, cache et journaux supprimes." "Configuration, registry, cache and logs deleted.")
     } else {
-        Write-Host "Configuration conservee ($root) : `$env:AUXIPAK_PURGE = '1' pour la supprimer."
+        Write-Host (Msg "Configuration conservee ($root) : `$env:AUXIPAK_PURGE = '1' pour la supprimer." "Configuration kept ($root): set `$env:AUXIPAK_PURGE = '1' to delete it.")
     }
-    Write-Host "AuxiPak est desinstalle."
+    Write-Host (Msg "AuxiPak est desinstalle." "AuxiPak is uninstalled.")
     # Succes : ne pas laisser le code de sortie d'une commande interne.
     $global:LASTEXITCODE = 0
 }

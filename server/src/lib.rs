@@ -31,7 +31,12 @@ pub async fn build_state(cfg: config::Config) -> anyhow::Result<AppState> {
         .acquire_timeout(std::time::Duration::from_secs(10))
         .connect(&cfg.database_url)
         .await
-        .map_err(|e| anyhow::anyhow!("connexion à PostgreSQL impossible : {e}"))?;
+        .map_err(|e| {
+            anyhow::anyhow!(auxipak_core::tr!(
+                "connexion à PostgreSQL impossible : {e}",
+                "cannot connect to PostgreSQL: {e}"
+            ))
+        })?;
     MIGRATOR.run(&db).await?;
     for d in [
         cfg.submissions_dir(),

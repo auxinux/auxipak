@@ -15,6 +15,7 @@ use crate::error::{ApiError, ApiResult};
 use crate::state::AppState;
 use argon2::password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString};
 use argon2::Argon2;
+use auxipak_core::tr;
 use axum::extract::FromRequestParts;
 use axum::http::request::Parts;
 use axum::http::Method;
@@ -191,7 +192,7 @@ impl Actor {
         match &self.via {
             Via::Session { .. } => self.username.clone(),
             Via::Token { kind, provider, .. } => format!(
-                "{} (jeton {}{})",
+                "{} [{}{}]",
                 self.username,
                 kind.as_str(),
                 provider.as_ref().map(|p| format!(" : {p}")).unwrap_or_default()
@@ -218,14 +219,16 @@ impl Actor {
         if self.has(scope) {
             Ok(())
         } else {
-            Err(ApiError::Forbidden(format!(
+            let human = if scope.human_only() && !self.is_human() {
+                tr!(" (réservée à un humain)", " (reserved for a human)")
+            } else {
+                String::new()
+            };
+            Err(ApiError::Forbidden(tr!(
                 "droits insuffisants : la portée « {} » est requise{}",
+                "insufficient permissions: the '{}' scope is required{}",
                 scope.as_str(),
-                if scope.human_only() && !self.is_human() {
-                    " (réservée à un humain)"
-                } else {
-                    ""
-                }
+                human
             )))
         }
     }
@@ -248,10 +251,16 @@ pub fn verify_password(pw: &str, hash: &str) -> bool {
 /// Règles minimales de mot de passe.
 pub fn check_password_strength(pw: &str) -> Result<(), String> {
     if pw.chars().count() < 12 {
-        return Err("le mot de passe doit contenir au moins 12 caractères".into());
+        return Err(tr!(
+            "le mot de passe doit contenir au moins 12 caractères",
+            "the password must contain at least 12 characters"
+        ));
     }
     if pw.chars().all(|c| c.is_ascii_lowercase()) || pw.chars().all(|c| c.is_ascii_digit()) {
-        return Err("le mot de passe doit mélanger plusieurs types de caractères".into());
+        return Err(tr!(
+            "le mot de passe doit mélanger plusieurs types de caractères",
+            "the password must mix several types of characters"
+        ));
     }
     Ok(())
 }
@@ -381,7 +390,10 @@ impl FromRequestParts<AppState> for Actor {
             if !safe {
                 let hdr = parts.headers.get("x-csrf-token").and_then(|v| v.to_str().ok()).unwrap_or("");
                 if !crate::util::ct_eq(hdr, csrf) {
-                    return Err(ApiError::Forbidden("jeton CSRF manquant ou invalide".into()));
+                    return Err(ApiError::Forbidden(tr!(
+                        "jeton CSRF manquant ou invalide",
+                        "missing or invalid CSRF token"
+                    )));
                 }
             }
         }
@@ -446,18 +458,24 @@ impl LoginThrottle {
 /// Vérifie une demande de création de jeton.
 pub fn validate_token_request(owner_role: Role, kind: TokenKind, scopes: &[Scope]) -> Result<(), String> {
     if scopes.is_empty() {
-        return Err("au moins une portée est requise".into());
+        return Err(tr!("au moins une portée est requise", "at least one scope is required"));
     }
     for s in scopes {
         if !owner_role.allowed_scopes().contains(s) {
-            return Err(format!(
+            return Err(tr!(
                 "portée « {} » non autorisée pour le rôle {}",
+                "scope '{}' is not allowed for the {} role",
                 s.as_str(),
                 owner_role.as_str()
             ));
         }
         if s.human_only() && kind != TokenKind::Human {
-            return Err(format!("portée « {} » interdite pour un jeton {}", s.as_str(), kind.as_str()));
+            return Err(tr!(
+                "portée « {} » interdite pour un jeton {}",
+                "scope '{}' is forbidden for a {} token",
+                s.as_str(),
+                kind.as_str()
+            ));
         }
     }
     Ok(())

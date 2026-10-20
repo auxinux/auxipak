@@ -6,6 +6,7 @@
 # installation pour tous les utilisateurs (Program Files, PATH systeme).
 # Sinon : installation pour l'utilisateur courant (%LOCALAPPDATA%\AuxiPak).
 # Option : $env:AUXIPAK_WITH_BUILDER = "1" installe aussi auxipak-builder.
+# Langue des messages : $env:AUXIPAK_LANG (fr, en), sinon celle de Windows.
 #
 # Ce fichier est volontairement en ASCII (compatibilite PowerShell 5.1).
 
@@ -17,6 +18,9 @@ function Install-AuxiPak {
     $Url = '@@AUXIPAK_URL@@'
     $RootSha256 = '@@ROOT_SHA256@@'
     $WithBuilder = ($env:AUXIPAK_WITH_BUILDER -eq '1')
+    $fr = if ($env:AUXIPAK_LANG) { $env:AUXIPAK_LANG -like 'fr*' } else { (Get-UICulture).TwoLetterISOLanguageName -eq 'fr' }
+    # Message dans la langue de l'utilisateur (francais sans accents : ASCII).
+    function Msg([string]$f, [string]$e) { if ($fr) { $f } else { $e } }
 
     # Architecture du systeme (et non du processus PowerShell).
     $arch = $null
@@ -29,7 +33,7 @@ function Install-AuxiPak {
     switch -Regex ($arch) {
         '^(X64|AMD64)$' { $platform = 'windows-x86_64' }
         '^(Arm64|ARM64)$' { $platform = 'windows-arm64' }
-        default { throw "Architecture non prise en charge : $arch" }
+        default { throw (Msg "Architecture non prise en charge : $arch" "Unsupported architecture: $arch") }
     }
 
     $principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
@@ -42,10 +46,10 @@ function Install-AuxiPak {
         $binDir = Join-Path $env:LOCALAPPDATA 'AuxiPak\bin'
         $confDir = Join-Path $env:LOCALAPPDATA 'AuxiPak\config'
         $pathScope = 'User'
-        Write-Host "Installation pour l'utilisateur courant (console non administrateur)."
+        Write-Host (Msg "Installation pour l'utilisateur courant (console non administrateur)." "Installing for the current user (non-administrator console).")
     }
 
-    Write-Host "AuxiPak : installation depuis $Url ($platform)"
+    Write-Host (Msg "AuxiPak : installation depuis $Url ($platform)" "AuxiPak: installing from $Url ($platform)")
     $tmp = Join-Path ([IO.Path]::GetTempPath()) ("auxipak-" + [Guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Path $tmp | Out-Null
     try {
@@ -54,7 +58,7 @@ function Install-AuxiPak {
         try {
             Invoke-WebRequest -UseBasicParsing -Uri "$Url/downloads/SHA256SUMS" -OutFile $sumsFile
         } catch {
-            throw "Aucun client publie sur $Url (downloads/SHA256SUMS introuvable)"
+            throw (Msg "Aucun client publie sur $Url (downloads/SHA256SUMS introuvable)" "No client published on $Url (downloads/SHA256SUMS not found)")
         }
         $pattern = '^([0-9a-fA-F]{64})\s+\*?(auxipak-[A-Za-z0-9._-]+-' + [Regex]::Escape($platform) + '\.zip)\s*$'
         $match = $null
@@ -62,32 +66,32 @@ function Install-AuxiPak {
             $m = [Regex]::Match($l, $pattern)
             if ($m.Success) { $match = $m }
         }
-        if (-not $match) { throw "Aucun client disponible pour $platform" }
+        if (-not $match) { throw (Msg "Aucun client disponible pour $platform" "No client available for $platform") }
         $expected = $match.Groups[1].Value
         $file = $match.Groups[2].Value
 
-        Write-Host "Telechargement de $file"
+        Write-Host (Msg "Telechargement de $file" "Downloading $file")
         $zip = Join-Path $tmp $file
         Invoke-WebRequest -UseBasicParsing -Uri "$Url/downloads/$file" -OutFile $zip
         $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $zip).Hash
         if ($actual -ne $expected) {
-            throw "Empreinte SHA-256 invalide pour $file (attendu $expected, obtenu $actual)"
+            throw (Msg "Empreinte SHA-256 invalide pour $file (attendu $expected, obtenu $actual)" "Invalid SHA-256 fingerprint for $file (expected $expected, got $actual)")
         }
-        Write-Host "Empreinte SHA-256 verifiee"
+        Write-Host (Msg "Empreinte SHA-256 verifiee" "SHA-256 fingerprint verified")
 
         $x = Join-Path $tmp 'x'
         Expand-Archive -LiteralPath $zip -DestinationPath $x -Force
         $src = Join-Path $x ([IO.Path]::GetFileNameWithoutExtension($file))
-        if (-not (Test-Path -LiteralPath (Join-Path $src 'auxipak.exe'))) { throw "Archive invalide : auxipak.exe absent" }
+        if (-not (Test-Path -LiteralPath (Join-Path $src 'auxipak.exe'))) { throw (Msg "Archive invalide : auxipak.exe absent" "Invalid archive: auxipak.exe missing") }
 
         # Binaires
         New-Item -ItemType Directory -Force -Path $binDir | Out-Null
         Copy-Item -LiteralPath (Join-Path $src 'auxipak.exe') -Destination $binDir -Force
-        Write-Host "Installe : $binDir\auxipak.exe"
+        Write-Host (Msg "Installe : $binDir\auxipak.exe" "Installed: $binDir\auxipak.exe")
         if ($WithBuilder) {
-            if (-not (Test-Path -LiteralPath (Join-Path $src 'auxipak-builder.exe'))) { throw "Archive invalide : auxipak-builder.exe absent" }
+            if (-not (Test-Path -LiteralPath (Join-Path $src 'auxipak-builder.exe'))) { throw (Msg "Archive invalide : auxipak-builder.exe absent" "Invalid archive: auxipak-builder.exe missing") }
             Copy-Item -LiteralPath (Join-Path $src 'auxipak-builder.exe') -Destination $binDir -Force
-            Write-Host "Installe : $binDir\auxipak-builder.exe"
+            Write-Host (Msg "Installe : $binDir\auxipak-builder.exe" "Installed: $binDir\auxipak-builder.exe")
         }
 
         # PATH
@@ -96,7 +100,7 @@ function Install-AuxiPak {
         if ($current) { $parts = $current.Split(';') | Where-Object { $_ -ne '' } }
         if (-not ($parts | Where-Object { $_.TrimEnd('\') -ieq $binDir.TrimEnd('\') })) {
             [Environment]::SetEnvironmentVariable('Path', (($parts + $binDir) -join ';'), $pathScope)
-            Write-Host "Ajoute au PATH ($pathScope) : $binDir"
+            Write-Host (Msg "Ajoute au PATH ($pathScope) : $binDir" "Added to PATH ($pathScope): $binDir")
         }
         if (-not (($env:Path.Split(';')) | Where-Object { $_.TrimEnd('\') -ieq $binDir.TrimEnd('\') })) {
             $env:Path = "$env:Path;$binDir"
@@ -111,10 +115,10 @@ function Install-AuxiPak {
         # Configuration (conservee si elle existe deja).
         $configFile = Join-Path $confDir 'config.toml'
         if (Test-Path -LiteralPath $configFile) {
-            Write-Host "Configuration existante conservee : $configFile"
+            Write-Host (Msg "Configuration existante conservee : $configFile" "Existing configuration kept: $configFile")
         } else {
             $text = @(
-                '# Configuration du client AuxiPak (creee par install.ps1).',
+                '# AuxiPak client configuration (created by install.ps1).',
                 'cache_ttl_seconds = 3600',
                 '',
                 '[[repository]]',
@@ -127,11 +131,11 @@ function Install-AuxiPak {
                 ''
             ) -join "`n"
             [IO.File]::WriteAllText($configFile, $text, (New-Object Text.UTF8Encoding($false)))
-            Write-Host "Configuration creee : $configFile"
+            Write-Host (Msg "Configuration creee : $configFile" "Configuration created: $configFile")
         }
 
         Write-Host ""
-        Write-Host "Empreinte de la racine de confiance : $RootSha256"
+        Write-Host (Msg "Empreinte de la racine de confiance : $RootSha256" "Trust root fingerprint: $RootSha256")
         # PowerShell 5.1 : une sortie d'erreur redirigee deviendrait une
         # exception avec ErrorActionPreference = Stop.
         $synced = $false
@@ -142,15 +146,16 @@ function Install-AuxiPak {
         } catch { }
         $ErrorActionPreference = 'Stop'
         if ($synced) {
-            Write-Host "Index du depot officiel synchronise."
+            Write-Host (Msg "Index du depot officiel synchronise." "Official repository index synchronized.")
         } else {
-            Write-Host "Synchronisation a faire : auxipak update"
+            Write-Host (Msg "Synchronisation a faire : auxipak update" "Synchronization pending: auxipak update")
         }
         Write-Host ""
-        Write-Host "AuxiPak est installe. Exemples :"
+        Write-Host (Msg "AuxiPak est installe. Exemples :" "AuxiPak is installed. Examples:")
         Write-Host "  auxipak search firefox"
         Write-Host "  auxipak install <application>"
-        Write-Host "Desinstallation : irm $Url/uninstall.ps1 | iex"
+        Write-Host (Msg "  auxipak set lang fr      # langue : fr ou en" "  auxipak set lang fr      # language: fr or en")
+        Write-Host (Msg "Desinstallation : irm $Url/uninstall.ps1 | iex" "Uninstall: irm $Url/uninstall.ps1 | iex")
         # Succes : ne pas laisser le code de sortie d'une commande interne.
         $global:LASTEXITCODE = 0
     } finally {

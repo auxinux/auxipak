@@ -1102,3 +1102,102 @@ async fn platform_filter_and_cleanup() {
         .unwrap();
     assert_eq!(n.0, 0);
 }
+
+#[tokio::test]
+#[ignore = "requiert PostgreSQL (AUXIPAK_TEST_DATABASE_URL)"]
+async fn api_messages_follow_request_language() {
+    let s = start().await;
+    // Erreur fixe : anglais par défaut, français avec Accept-Language.
+    let en: Value = s
+        .http
+        .get(s.url("/api/v1/submissions"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(en["message"], "authentication required");
+    let fr: Value = s
+        .http
+        .get(s.url("/api/v1/submissions"))
+        .header("accept-language", "fr-CA,fr;q=0.9,en;q=0.8")
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(fr["message"], "authentification requise");
+    // Le cookie « lang » choisi sur le site l'emporte sur le navigateur.
+    let c: Value = s
+        .http
+        .get(s.url("/api/v1/submissions"))
+        .header("accept-language", "fr-CA")
+        .header(COOKIE, "lang=en")
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(c["message"], "authentication required");
+
+    // Message construit (portée manquante) et rapport de validation : dans la
+    // langue du lecteur, quelle que soit celle de la soumission.
+    let admin_pw = s.user("root", Role::Admin).await;
+    s.user("pub", Role::Publisher).await;
+    let admin = s.login("root", &admin_pw).await;
+    let pub_token = s.token(&admin, "pub", "human", &["read", "submit"]).await;
+    let sub = s.submit(&pub_token, b"pas une archive".to_vec()).await;
+    let id = sub["id"].as_str().unwrap();
+    assert_eq!(sub["validation"]["checks"][0]["name"], "package structure");
+    assert!(sub["validation"].get("fr").is_none());
+    let fr: Value = s
+        .http
+        .get(s.url(&format!("/api/v1/submissions/{id}")))
+        .bearer_auth(&pub_token)
+        .header("accept-language", "fr")
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(fr["validation"]["checks"][0]["name"], "structure du paquet");
+    let r = s
+        .http
+        .post(s.url(&format!("/api/v1/submissions/{id}/approve")))
+        .bearer_auth(&pub_token)
+        .header("accept-language", "fr-CA")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), StatusCode::FORBIDDEN);
+    let m: Value = r.json().await.unwrap();
+    assert!(m["message"].as_str().unwrap().starts_with("droits insuffisants"), "{m}");
+    let r = s
+        .http
+        .post(s.url(&format!("/api/v1/submissions/{id}/approve")))
+        .bearer_auth(&pub_token)
+        .send()
+        .await
+        .unwrap();
+    let m: Value = r.json().await.unwrap();
+    assert!(m["message"].as_str().unwrap().starts_with("insufficient permissions"), "{m}");
+
+    // Pages du site : anglais par défaut, français selon le navigateur.
+    let html = s.http.get(s.url("/admin/login")).send().await.unwrap().text().await.unwrap();
+    assert!(html.contains("Sign in") && html.contains("Français"));
+    let html = s
+        .http
+        .get(s.url("/admin/login"))
+        .header("accept-language", "fr-CA")
+        .send()
+        .await
+        .unwrap()
+        .text()
+        .await
+        .unwrap();
+    assert!(html.contains("Se connecter") || html.contains("Connexion"), "{html}");
+}

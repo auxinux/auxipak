@@ -12,6 +12,7 @@ use crate::api::{admin, auth_routes, public, submissions};
 use crate::auth::{self, Actor, Role, Scope, Via};
 use crate::error::{ApiError, ApiResult};
 use crate::state::AppState;
+use auxipak_core::tr;
 use axum::extract::{DefaultBodyLimit, Multipart, Path, Query, State};
 use axum::http::{header, HeaderMap, StatusCode};
 use axum::response::{Html, IntoResponse, Redirect, Response};
@@ -62,7 +63,7 @@ impl Templates {
         env.add_filter("short", |s: String| -> String { s.get(..12).unwrap_or(&s).to_string() });
         let mut i18n = BTreeMap::new();
         for lang in ["fr", "en"] {
-            let f = Assets::get(&format!("i18n/{lang}.json")).ok_or_else(|| anyhow::anyhow!("traduction {lang} absente"))?;
+            let f = Assets::get(&format!("i18n/{lang}.json")).ok_or_else(|| anyhow::anyhow!("missing translation: {lang}"))?;
             i18n.insert(lang.to_string(), serde_json::from_slice(&f.data)?);
         }
         Ok(Templates { env, i18n })
@@ -74,8 +75,8 @@ impl Templates {
         match self.env.get_template(name).and_then(|t| t.render(full)) {
             Ok(html) => Html(html).into_response(),
             Err(e) => {
-                tracing::error!(template = name, error = %e, "rendu de gabarit");
-                (StatusCode::INTERNAL_SERVER_ERROR, "erreur de rendu").into_response()
+                tracing::error!(template = name, error = %e, "{}", tr!("rendu de gabarit", "template rendering"));
+                (StatusCode::INTERNAL_SERVER_ERROR, tr!("erreur de rendu", "rendering error")).into_response()
             }
         }
     }
@@ -317,7 +318,10 @@ async fn require_session(st: &AppState, jar: &CookieJar) -> Result<Actor, Box<Re
 fn check_csrf(actor: &Actor, token: &str) -> ApiResult<()> {
     match &actor.via {
         Via::Session { csrf, .. } if crate::util::ct_eq(csrf, token) => Ok(()),
-        _ => Err(ApiError::Forbidden("jeton CSRF invalide : rechargez la page".into())),
+        _ => Err(ApiError::Forbidden(tr!(
+            "jeton CSRF invalide : rechargez la page",
+            "invalid CSRF token: reload the page"
+        ))),
     }
 }
 
@@ -548,7 +552,7 @@ async fn upload_post(
         let field = match mp.next_field().await {
             Ok(Some(f)) => f,
             Ok(None) => break,
-            Err(e) => return back("/admin/upload", &format!("formulaire invalide : {e}")),
+            Err(e) => return back("/admin/upload", &tr!("formulaire invalide : {e}", "invalid form: {e}")),
         };
         match field.name().unwrap_or("") {
             "csrf" => csrf = field.text().await.unwrap_or_default(),
@@ -557,7 +561,11 @@ async fn upload_post(
             "file" => {
                 // Le jeton CSRF doit précéder le fichier dans le formulaire.
                 if check_csrf(&a, &csrf).is_err() {
-                    return error_page(&st, &jar, ApiError::Forbidden("jeton CSRF invalide".into()));
+                    return error_page(
+                        &st,
+                        &jar,
+                        ApiError::Forbidden(tr!("jeton CSRF invalide", "invalid CSRF token")),
+                    );
                 }
                 let name = field.file_name().unwrap_or("paquet.aupak").to_string();
                 let tmp = st.config.tmp_dir().join(format!("web-{}.aupak", Uuid::new_v4()));
@@ -574,15 +582,20 @@ async fn upload_post(
                             n += c.len() as u64;
                             if n > st.config.max_upload_bytes {
                                 let _ = tokio::fs::remove_file(&tmp).await;
-                                return back("/admin/upload", "fichier trop volumineux");
+                                return back("/admin/upload", &tr!("fichier trop volumineux", "file too large"));
                             }
                             sha2::Digest::update(&mut h, &c);
                             if out.write_all(&c).await.is_err() {
-                                return back("/admin/upload", "écriture impossible");
+                                return back("/admin/upload", &tr!("écriture impossible", "write failed"));
                             }
                         }
                         Ok(None) => break,
-                        Err(e) => return back("/admin/upload", &format!("transfert interrompu : {e}")),
+                        Err(e) => {
+                            return back(
+                                "/admin/upload",
+                                &tr!("transfert interrompu : {e}", "transfer interrupted: {e}"),
+                            )
+                        }
                     }
                 }
                 let _ = out.sync_all().await;
@@ -593,7 +606,7 @@ async fn upload_post(
     }
     tryp!(st, jar, check_csrf(&a, &csrf));
     let Some((tmp, sha, size, name)) = file else {
-        return back("/admin/upload", "aucun fichier");
+        return back("/admin/upload", &tr!("aucun fichier", "no file"));
     };
     let r = submissions::create_from_file(&st, &a, &repo, Some(&name), &note, &tmp, sha, size).await;
     let _ = std::fs::remove_file(&tmp);
@@ -771,7 +784,11 @@ async fn repo_regenerate(
 async fn users_page(State(st): State<AppState>, jar: CookieJar, Query(q): Query<MsgQuery>) -> Response {
     let a = session!(st, jar);
     if !a.has(Scope::Admin) {
-        return error_page(&st, &jar, ApiError::Forbidden("réservé aux administrateurs".into()));
+        return error_page(
+            &st,
+            &jar,
+            ApiError::Forbidden(tr!("réservé aux administrateurs", "administrators only")),
+        );
     }
     let users = tryp!(st, jar, admin::users(&st).await);
     page(
@@ -916,7 +933,7 @@ async fn token_create(State(st): State<AppState>, jar: CookieJar, Form(f): Form<
         .ok()
         .flatten();
     let Some(role) = owner_role.and_then(|r| Role::parse(&r.0)) else {
-        return back("/admin/tokens", "utilisateur inconnu");
+        return back("/admin/tokens", &tr!("utilisateur inconnu", "unknown user"));
     };
     let req = auth_routes::TokenReq {
         name: f.name,
@@ -1027,7 +1044,11 @@ struct AuditQ {
 async fn audit_page(State(st): State<AppState>, jar: CookieJar, Query(q): Query<AuditQ>) -> Response {
     let a = session!(st, jar);
     if !a.has(Scope::Admin) {
-        return error_page(&st, &jar, ApiError::Forbidden("réservé aux administrateurs".into()));
+        return error_page(
+            &st,
+            &jar,
+            ApiError::Forbidden(tr!("réservé aux administrateurs", "administrators only")),
+        );
     }
     let rows = tryp!(st, jar, admin::audit_rows(&st, 200, q.before_id).await);
     let next = rows.last().map(|r| r.id);
@@ -1037,4 +1058,31 @@ async fn audit_page(State(st): State<AppState>, jar: CookieJar, Query(q): Query<
         "admin/audit.html",
         context! { user => to_web_user(&a), rows => rows, next => next },
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Assets;
+    use std::collections::BTreeSet;
+
+    fn keys(lang: &str) -> BTreeSet<String> {
+        let f = Assets::get(&format!("i18n/{lang}.json")).unwrap();
+        let v: serde_json::Value = serde_json::from_slice(&f.data).unwrap();
+        v.as_object().unwrap().keys().cloned().collect()
+    }
+
+    #[test]
+    fn traductions_completes() {
+        let (fr, en) = (keys("fr"), keys("en"));
+        assert_eq!(
+            fr.difference(&en).collect::<Vec<_>>(),
+            Vec::<&String>::new(),
+            "clés absentes de en.json"
+        );
+        assert_eq!(
+            en.difference(&fr).collect::<Vec<_>>(),
+            Vec::<&String>::new(),
+            "clés absentes de fr.json"
+        );
+    }
 }

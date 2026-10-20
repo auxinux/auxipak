@@ -189,7 +189,9 @@ jobs:
           auxipak-builder --version
           grep -q 'url = "http://127.0.0.1:8765/repos/official/"' /etc/auxipak/config.toml
           test -f /etc/auxipak/trust/official/root.json
-          curl -fsSL http://127.0.0.1:8765/install.sh | sh | grep "Configuration existante conservée" >/dev/null
+          # Messages : anglais par défaut, français avec AUXIPAK_LANG=fr.
+          curl -fsSL http://127.0.0.1:8765/install.sh | AUXIPAK_LANG=en sh | grep "Existing configuration kept" >/dev/null
+          curl -fsSL http://127.0.0.1:8765/install.sh | AUXIPAK_LANG=fr sh | grep "Configuration existante conservée" >/dev/null
           curl -fsSL http://127.0.0.1:8765/uninstall.sh | sh -s -- --purge
           test ! -e /usr/local/bin/auxipak && test ! -e /usr/local/bin/auxipak-builder
           test ! -e /etc/auxipak
@@ -208,6 +210,8 @@ jobs:
           if ([Environment]::GetEnvironmentVariable('Path', 'Machine') -notlike "*$bin*") { throw "PATH" }
           $cfg = Join-Path $env:ProgramData 'AuxiPak\config\config.toml'
           if (-not (Select-String -LiteralPath $cfg -SimpleMatch 'url = "http://127.0.0.1:8765/repos/official/"' -Quiet)) { throw "config.toml" }
+          # Deuxieme passage en francais (messages bilingues).
+          $env:AUXIPAK_LANG = 'fr'
           irm http://127.0.0.1:8765/install.ps1 | iex
           $env:AUXIPAK_PURGE = '1'
           irm http://127.0.0.1:8765/uninstall.ps1 | iex

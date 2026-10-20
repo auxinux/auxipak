@@ -41,7 +41,11 @@ fn base_url(st: &AppState) -> ApiResult<String> {
         .any(|c| matches!(c, '\'' | '"' | '`' | '$' | '\\' | '\n' | '\r' | ' '))
     {
         return Err(ApiError::Internal(anyhow::anyhow!(
-            "AUXIPAK_PUBLIC_URL contient un caractère interdit"
+            "{}",
+            auxipak_core::tr!(
+                "AUXIPAK_PUBLIC_URL contient un caractère interdit",
+                "AUXIPAK_PUBLIC_URL contains a forbidden character"
+            )
         )));
     }
     Ok(u)
@@ -58,9 +62,17 @@ fn script(body: String) -> Response {
 /// Contenu JSON inséré tel quel dans un document « here » sh : il ne doit pas
 /// contenir la ligne de fin (impossible pour un JSON valide, vérifié tout de même).
 fn heredoc_safe(json: &[u8]) -> ApiResult<&str> {
-    let s = std::str::from_utf8(json).map_err(|_| ApiError::Internal(anyhow::anyhow!("ancre de confiance non UTF-8")))?;
+    let s = std::str::from_utf8(json).map_err(|_| {
+        ApiError::Internal(anyhow::anyhow!(auxipak_core::tr!(
+            "ancre de confiance non UTF-8",
+            "trust anchor is not UTF-8"
+        )))
+    })?;
     if s.lines().any(|l| l.trim() == "AUXIPAK_EOF") {
-        return Err(ApiError::Internal(anyhow::anyhow!("ancre de confiance invalide")));
+        return Err(ApiError::Internal(anyhow::anyhow!(auxipak_core::tr!(
+            "ancre de confiance invalide",
+            "invalid trust anchor"
+        ))));
     }
     Ok(s.trim_end())
 }

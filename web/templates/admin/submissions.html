@@ -8,7 +8,7 @@
 <form class="search" method="get">
   <select name="status">
     <option value="">{{ tr.all }}</option>
-    {% for s in ['pending', 'invalid', 'published', 'rejected'] %}<option value="{{ s }}" {% if status == s %}selected{% endif %}>{{ s }}</option>{% endfor %}
+    {% for s in ['pending', 'invalid', 'published', 'rejected', 'failed'] %}<option value="{{ s }}" {% if status == s %}selected{% endif %}>{{ tr['sub_' ~ s] }}</option>{% endfor %}
   </select>
   <button class="secondary" type="submit">{{ tr.filter }}</button>
 </form>
@@ -21,7 +21,7 @@
       <td>{{ s.app_id or '?' }} {{ s.version or '' }}</td>
       <td>{{ s.repository }}</td>
       <td>{{ s.submitter or '?' }} <span class="badge neutral">{{ s.submitter_kind }}</span></td>
-      <td><span class="badge {{ 'verified' if s.status == 'published' else ('revoked' if s.status in ['invalid', 'rejected', 'failed'] else 'compatible') }}">{{ s.status }}</span></td>
+      <td><span class="badge {{ 'verified' if s.status == 'published' else ('revoked' if s.status in ['invalid', 'rejected', 'failed'] else 'compatible') }}">{{ tr['sub_' ~ s.status] or s.status }}</span></td>
       <td>{{ s.created_at|date }}</td>
       <td class="row"><a href="/admin/submissions/{{ s.id }}">{{ tr.view }}</a>
         {% if user.can_review and s.status in ['invalid', 'rejected', 'failed', 'published'] %}<form method="post" action="/admin/submissions/{{ s.id }}/delete"><input type="hidden" name="csrf" value="{{ user.csrf }}"><button class="secondary small" type="submit" title="{{ tr.delete }}">🗑</button></form>{% endif %}</td>

@@ -6,7 +6,7 @@ use sqlx::PgPool;
 pub async fn log(db: &PgPool, actor: Option<&Actor>, action: &str, target: &str, details: serde_json::Value) {
     let (uid, name, kind, ip) = match actor {
         Some(a) => (Some(a.user_id), a.display(), a.kind().to_string(), a.ip.clone()),
-        None => (None, "système".to_string(), "system".to_string(), None),
+        None => (None, "system".to_string(), "system".to_string(), None),
     };
     tracing::info!(actor = %name, action, target, "audit");
     let r = sqlx::query(
@@ -22,6 +22,6 @@ pub async fn log(db: &PgPool, actor: Option<&Actor>, action: &str, target: &str,
     .execute(db)
     .await;
     if let Err(e) = r {
-        tracing::error!(error = %e, "écriture du journal d'audit impossible");
+        tracing::error!(error = %e, "{}", auxipak_core::tr!("écriture du journal d'audit impossible", "cannot write the audit log"));
     }
 }

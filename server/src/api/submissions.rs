@@ -9,6 +9,7 @@ use crate::error::{bad, forbidden, ApiError, ApiResult};
 use crate::publisher;
 use crate::state::AppState;
 use auxipak_core::signature::PackageSignature;
+use auxipak_core::tr;
 use axum::body::{Body, Bytes};
 use axum::extract::{Path, Query, State};
 use axum::Json;
@@ -69,10 +70,13 @@ pub async fn create_from_file(
         .fetch_optional(&st.db)
         .await?;
     if !repo.map(|r| r.0).unwrap_or(false) {
-        return Err(bad(format!("dépôt inconnu ou désactivé : {repository}")));
+        return Err(bad(tr!(
+            "dépôt inconnu ou désactivé : {repository}",
+            "unknown or disabled repository: {repository}"
+        )));
     }
     if note.len() > 2000 {
-        return Err(bad("note trop longue"));
+        return Err(bad(tr!("note trop longue", "note too long")));
     }
     let id = Uuid::new_v4();
     let (insp, report) = crate::validation::analyze(tmp_path);
@@ -119,11 +123,13 @@ pub async fn create_from_file(
 
 pub async fn load(st: &AppState, id: Uuid) -> ApiResult<SubmissionView> {
     let q = format!("{SELECT} WHERE s.id = $1");
-    sqlx::query_as(sqlx::AssertSqlSafe(q))
+    let mut v: SubmissionView = sqlx::query_as(sqlx::AssertSqlSafe(q))
         .bind(id)
         .fetch_optional(&st.db)
         .await?
-        .ok_or(ApiError::NotFound)
+        .ok_or(ApiError::NotFound)?;
+    crate::validation::localize(&mut v.validation);
+    Ok(v)
 }
 
 pub async fn create(
@@ -155,12 +161,16 @@ pub async fn list_for(st: &AppState, actor: &Actor, status: Option<&str>) -> Api
     let q = format!(
         "{SELECT} WHERE ($1::text IS NULL OR s.status = $1) AND ($2 OR s.submitted_by = $3) ORDER BY s.created_at DESC LIMIT 500"
     );
-    Ok(sqlx::query_as(sqlx::AssertSqlSafe(q))
+    let mut rows: Vec<SubmissionView> = sqlx::query_as(sqlx::AssertSqlSafe(q))
         .bind(status)
         .bind(all)
         .bind(actor.user_id)
         .fetch_all(&st.db)
-        .await?)
+        .await?;
+    for r in &mut rows {
+        crate::validation::localize(&mut r.validation);
+    }
+    Ok(rows)
 }
 
 pub async fn list(State(st): State<AppState>, actor: Actor, Query(q): Query<ListQuery>) -> ApiResult<Json<Vec<SubmissionView>>> {
@@ -195,15 +205,17 @@ pub async fn put_signature(
 ) -> ApiResult<Json<SubmissionView>> {
     let s = owned_or_reviewer(&st, &actor, id).await?;
     if s.status != "pending" {
-        return Err(ApiError::Conflict(
-            "seule une demande en attente peut recevoir une signature".into(),
-        ));
+        return Err(ApiError::Conflict(tr!(
+            "seule une demande en attente peut recevoir une signature",
+            "only a pending submission can receive a signature"
+        )));
     }
-    let sig = PackageSignature::from_json(&body).map_err(|e| bad(format!("signature illisible : {e}")))?;
+    let sig =
+        PackageSignature::from_json(&body).map_err(|e| bad(tr!("signature illisible : {e}", "unreadable signature: {e}")))?;
     let insp = auxipak_core::archive::inspect(&publisher::submission_file(&st, id), &Default::default())
         .map_err(|e| bad(e.to_string()))?;
     let key = crate::validation::check_signature(&sig, &insp, &st.keys.package_keys)
-        .map_err(|e| bad(format!("signature refusée : {e}")))?;
+        .map_err(|e| bad(tr!("signature refusée : {e}", "signature rejected: {e}")))?;
     sqlx::query("UPDATE submissions SET signature = $2 WHERE id = $1")
         .bind(id)
         .bind(serde_json::to_value(&sig).map_err(anyhow::Error::from)?)
@@ -240,7 +252,10 @@ pub async fn approve(
 pub async fn reject_submission(st: &AppState, actor: &Actor, id: Uuid, note: &str) -> ApiResult<()> {
     actor.require(Scope::Review)?;
     if note.trim().is_empty() {
-        return Err(bad("un motif de rejet est obligatoire"));
+        return Err(bad(tr!(
+            "un motif de rejet est obligatoire",
+            "a rejection reason is required"
+        )));
     }
     let r = sqlx::query(
         "UPDATE submissions SET status = 'rejected', reviewed_by = $2, reviewed_at = now(), review_note = $3
@@ -252,7 +267,10 @@ pub async fn reject_submission(st: &AppState, actor: &Actor, id: Uuid, note: &st
     .execute(&st.db)
     .await?;
     if r.rows_affected() == 0 {
-        return Err(ApiError::Conflict("demande introuvable ou déjà traitée".into()));
+        return Err(ApiError::Conflict(tr!(
+            "demande introuvable ou déjà traitée",
+            "submission not found or already processed"
+        )));
     }
     let _ = std::fs::remove_file(publisher::submission_file(st, id));
     audit::log(
@@ -273,7 +291,10 @@ pub async fn reject(
     Json(req): Json<ReviewReq>,
 ) -> ApiResult<Json<serde_json::Value>> {
     if !actor.has(Scope::Review) {
-        return Err(forbidden("la portée « review » est requise"));
+        return Err(forbidden(tr!(
+            "la portée « review » est requise",
+            "the 'review' scope is required"
+        )));
     }
     reject_submission(&st, &actor, id, &req.note).await?;
     Ok(Json(serde_json::json!({"status": "rejected"})))

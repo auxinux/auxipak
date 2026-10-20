@@ -5,6 +5,7 @@
 //! sécurisés, clés de signature présentes hors du répertoire de données.
 
 use anyhow::{bail, Context, Result};
+use auxipak_core::tr;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 
@@ -50,7 +51,10 @@ fn flag(name: &str, default: bool) -> Result<bool> {
         None => Ok(default),
         Some("1" | "true" | "yes" | "on") => Ok(true),
         Some("0" | "false" | "no" | "off") => Ok(false),
-        Some(v) => bail!("{name} : valeur booléenne invalide « {v} »"),
+        Some(v) => bail!(tr!(
+            "{name} : valeur booléenne invalide « {v} »",
+            "{name}: invalid boolean value '{v}'"
+        )),
     }
 }
 
@@ -59,14 +63,20 @@ impl Config {
         let mode = match var("AUXIPAK_ENV").as_deref() {
             Some("production") | None => Mode::Production,
             Some("development") => Mode::Development,
-            Some(o) => bail!("AUXIPAK_ENV invalide : {o} (production | development)"),
+            Some(o) => bail!(tr!(
+                "AUXIPAK_ENV invalide : {o} (production | development)",
+                "invalid AUXIPAK_ENV: {o} (production | development)"
+            )),
         };
         let dev = mode == Mode::Development;
-        let database_url = var("AUXIPAK_DATABASE_URL").context("AUXIPAK_DATABASE_URL est obligatoire")?;
+        let database_url = var("AUXIPAK_DATABASE_URL").context(tr!(
+            "AUXIPAK_DATABASE_URL est obligatoire",
+            "AUXIPAK_DATABASE_URL is required"
+        ))?;
         let bind = var("AUXIPAK_BIND")
             .unwrap_or_else(|| "127.0.0.1:8080".into())
             .parse()
-            .context("AUXIPAK_BIND invalide")?;
+            .context(tr!("AUXIPAK_BIND invalide", "invalid AUXIPAK_BIND"))?;
         let public_url = url::Url::parse(&var("AUXIPAK_PUBLIC_URL").unwrap_or_else(|| {
             if dev {
                 "http://127.0.0.1:8080".into()
@@ -74,7 +84,10 @@ impl Config {
                 String::new()
             }
         }))
-        .context("AUXIPAK_PUBLIC_URL est obligatoire en production (ex. https://pak.auxinux.ca)")?;
+        .context(tr!(
+            "AUXIPAK_PUBLIC_URL est obligatoire en production (ex. https://pak.auxinux.ca)",
+            "AUXIPAK_PUBLIC_URL is required in production (e.g. https://pak.auxinux.ca)"
+        ))?;
         let data_dir = PathBuf::from(var("AUXIPAK_DATA_DIR").unwrap_or_else(|| "/var/lib/auxipak-server".into()));
         let keys_dir = PathBuf::from(var("AUXIPAK_KEYS_DIR").unwrap_or_else(|| "/etc/auxipak-server/keys".into()));
         let downloads_dir = var("AUXIPAK_DOWNLOADS_DIR")
@@ -107,22 +120,37 @@ impl Config {
     /// Contrôles de cohérence ; stricts en production.
     pub fn check(&self) -> Result<()> {
         if self.timestamp_hours < 1 || self.timestamp_hours > 24 * 7 {
-            bail!("AUXIPAK_TIMESTAMP_HOURS doit être compris entre 1 et 168");
+            bail!(tr!(
+                "AUXIPAK_TIMESTAMP_HOURS doit être compris entre 1 et 168",
+                "AUXIPAK_TIMESTAMP_HOURS must be between 1 and 168"
+            ));
         }
         if self.mode == Mode::Production {
             if self.public_url.scheme() != "https" {
-                bail!("production : AUXIPAK_PUBLIC_URL doit utiliser HTTPS");
+                bail!(tr!(
+                    "production : AUXIPAK_PUBLIC_URL doit utiliser HTTPS",
+                    "production: AUXIPAK_PUBLIC_URL must use HTTPS"
+                ));
             }
             if !self.cookie_secure {
-                bail!("production : AUXIPAK_COOKIE_SECURE ne peut pas être désactivé");
+                bail!(tr!(
+                    "production : AUXIPAK_COOKIE_SECURE ne peut pas être désactivé",
+                    "production: AUXIPAK_COOKIE_SECURE cannot be disabled"
+                ));
             }
             if self.dev_auto_keys {
-                bail!("production : AUXIPAK_DEV_AUTO_KEYS est interdit (initialisez les clés selon docs/SIGNING.md)");
+                bail!(tr!(
+                    "production : AUXIPAK_DEV_AUTO_KEYS est interdit (initialisez les clés selon docs/SIGNING.md)",
+                    "production: AUXIPAK_DEV_AUTO_KEYS is forbidden (initialize the keys as described in docs/SIGNING.md)"
+                ));
             }
             let data = self.data_dir.canonicalize().unwrap_or(self.data_dir.clone());
             let keys = self.keys_dir.canonicalize().unwrap_or(self.keys_dir.clone());
             if keys.starts_with(&data) {
-                bail!("production : AUXIPAK_KEYS_DIR ne doit pas se trouver dans AUXIPAK_DATA_DIR");
+                bail!(tr!(
+                    "production : AUXIPAK_KEYS_DIR ne doit pas se trouver dans AUXIPAK_DATA_DIR",
+                    "production: AUXIPAK_KEYS_DIR must not be inside AUXIPAK_DATA_DIR"
+                ));
             }
         }
         Ok(())

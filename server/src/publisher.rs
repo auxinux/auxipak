@@ -10,6 +10,7 @@ use auxipak_core::index::{AppMeta, RepositoryInfo, Revocation, Status};
 use auxipak_core::manifest::Manifest;
 use auxipak_core::repogen::{PublishedPackage, RepoContent};
 use auxipak_core::signature::{PackageRef, PackageSignature};
+use auxipak_core::tr;
 use chrono::{DateTime, Duration, Utc};
 use std::collections::BTreeSet;
 use std::path::PathBuf;
@@ -53,20 +54,32 @@ pub async fn approve(state: &AppState, actor: &Actor, id: Uuid, note: &str) -> A
     .await?
     .ok_or(ApiError::NotFound)?;
     if sub.status != "pending" {
-        return Err(ApiError::Conflict(format!("la demande est dans l'état « {} »", sub.status)));
+        return Err(ApiError::Conflict(tr!(
+            "la demande est dans l'état « {} »",
+            "the submission is in the '{}' state",
+            sub.status
+        )));
     }
     if state.config.require_distinct_approver && sub.submitted_by == Some(actor.user_id) {
-        return Err(forbidden(
+        return Err(forbidden(tr!(
             "politique d'approbation : la demande doit être approuvée par une autre personne que son auteur",
-        ));
+            "approval policy: the submission must be approved by someone other than its author"
+        )));
     }
     let path = submission_file(state, id);
     let (insp, report) = crate::validation::analyze(&path);
-    let insp = insp.ok_or_else(|| bad(format!("paquet devenu invalide : {:?}", report.checks)))?;
+    let insp = insp.ok_or_else(|| {
+        bad(tr!(
+            "paquet devenu invalide : {:?}",
+            "package became invalid: {:?}",
+            report.checks
+        ))
+    })?;
     if insp.archive_sha256 != sub.sha256 {
-        return Err(ApiError::Internal(anyhow!(
-            "le fichier stocké ne correspond plus à la soumission"
-        )));
+        return Err(ApiError::Internal(anyhow!(tr!(
+            "le fichier stocké ne correspond plus à la soumission",
+            "the stored file no longer matches the submission"
+        ))));
     }
     let m = insp.manifest.clone();
     let exists: Option<(Uuid,)> = sqlx::query_as(
@@ -78,26 +91,30 @@ pub async fn approve(state: &AppState, actor: &Actor, id: Uuid, note: &str) -> A
     .fetch_optional(&state.db)
     .await?;
     if exists.is_some() {
-        return Err(ApiError::Conflict(format!(
+        return Err(ApiError::Conflict(tr!(
             "{} {} est déjà publié dans {}",
-            m.id, m.version, sub.repository
+            "{} {} is already published in {}",
+            m.id,
+            m.version,
+            sub.repository
         )));
     }
 
     // Signature : celle fournie si elle est valide, sinon signature par le serveur.
     let signature: PackageSignature = match &sub.signature {
         Some(v) => {
-            let s: PackageSignature = serde_json::from_value(v.clone()).map_err(|e| bad(format!("signature : {e}")))?;
+            let s: PackageSignature = serde_json::from_value(v.clone()).map_err(|e| bad(format!("signature: {e}")))?;
             crate::validation::check_signature(&s, &insp, &state.keys.package_keys)
-                .map_err(|e| bad(format!("signature refusée : {e}")))?;
+                .map_err(|e| bad(tr!("signature refusée : {e}", "signature rejected: {e}")))?;
             s
         }
         None => {
-            let signer = state
-                .keys
-                .signer
-                .as_ref()
-                .ok_or_else(|| bad("aucune signature fournie et aucune clé de signature disponible sur le serveur"))?;
+            let signer = state.keys.signer.as_ref().ok_or_else(|| {
+                bad(tr!(
+                    "aucune signature fournie et aucune clé de signature disponible sur le serveur",
+                    "no signature provided and no signing key available on the server"
+                ))
+            })?;
             signer.sign(PackageRef {
                 id: m.id.clone(),
                 version: m.version.clone(),
@@ -108,15 +125,22 @@ pub async fn approve(state: &AppState, actor: &Actor, id: Uuid, note: &str) -> A
         }
     };
     // Vérification finale (défense en profondeur).
-    crate::validation::check_signature(&signature, &insp, &state.keys.package_keys)
-        .map_err(|e| ApiError::Internal(anyhow!("signature produite invalide : {e}")))?;
+    crate::validation::check_signature(&signature, &insp, &state.keys.package_keys).map_err(|e| {
+        ApiError::Internal(anyhow!(tr!(
+            "signature produite invalide : {e}",
+            "produced signature is invalid: {e}"
+        )))
+    })?;
 
     // Stockage immuable du paquet publié.
     let dest_dir = state.config.packages_dir().join(&sub.repository).join(&m.id).join(&m.version);
     std::fs::create_dir_all(&dest_dir)?;
     let dest = dest_dir.join(&sub.file_name);
     if dest.exists() {
-        return Err(ApiError::Conflict("un fichier publié porte déjà ce nom".into()));
+        return Err(ApiError::Conflict(tr!(
+            "un fichier publié porte déjà ce nom",
+            "a published file already has this name"
+        )));
     }
     let tmp = dest_dir.join(format!(".{}.tmp", sub.file_name));
     std::fs::copy(&path, &tmp)?;
@@ -259,7 +283,7 @@ async fn regenerate_locked(state: &AppState, repo: &str) -> Result<u64> {
         .bind(repo)
         .fetch_optional(&state.db)
         .await?
-        .with_context(|| format!("dépôt inconnu : {repo}"))?;
+        .with_context(|| tr!("dépôt inconnu : {repo}", "unknown repository: {repo}"))?;
     // Version TUF strictement croissante, même après restauration d'une
     // ancienne sauvegarde : au moins le nombre de minutes écoulées depuis 1970.
     let generation = ((r.generation + 1) as u64).max((Utc::now().timestamp() / 60) as u64);
@@ -304,12 +328,17 @@ async fn regenerate_locked(state: &AppState, repo: &str) -> Result<u64> {
         if rel.state != "published" {
             continue;
         }
-        let m: Manifest = serde_json::from_value(rel.manifest.clone()).context("manifeste stocké invalide")?;
+        let m: Manifest =
+            serde_json::from_value(rel.manifest.clone()).context(tr!("manifeste stocké invalide", "invalid stored manifest"))?;
         let stored = state.config.packages_dir().join(repo).join(&rel.app_id).join(&rel.version);
         let package_path = stored.join(&rel.file_name);
         let signature_path = stored.join(format!("{}.sig", rel.file_name));
         if !package_path.exists() || !signature_path.exists() {
-            tracing::error!(release = %rel.id, "fichier publié manquant : version ignorée");
+            tracing::error!(
+                release = %rel.id,
+                "{}",
+                tr!("fichier publié manquant : version ignorée", "published file missing: release skipped")
+            );
             continue;
         }
         packages.push(PublishedPackage {
@@ -388,7 +417,10 @@ async fn regenerate_locked(state: &AppState, repo: &str) -> Result<u64> {
     #[cfg(unix)]
     std::os::unix::fs::symlink(&gen_name, &tmp_link)?;
     #[cfg(not(unix))]
-    anyhow::bail!("la publication de dépôts nécessite un système Unix");
+    anyhow::bail!(tr!(
+        "la publication de dépôts nécessite un système Unix",
+        "publishing repositories requires a Unix system"
+    ));
     std::fs::rename(&tmp_link, &link)?;
 
     sqlx::query("UPDATE repositories SET generation = $2, published_at = now() WHERE name = $1")
@@ -407,7 +439,7 @@ async fn regenerate_locked(state: &AppState, repo: &str) -> Result<u64> {
             let _ = std::fs::remove_dir_all(e.path());
         }
     }
-    tracing::info!(repo, generation, "dépôt régénéré");
+    tracing::info!(repo, generation, "{}", tr!("dépôt régénéré", "repository regenerated"));
     Ok(generation)
 }
 
@@ -423,7 +455,7 @@ pub async fn refresh_loop(state: AppState) {
             {
                 Ok(r) => r,
                 Err(e) => {
-                    tracing::error!(error = %e, "lecture des dépôts");
+                    tracing::error!(error = %e, "{}", tr!("lecture des dépôts", "reading repositories"));
                     continue;
                 }
             };
@@ -432,7 +464,12 @@ pub async fn refresh_loop(state: AppState) {
             let due = published.map(|p| Utc::now() - p > half).unwrap_or(true);
             if due {
                 if let Err(e) = regenerate(&state, &name, None).await {
-                    tracing::error!(repo = %name, error = %format!("{e:#}"), "rafraîchissement des métadonnées échoué");
+                    tracing::error!(
+                        repo = %name,
+                        error = %format!("{e:#}"),
+                        "{}",
+                        tr!("rafraîchissement des métadonnées échoué", "metadata refresh failed")
+                    );
                 }
             }
         }
@@ -443,10 +480,13 @@ pub async fn refresh_loop(state: AppState) {
 pub async fn set_release_state(state: &AppState, actor: &Actor, id: Uuid, new_state: &str, reason: &str) -> ApiResult<()> {
     actor.require(Scope::Review)?;
     if !matches!(new_state, "published" | "unpublished" | "revoked") {
-        return Err(bad("état invalide"));
+        return Err(bad(tr!("état invalide", "invalid state")));
     }
     if new_state == "revoked" && reason.trim().is_empty() {
-        return Err(bad("un motif de révocation est obligatoire"));
+        return Err(bad(tr!(
+            "un motif de révocation est obligatoire",
+            "a revocation reason is required"
+        )));
     }
     let row: Option<(String, String, String, String)> =
         sqlx::query_as("SELECT repository, app_id, version, state FROM releases WHERE id = $1")
@@ -455,7 +495,10 @@ pub async fn set_release_state(state: &AppState, actor: &Actor, id: Uuid, new_st
             .await?;
     let (repo, app, version, current) = row.ok_or(ApiError::NotFound)?;
     if current == "revoked" || current == "purged" {
-        return Err(ApiError::Conflict("une version révoquée ne peut plus changer d'état".into()));
+        return Err(ApiError::Conflict(tr!(
+            "une version révoquée ne peut plus changer d'état",
+            "a revoked release can no longer change state"
+        )));
     }
     sqlx::query("UPDATE releases SET state = $2, state_reason = $3, state_changed_at = now() WHERE id = $1")
         .bind(id)

@@ -27,7 +27,7 @@
     <input name="name" placeholder="{{ tr.name }}" required>
     <select name="kind"><option value="human">human</option><option value="ci">ci</option><option value="agent">agent</option></select>
     <input name="provider" placeholder="{{ tr.provider }}">
-    <input type="number" name="expires_days" value="90" min="1" max="366" aria-label="jours">
+    <input type="number" name="expires_days" value="90" min="1" max="366" aria-label="{{ tr.days }}">
     {% if users %}<select name="user_id">{% for u in users %}<option value="{{ u.id }}" {% if u.username == user.username %}selected{% endif %}>{{ u.username }} ({{ u.role }})</option>{% endfor %}</select>{% endif %}
   </div>
   <div class="row">{{ tr.scopes }} :
