@@ -9,9 +9,9 @@ use crate::executor::{self, os, resolve, verdict, RunOpts, Tool, Verdict};
 use crate::paths::Paths;
 use crate::registry::Transaction;
 use anyhow::{anyhow, bail, Context, Result};
-use auxipak_core::ids;
 use auxipak_core::manifest::{Detect, FileCopy, Install, Manager, MsiScope, Remove, Source, Target};
 use auxipak_core::platform::{Distribution, SystemProfile};
+use auxipak_core::{ids, tr};
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -65,15 +65,16 @@ impl Ctx<'_> {
         match verdict(out.code, &self.target.success_codes, &reboot_codes) {
             Verdict::Success => Ok(false),
             Verdict::SuccessRebootRequired => Ok(true),
-            Verdict::Failure => bail!(
+            Verdict::Failure => bail!(tr!(
                 "{what} a échoué (code {}) : {}",
+                "{what} failed (code {}): {}",
                 out.code,
                 last_lines(if out.stderr.trim().is_empty() {
                     &out.stdout
                 } else {
                     &out.stderr
                 })
-            ),
+            )),
         }
     }
 }
@@ -87,7 +88,7 @@ fn last_lines(s: &str) -> String {
 pub fn expand_path(paths: &Paths, app_id: &str, templated: &str) -> Result<PathBuf> {
     let (root, rest) = match templated.find('}') {
         Some(i) => (&templated[..=i], templated[i + 1..].trim_start_matches('/')),
-        None => bail!("chemin sans racine : {templated}"),
+        None => bail!(tr!("chemin sans racine : {templated}", "path without a root: {templated}")),
     };
     let base: PathBuf = match root {
         "{app}" => paths.apps_dir.join(app_id),
@@ -96,13 +97,13 @@ pub fn expand_path(paths: &Paths, app_id: &str, templated: &str) -> Result<PathB
         "{program_files}" => env_dir("ProgramFiles")?,
         "{program_files_x86}" => env_dir("ProgramFiles(x86)")?,
         "{local_app_data}" => env_dir("LOCALAPPDATA")?,
-        r => bail!("racine inconnue : {r}"),
+        r => bail!(tr!("racine inconnue : {r}", "unknown root: {r}")),
     };
     if rest.is_empty() {
         return Ok(base);
     }
     if !ids::is_safe_relative_path(rest) {
-        bail!("chemin dangereux : {templated}");
+        bail!(tr!("chemin dangereux : {templated}", "dangerous path: {templated}"));
     }
     let mut p = base;
     for c in rest.split('/') {
@@ -114,7 +115,7 @@ pub fn expand_path(paths: &Paths, app_id: &str, templated: &str) -> Result<PathB
 fn env_dir(var: &str) -> Result<PathBuf> {
     std::env::var_os(var)
         .map(PathBuf::from)
-        .ok_or_else(|| anyhow!("variable {var} absente"))
+        .ok_or_else(|| anyhow!(tr!("variable {var} absente", "variable {var} missing")))
 }
 
 /// Chemin local de l'installateur : fichier extrait ou téléchargement contrôlé.
@@ -122,30 +123,36 @@ async fn artifact(ctx: &Ctx<'_>, source: &Source) -> Result<PathBuf> {
     if let Some(f) = &source.file {
         let p = ctx.root.join(f);
         if !p.is_file() {
-            bail!("fichier intégré absent : {f}");
+            bail!(tr!("fichier intégré absent : {f}", "embedded file missing: {f}"));
         }
         return Ok(p);
     }
-    let url_s = source.url.as_deref().context("source sans fichier ni URL")?;
-    let url = auxipak_core::netpolicy::validate_https_url(url_s).map_err(|e| anyhow!(e))?;
-    let sha = source
-        .sha256
+    let url_s = source
+        .url
         .as_deref()
-        .context("SHA-256 obligatoire pour une source distante")?;
+        .context(tr!("source sans fichier ni URL", "source has neither a file nor a URL"))?;
+    let url = auxipak_core::netpolicy::validate_https_url(url_s).map_err(|e| anyhow!(e))?;
+    let sha = source.sha256.as_deref().context(tr!(
+        "SHA-256 obligatoire pour une source distante",
+        "SHA-256 required for a remote source"
+    ))?;
     let name = match &source.file_name {
         Some(n) => n.clone(),
         None => url
             .path_segments()
             .and_then(|mut s| s.next_back().map(|x| x.to_string()))
-            .context("nom de fichier indéterminable")?,
+            .context(tr!("nom de fichier indéterminable", "cannot determine the file name"))?,
     };
     if !ids::is_safe_file_name(&name) {
-        bail!("nom de fichier distant dangereux : {name}");
+        bail!(tr!(
+            "nom de fichier distant dangereux : {name}",
+            "dangerous remote file name: {name}"
+        ));
     }
     let dir = ctx.work.join("remote");
     std::fs::create_dir_all(&dir)?;
     let dest = dir.join(&name);
-    eprintln!("  source : {url}");
+    eprintln!("{}", tr!("  source : {url}", "  source: {url}"));
     download::fetch(
         &url,
         &dest,
@@ -172,20 +179,23 @@ fn adapter_args(template: &[String], packages: &[String], file: Option<&Path>) -
             "{packages}" => {
                 for p in packages {
                     if !ids::is_valid_native_package(p) {
-                        bail!("paquet natif invalide : {p}");
+                        bail!(tr!("paquet natif invalide : {p}", "invalid native package: {p}"));
                     }
                     v.push(os(p));
                 }
             }
             "{package}" => {
-                let p = packages.first().context("paquet manquant")?;
+                let p = packages.first().context(tr!("paquet manquant", "missing package"))?;
                 if !ids::is_valid_native_package(p) {
-                    bail!("paquet natif invalide : {p}");
+                    bail!(tr!("paquet natif invalide : {p}", "invalid native package: {p}"));
                 }
                 v.push(os(p));
             }
-            "{file}" => v.push(file.context("fichier manquant")?.as_os_str().to_owned()),
-            other if other.starts_with('{') => bail!("paramètre d'adaptateur inconnu : {other}"),
+            "{file}" => v.push(file.context(tr!("fichier manquant", "missing file"))?.as_os_str().to_owned()),
+            other if other.starts_with('{') => bail!(tr!(
+                "paramètre d'adaptateur inconnu : {other}",
+                "unknown adapter parameter: {other}"
+            )),
             other => v.push(os(other)),
         }
     }
@@ -206,12 +216,20 @@ async fn run_adapter(
     file: Option<&Path>,
 ) -> Result<executor::Output> {
     if cmd.is_empty() {
-        bail!(
-            "l'adaptateur « {which} » n'est pas configuré pour cette opération (voir [adapters] dans config.toml et docs/CLI_REFERENCE.md)"
-        );
+        bail!(tr!(
+            "l'adaptateur « {which} » n'est pas configuré pour cette opération (voir [adapters] dans config.toml et docs/CLI_REFERENCE.md)",
+            "the \"{which}\" adapter is not configured for this operation (see [adapters] in config.toml and docs/CLI_REFERENCE.md)"
+        ));
     }
     if !a.validated {
-        tracing::warn!(adapter = which, "syntaxe d'adaptateur non validée sur le système réel");
+        tracing::warn!(
+            adapter = which,
+            "{}",
+            tr!(
+                "syntaxe d'adaptateur non validée sur le système réel",
+                "adapter syntax not validated on a real system"
+            )
+        );
     }
     let prog = executor::resolve_program(&a.program)?;
     executor::run(&prog, &adapter_args(cmd, packages, file)?, &ctx.opts()).await
@@ -222,7 +240,7 @@ async fn manager_install(ctx: &Ctx<'_>, m: Manager, packages: &[String]) -> Resu
     check_manager_allowed(ctx, m)?;
     for p in packages {
         if !ids::is_valid_native_package(p) {
-            bail!("paquet natif invalide : {p}");
+            bail!(tr!("paquet natif invalide : {p}", "invalid native package: {p}"));
         }
     }
     match m {
@@ -232,16 +250,21 @@ async fn manager_install(ctx: &Ctx<'_>, m: Manager, packages: &[String]) -> Resu
             let mut o = ctx.opts();
             o.env.push(("DEBIAN_FRONTEND".into(), "noninteractive".into()));
             let out = crate::progress::step(
-                format!("installation par APT : {}", packages.join(" ")),
+                tr!("installation par APT : {}", "installing with APT: {}", packages.join(" ")),
                 executor::run(&resolve(Tool::AptGet)?, &args, &o),
             )
             .await?;
             ctx.check("apt-get install", &out, &[])
         }
         Manager::Auxi | Manager::Virtuaos => {
-            let a = adapter_for(ctx.config, m).context("adaptateur absent")?;
+            let a = adapter_for(ctx.config, m).context(tr!("adaptateur absent", "adapter missing"))?;
             let out = crate::progress::step(
-                format!("installation par {} : {}", m.as_str(), packages.join(" ")),
+                tr!(
+                    "installation par {} : {}",
+                    "installing with {}: {}",
+                    m.as_str(),
+                    packages.join(" ")
+                ),
                 run_adapter(ctx, a, m.as_str(), &a.install, packages, None),
             )
             .await?;
@@ -262,7 +285,7 @@ async fn manager_install(ctx: &Ctx<'_>, m: Manager, packages: &[String]) -> Resu
                 ]
                 .map(os);
                 let out = crate::progress::step(
-                    format!("installation par winget : {p}"),
+                    tr!("installation par winget : {p}", "installing with winget: {p}"),
                     executor::run(&resolve(Tool::Winget)?, &args, &ctx.opts()),
                 )
                 .await?;
@@ -274,7 +297,11 @@ async fn manager_install(ctx: &Ctx<'_>, m: Manager, packages: &[String]) -> Resu
             let mut args = vec![os("install")];
             args.extend(packages.iter().map(os));
             let out = crate::progress::step(
-                format!("installation par Homebrew : {}", packages.join(" ")),
+                tr!(
+                    "installation par Homebrew : {}",
+                    "installing with Homebrew: {}",
+                    packages.join(" ")
+                ),
                 executor::run(&resolve(Tool::Brew)?, &args, &ctx.opts()),
             )
             .await?;
@@ -285,14 +312,24 @@ async fn manager_install(ctx: &Ctx<'_>, m: Manager, packages: &[String]) -> Resu
 
 fn check_manager_allowed(ctx: &Ctx<'_>, m: Manager) -> Result<()> {
     if !m.allowed_on().contains(&ctx.profile.distribution) {
-        bail!("le gestionnaire {m} n'est pas autorisé sur {}", ctx.profile.distribution);
+        bail!(tr!(
+            "le gestionnaire {m} n'est pas autorisé sur {}",
+            "the {m} package manager is not allowed on {}",
+            ctx.profile.distribution
+        ));
     }
     if m == Manager::Brew {
         if !ctx.config.policy.allow_brew {
-            bail!("Homebrew est désactivé par la politique locale");
+            bail!(tr!(
+                "Homebrew est désactivé par la politique locale",
+                "Homebrew is disabled by local policy"
+            ));
         }
         if crate::privileges::is_elevated() && !executor::is_simulation() {
-            bail!("Homebrew ne doit pas être utilisé en tant qu'administrateur : relancez sans sudo");
+            bail!(tr!(
+                "Homebrew ne doit pas être utilisé en tant qu'administrateur : relancez sans sudo",
+                "Homebrew must not be used as administrator: run again without sudo"
+            ));
         }
     }
     Ok(())
@@ -305,19 +342,23 @@ async fn manager_remove(ctx: &Ctx<'_>, m: Manager, packages: &[String]) -> Resul
             let mut args = vec![os("remove"), os("-y")];
             for p in packages {
                 if !ids::is_valid_native_package(p) {
-                    bail!("paquet natif invalide : {p}");
+                    bail!(tr!("paquet natif invalide : {p}", "invalid native package: {p}"));
                 }
                 args.push(os(p));
             }
             let mut o = ctx.opts();
             o.env.push(("DEBIAN_FRONTEND".into(), "noninteractive".into()));
-            let out = crate::progress::step("désinstallation par APT", executor::run(&resolve(Tool::AptGet)?, &args, &o)).await?;
+            let out = crate::progress::step(
+                tr!("désinstallation par APT", "removing with APT"),
+                executor::run(&resolve(Tool::AptGet)?, &args, &o),
+            )
+            .await?;
             ctx.check("apt-get remove", &out, &[])
         }
         Manager::Auxi | Manager::Virtuaos => {
-            let a = adapter_for(ctx.config, m).context("adaptateur absent")?;
+            let a = adapter_for(ctx.config, m).context(tr!("adaptateur absent", "adapter missing"))?;
             let out = crate::progress::step(
-                format!("désinstallation par {}", m.as_str()),
+                tr!("désinstallation par {}", "removing with {}", m.as_str()),
                 run_adapter(ctx, a, m.as_str(), &a.remove, packages, None),
             )
             .await?;
@@ -328,7 +369,7 @@ async fn manager_remove(ctx: &Ctx<'_>, m: Manager, packages: &[String]) -> Resul
             for p in packages {
                 let args = ["uninstall", "--id", p, "--exact", "--silent", "--disable-interactivity"].map(os);
                 let out = crate::progress::step(
-                    format!("désinstallation par winget : {p}"),
+                    tr!("désinstallation par winget : {p}", "removing with winget: {p}"),
                     executor::run(&resolve(Tool::Winget)?, &args, &ctx.opts()),
                 )
                 .await?;
@@ -340,7 +381,7 @@ async fn manager_remove(ctx: &Ctx<'_>, m: Manager, packages: &[String]) -> Resul
             let mut args = vec![os("uninstall")];
             args.extend(packages.iter().map(os));
             let out = crate::progress::step(
-                "désinstallation par Homebrew",
+                tr!("désinstallation par Homebrew", "removing with Homebrew"),
                 executor::run(&resolve(Tool::Brew)?, &args, &ctx.opts()),
             )
             .await?;
@@ -368,17 +409,21 @@ pub async fn run_script(ctx: &Ctx<'_>, script: &str, args: &[String], action: &s
         );
     }
     if !script.starts_with("scripts/") || !ids::is_safe_relative_path(script) {
-        bail!("chemin de script refusé : {script}");
+        bail!(tr!("chemin de script refusé : {script}", "script path refused: {script}"));
     }
     for a in args {
         if !ids::is_valid_installer_arg(a) {
-            bail!("argument de script refusé : {a}");
+            bail!(tr!("argument de script refusé : {a}", "script argument refused: {a}"));
         }
     }
     let path = ctx.root.join(script);
-    let meta = std::fs::symlink_metadata(&path).with_context(|| format!("script introuvable : {script}"))?;
+    let meta =
+        std::fs::symlink_metadata(&path).with_context(|| tr!("script introuvable : {script}", "script not found: {script}"))?;
     if !meta.is_file() {
-        bail!("le script doit être un fichier ordinaire : {script}");
+        bail!(tr!(
+            "le script doit être un fichier ordinaire : {script}",
+            "the script must be a regular file: {script}"
+        ));
     }
     let (program, mut argv) = if script.ends_with(".ps1") {
         (
@@ -432,8 +477,18 @@ pub async fn run_script(ctx: &Ctx<'_>, script: &str, args: &[String], action: &s
 pub async fn install(ctx: &Ctx<'_>, txn: &mut Transaction) -> Result<Outcome> {
     let t = ctx.target;
     if !t.native_dependencies.is_empty() {
-        let m = native_manager(ctx.profile.distribution).context("dépendances natives non prises en charge ici")?;
-        eprintln!("  dépendances natives ({m}) : {}", t.native_dependencies.join(", "));
+        let m = native_manager(ctx.profile.distribution).context(tr!(
+            "dépendances natives non prises en charge ici",
+            "native dependencies are not supported here"
+        ))?;
+        eprintln!(
+            "{}",
+            tr!(
+                "  dépendances natives ({m}) : {}",
+                "  native dependencies ({m}): {}",
+                t.native_dependencies.join(", ")
+            )
+        );
         manager_install(ctx, m, &t.native_dependencies).await?;
     }
     let mut outcome = Outcome::default();
@@ -450,14 +505,18 @@ pub async fn install(ctx: &Ctx<'_>, txn: &mut Transaction) -> Result<Outcome> {
             if ctx.profile.distribution == Distribution::Auxinuxos || ctx.profile.distribution == Distribution::Virtuaos {
                 // APT est bloqué sur ces systèmes : délégation à l'adaptateur système.
                 let m = native_manager(ctx.profile.distribution).unwrap();
-                let a = adapter_for(ctx.config, m).context("adaptateur absent")?;
+                let a = adapter_for(ctx.config, m).context(tr!("adaptateur absent", "adapter missing"))?;
                 outcome.manager = m.as_str().into();
                 let out = crate::progress::step(
-                    format!("installation du paquet .deb par {}", m.as_str()),
+                    tr!(
+                        "installation du paquet .deb par {}",
+                        "installing the .deb package with {}",
+                        m.as_str()
+                    ),
                     run_adapter(ctx, a, m.as_str(), &a.install_local_deb, &[], Some(&file)),
                 )
                 .await?;
-                outcome.reboot |= ctx.check("installation du paquet .deb", &out, &[])?;
+                outcome.reboot |= ctx.check(&tr!("installation du paquet .deb", ".deb package installation"), &out, &[])?;
             } else {
                 outcome.manager = "apt".into();
                 let mut o = ctx.opts();
@@ -465,7 +524,7 @@ pub async fn install(ctx: &Ctx<'_>, txn: &mut Transaction) -> Result<Outcome> {
                 let abs = file.canonicalize()?;
                 let args = vec![os("install"), os("-y"), os("--no-install-recommends"), abs.into_os_string()];
                 let out = crate::progress::step(
-                    "installation du paquet .deb par APT",
+                    tr!("installation du paquet .deb par APT", "installing the .deb package with APT"),
                     executor::run(&resolve(Tool::AptGet)?, &args, &o),
                 )
                 .await?;
@@ -487,12 +546,12 @@ pub async fn install(ctx: &Ctx<'_>, txn: &mut Transaction) -> Result<Outcome> {
             }
             for (k, v) in properties {
                 if !ids::is_valid_msi_property(k) || !ids::is_valid_installer_arg(v) {
-                    bail!("propriété MSI refusée : {k}");
+                    bail!(tr!("propriété MSI refusée : {k}", "MSI property refused: {k}"));
                 }
                 args.push(os(format!("{k}={v}")));
             }
             let out = crate::progress::step(
-                "installation MSI (msiexec)",
+                tr!("installation MSI (msiexec)", "MSI installation (msiexec)"),
                 executor::run(&resolve(Tool::Msiexec)?, &args, &ctx.opts()),
             )
             .await?;
@@ -503,19 +562,23 @@ pub async fn install(ctx: &Ctx<'_>, txn: &mut Transaction) -> Result<Outcome> {
             outcome.manager = "exe".into();
             for a in args {
                 if !ids::is_valid_installer_arg(a) {
-                    bail!("argument refusé : {a}");
+                    bail!(tr!("argument refusé : {a}", "argument refused: {a}"));
                 }
             }
             let argv: Vec<OsString> = args.iter().map(os).collect();
-            let out = crate::progress::step("exécution de l'installateur", executor::run(&file, &argv, &ctx.opts())).await?;
-            outcome.reboot |= ctx.check("installateur exe", &out, &[])?;
+            let out = crate::progress::step(
+                tr!("exécution de l'installateur", "running the installer"),
+                executor::run(&file, &argv, &ctx.opts()),
+            )
+            .await?;
+            outcome.reboot |= ctx.check(&tr!("installateur exe", "exe installer"), &out, &[])?;
         }
         Install::Pkg { source, .. } => {
             let file = artifact(ctx, source).await?;
             outcome.manager = "installer".into();
             let args = vec![os("-pkg"), file.into_os_string(), os("-target"), os("/")];
             let out = crate::progress::step(
-                "installation du paquet .pkg",
+                tr!("installation du paquet .pkg", "installing the .pkg package"),
                 executor::run(&resolve(Tool::Installer)?, &args, &ctx.opts()),
             )
             .await?;
@@ -552,30 +615,35 @@ pub async fn install(ctx: &Ctx<'_>, txn: &mut Transaction) -> Result<Outcome> {
 fn copy_files(ctx: &Ctx<'_>, f: &FileCopy, txn: &mut Transaction) -> Result<Vec<PathBuf>> {
     let src = ctx.root.join(&f.source);
     let mut pairs = Vec::new();
-    let meta = std::fs::symlink_metadata(&src).with_context(|| format!("source absente : {}", f.source))?;
+    let meta = std::fs::symlink_metadata(&src).with_context(|| tr!("source absente : {}", "source missing: {}", f.source))?;
     if meta.is_file() {
         pairs.push((src.clone(), ctx.expand(&f.destination)?));
     } else if meta.is_dir() {
         let dest_root = ctx.expand(&f.destination)?;
         collect_dir(&src, &src, &dest_root, &mut pairs)?;
     } else {
-        bail!("source non ordinaire : {}", f.source);
+        bail!(tr!("source non ordinaire : {}", "source is not a regular file: {}", f.source));
     }
     let mut written = Vec::new();
     for (from, to) in pairs {
         if let Ok(m) = std::fs::symlink_metadata(&to) {
             if m.file_type().is_symlink() || m.is_dir() {
-                bail!("destination occupée par un lien ou un répertoire : {}", to.display());
+                bail!(tr!(
+                    "destination occupée par un lien ou un répertoire : {}",
+                    "destination is taken by a link or a directory: {}",
+                    to.display()
+                ));
             }
             if !ctx.owned_files.contains(&to) {
-                bail!(
+                bail!(tr!(
                     "le fichier {} existe déjà et n'est pas géré par AuxiPak pour {} : installation interrompue",
+                    "the file {} already exists and is not managed by AuxiPak for {}: installation stopped",
                     to.display(),
                     ctx.app_id
-                );
+                ));
             }
         }
-        let parent = to.parent().context("destination invalide")?;
+        let parent = to.parent().context(tr!("destination invalide", "invalid destination"))?;
         std::fs::create_dir_all(parent)?;
         let mut tmp = tempfile::Builder::new().prefix(".auxipak-").tempfile_in(parent)?;
         std::io::copy(&mut std::fs::File::open(&from)?, tmp.as_file_mut())?;
@@ -605,7 +673,11 @@ fn collect_dir(base: &Path, dir: &Path, dest: &Path, out: &mut Vec<(PathBuf, Pat
         } else if ft.is_file() {
             out.push((e.path(), dest.join(rel)));
         } else {
-            bail!("entrée non ordinaire refusée : {}", e.path().display());
+            bail!(tr!(
+                "entrée non ordinaire refusée : {}",
+                "non-regular entry refused: {}",
+                e.path().display()
+            ));
         }
     }
     Ok(())
@@ -623,7 +695,7 @@ fn applications_dir() -> PathBuf {
 
 async fn install_dmg(ctx: &Ctx<'_>, file: &Path, app: &str) -> Result<PathBuf> {
     if !ids::is_safe_file_name(app) || !app.ends_with(".app") {
-        bail!("bundle invalide : {app}");
+        bail!(tr!("bundle invalide : {app}", "invalid bundle: {app}"));
     }
     let mnt = ctx.work.join("mnt");
     std::fs::create_dir_all(&mnt)?;
@@ -637,25 +709,34 @@ async fn install_dmg(ctx: &Ctx<'_>, file: &Path, app: &str) -> Result<PathBuf> {
         mnt.clone().into_os_string(),
         file.as_os_str().to_owned(),
     ];
-    let out = crate::progress::step("montage de l'image disque", executor::run(&hdiutil, &attach, &ctx.opts())).await?;
+    let out = crate::progress::step(
+        tr!("montage de l'image disque", "mounting the disk image"),
+        executor::run(&hdiutil, &attach, &ctx.opts()),
+    )
+    .await?;
     ctx.check("hdiutil attach", &out, &[])?;
     let result = async {
         let src = mnt.join(app);
-        let m = std::fs::symlink_metadata(&src).with_context(|| format!("{app} absent de l'image disque"))?;
+        let m = std::fs::symlink_metadata(&src)
+            .with_context(|| tr!("{app} absent de l'image disque", "{app} missing from the disk image"))?;
         if !m.is_dir() {
-            bail!("{app} n'est pas un bundle valide");
+            bail!(tr!("{app} n'est pas un bundle valide", "{app} is not a valid bundle"));
         }
         let dest_dir = applications_dir();
         std::fs::create_dir_all(&dest_dir)?;
         let dest = dest_dir.join(app);
         if dest.exists() && !ctx.owned_files.contains(&dest) {
-            bail!("{} existe déjà et n'est pas géré par AuxiPak", dest.display());
+            bail!(tr!(
+                "{} existe déjà et n'est pas géré par AuxiPak",
+                "{} already exists and is not managed by AuxiPak",
+                dest.display()
+            ));
         }
         if dest.exists() {
             std::fs::remove_dir_all(&dest)?;
         }
         let out = crate::progress::step(
-            format!("copie de {app} vers {}", dest_dir.display()),
+            tr!("copie de {app} vers {}", "copying {app} to {}", dest_dir.display()),
             executor::run(
                 &resolve(Tool::Ditto)?,
                 &[src.into_os_string(), dest.clone().into_os_string()],
@@ -679,7 +760,9 @@ pub async fn remove(ctx: &Ctx<'_>, files: &[PathBuf]) -> Result<bool> {
     if let Some(s) = &t.scripts.pre_remove {
         reboot |= run_script(ctx, s, &[], "pre_remove").await?;
     }
-    let r = t.effective_remove().context("aucune procédure de désinstallation")?;
+    let r = t
+        .effective_remove()
+        .context(tr!("aucune procédure de désinstallation", "no removal procedure"))?;
     match &r {
         Remove::PackageManager { manager, packages } => reboot |= manager_remove(ctx, *manager, packages).await?,
         Remove::Deb { package } => {
@@ -688,11 +771,11 @@ pub async fn remove(ctx: &Ctx<'_>, files: &[PathBuf]) -> Result<bool> {
         }
         Remove::Msi { product_code } => {
             if !ids::is_valid_msi_product_code(product_code) {
-                bail!("code produit invalide");
+                bail!(tr!("code produit invalide", "invalid product code"));
             }
             let args = vec![os("/x"), os(product_code), os("/qn"), os("/norestart")];
             let out = crate::progress::step(
-                "désinstallation MSI (msiexec)",
+                tr!("désinstallation MSI (msiexec)", "MSI removal (msiexec)"),
                 executor::run(&resolve(Tool::Msiexec)?, &args, &ctx.opts()),
             )
             .await?;
@@ -702,11 +785,15 @@ pub async fn remove(ctx: &Ctx<'_>, files: &[PathBuf]) -> Result<bool> {
             let exe = ctx.expand(path)?;
             for a in args {
                 if !ids::is_valid_installer_arg(a) {
-                    bail!("argument refusé : {a}");
+                    bail!(tr!("argument refusé : {a}", "argument refused: {a}"));
                 }
             }
             let argv: Vec<OsString> = args.iter().map(os).collect();
-            let out = crate::progress::step("exécution du désinstallateur", executor::run(&exe, &argv, &ctx.opts())).await?;
+            let out = crate::progress::step(
+                tr!("exécution du désinstallateur", "running the uninstaller"),
+                executor::run(&exe, &argv, &ctx.opts()),
+            )
+            .await?;
             reboot |= ctx.check("désinstallateur", &out, &[])?;
         }
         Remove::Pkg { package_id, paths } => {
@@ -716,7 +803,7 @@ pub async fn remove(ctx: &Ctx<'_>, files: &[PathBuf]) -> Result<bool> {
                     .map(ids::is_safe_relative_path)
                     .unwrap_or(false);
                 if !ok {
-                    bail!("chemin refusé : {p}");
+                    bail!(tr!("chemin refusé : {p}", "path refused: {p}"));
                 }
                 let pb = PathBuf::from(p);
                 if pb.exists() {
@@ -783,7 +870,7 @@ pub async fn detect(ctx: &Ctx<'_>) -> Result<Option<bool>> {
     match d {
         Detect::PackageManager { manager, package } => {
             if !ids::is_valid_native_package(&package) {
-                bail!("paquet invalide");
+                bail!(tr!("paquet invalide", "invalid package"));
             }
             // Un paquet .deb installé sur AuxiNuxOS/VirtuaOS l'a été via l'adaptateur
             // système : la détection passe par lui, jamais par APT.

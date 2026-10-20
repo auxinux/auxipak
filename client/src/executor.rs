@@ -13,6 +13,7 @@
 //! avertissement est affiché : elles ne valent jamais validation réelle.
 
 use anyhow::{anyhow, bail, Context, Result};
+use auxipak_core::tr;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -110,22 +111,27 @@ pub fn resolve(tool: Tool) -> Result<PathBuf> {
         if p.exists() {
             return Ok(p);
         }
-        bail!("outil simulé absent : {}", p.display());
+        bail!(tr!("outil simulé absent : {}", "simulated tool missing: {}", p.display()));
     }
-    tool.candidates()
-        .into_iter()
-        .find(|p| p.exists())
-        .ok_or_else(|| anyhow!("outil système introuvable : {}", tool.name()))
+    tool.candidates().into_iter().find(|p| p.exists()).ok_or_else(|| {
+        anyhow!(tr!(
+            "outil système introuvable : {}",
+            "system tool not found: {}",
+            tool.name()
+        ))
+    })
 }
 
 /// Résout un programme configuré (adaptateurs `auxi`, VirtuaOS) : chemin
 /// absolu, ou nom cherché dans les répertoires système standard uniquement.
 pub fn resolve_program(program: &str) -> Result<PathBuf> {
     if program.is_empty() {
-        bail!("programme non configuré");
+        bail!(tr!("programme non configuré", "program not configured"));
     }
     if let Some(dir) = simulation_dir() {
-        let name = Path::new(program).file_name().context("programme invalide")?;
+        let name = Path::new(program)
+            .file_name()
+            .context(tr!("programme invalide", "invalid program"))?;
         let p = dir.join(name);
         if p.exists() {
             return Ok(p);
@@ -136,11 +142,14 @@ pub fn resolve_program(program: &str) -> Result<PathBuf> {
         return if p.exists() {
             Ok(p.to_path_buf())
         } else {
-            bail!("programme introuvable : {program}")
+            bail!(tr!("programme introuvable : {program}", "program not found: {program}"))
         };
     }
     if program.contains('/') || program.contains('\\') {
-        bail!("chemin de programme relatif refusé : {program}");
+        bail!(tr!(
+            "chemin de programme relatif refusé : {program}",
+            "relative program path refused: {program}"
+        ));
     }
     for d in ["/usr/bin", "/usr/sbin", "/bin", "/sbin", "/usr/local/bin"] {
         let c = Path::new(d).join(program);
@@ -148,7 +157,10 @@ pub fn resolve_program(program: &str) -> Result<PathBuf> {
             return Ok(c);
         }
     }
-    bail!("programme introuvable dans les répertoires système : {program}")
+    bail!(tr!(
+        "programme introuvable dans les répertoires système : {program}",
+        "program not found in system directories: {program}"
+    ))
 }
 
 /// Résultat d'exécution.
@@ -219,18 +231,25 @@ pub async fn run(program: &Path, args: &[OsString], opts: &RunOpts) -> Result<Ou
         cmd.current_dir(c);
     }
     let shown: Vec<String> = args.iter().map(|a| a.to_string_lossy().into_owned()).collect();
-    tracing::info!(program = %program.display(), args = ?shown, "exécution");
-    let child = cmd.spawn().with_context(|| format!("lancement de {}", program.display()))?;
+    tracing::info!(program = %program.display(), args = ?shown, "{}", tr!("exécution", "running"));
+    let child = cmd
+        .spawn()
+        .with_context(|| tr!("lancement de {}", "starting {}", program.display()))?;
     let timeout = opts.timeout.unwrap_or(Duration::from_secs(3600));
-    let out = tokio::time::timeout(timeout, child.wait_with_output())
-        .await
-        .map_err(|_| anyhow!("délai dépassé ({} s) : {}", timeout.as_secs(), program.display()))??;
+    let out = tokio::time::timeout(timeout, child.wait_with_output()).await.map_err(|_| {
+        anyhow!(tr!(
+            "délai dépassé ({} s) : {}",
+            "timed out ({} s): {}",
+            timeout.as_secs(),
+            program.display()
+        ))
+    })??;
     let o = Output {
         code: out.status.code().unwrap_or(-1),
         stdout: String::from_utf8_lossy(&out.stdout).into_owned(),
         stderr: String::from_utf8_lossy(&out.stderr).into_owned(),
     };
-    tracing::info!(program = %program.display(), code = o.code, stdout = %truncate(&o.stdout), stderr = %truncate(&o.stderr), "terminé");
+    tracing::info!(program = %program.display(), code = o.code, stdout = %truncate(&o.stdout), stderr = %truncate(&o.stderr), "{}", tr!("terminé", "finished"));
     Ok(o)
 }
 

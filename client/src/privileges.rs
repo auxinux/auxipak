@@ -32,10 +32,13 @@ fn imp() -> bool {
 }
 
 /// Message expliquant comment obtenir les privilèges requis.
-pub fn elevation_hint() -> &'static str {
+pub fn elevation_hint() -> String {
     if cfg!(windows) {
-        "relancez la commande depuis un terminal « Exécuter en tant qu'administrateur »"
+        auxipak_core::tr!(
+            "relancez la commande depuis un terminal « Exécuter en tant qu'administrateur »",
+            "run the command again from a terminal opened with \"Run as administrator\""
+        )
     } else {
-        "relancez la commande avec sudo"
+        auxipak_core::tr!("relancez la commande avec sudo", "run the command again with sudo")
     }
 }

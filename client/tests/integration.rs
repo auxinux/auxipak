@@ -203,6 +203,9 @@ impl Fixture {
             .env("AUXIPAK_HOME", self.home())
             .env("AUXIPAK_PROFILE_OVERRIDE", PROFILE)
             .env("AUXIPAK_ASSUME_ELEVATED", "0")
+            // Les vérifications portent sur les messages français ; l'anglais
+            // (langue par défaut) est vérifié par `interface_language`.
+            .env("AUXIPAK_LANG", "fr")
             .env_remove("AUXIPAK_TEST_TOOLS_DIR");
         for (k, v) in env {
             c.env(k, v);
@@ -703,4 +706,49 @@ targets:
     let o = f.run_env(&["remove", "firefox"], &env);
     assert!(o.status.success());
     assert!(std::fs::read_to_string(&log).unwrap().contains("[remove][firefox]"));
+}
+
+#[test]
+fn interface_language() {
+    let f = Fixture::new();
+    let en = &[("AUXIPAK_LANG", "en")];
+    // Anglais par défaut, français sur demande (variable, puis « auxipak set lang »).
+    let o = f.run_env(&["list"], en);
+    assert!(String::from_utf8_lossy(&o.stdout).contains("No application installed by AuxiPak."));
+    let o = f.run(&["list"]);
+    assert!(String::from_utf8_lossy(&o.stdout).contains("Aucune application installée par AuxiPak."));
+    let o = f.run_env(&["--help"], en);
+    let help = String::from_utf8_lossy(&o.stdout);
+    assert!(
+        help.contains("Install an application") && help.contains("native mechanisms"),
+        "{help}"
+    );
+    let o = f.run_env(&["install", "--help"], en);
+    assert!(String::from_utf8_lossy(&o.stdout).contains("Explicitly allow the package's custom scripts"));
+    let o = f.run(&["install", "--help"]);
+    assert!(String::from_utf8_lossy(&o.stdout).contains("Autoriser explicitement les scripts"));
+    // Préférence enregistrée, utilisée sans variable d'environnement.
+    let mut c = Command::new(env!("CARGO_BIN_EXE_auxipak"));
+    let run = |c: &mut Command, args: &[&str]| {
+        let o = c
+            .args(args)
+            .env("AUXIPAK_HOME", f.home())
+            .env("AUXIPAK_PROFILE_OVERRIDE", PROFILE)
+            .env_remove("AUXIPAK_LANG")
+            .env_remove("LC_ALL")
+            .env_remove("LC_MESSAGES")
+            .env("LANG", "C")
+            .output()
+            .unwrap();
+        String::from_utf8_lossy(&o.stdout).to_string()
+    };
+    assert!(run(&mut c, &["list"]).contains("No application"));
+    let mut c = Command::new(env!("CARGO_BIN_EXE_auxipak"));
+    assert!(run(&mut c, &["set", "lang", "FR"]).contains("Langue : français"));
+    let mut c = Command::new(env!("CARGO_BIN_EXE_auxipak"));
+    assert!(run(&mut c, &["list"]).contains("Aucune application"));
+    let mut c = Command::new(env!("CARGO_BIN_EXE_auxipak"));
+    assert!(run(&mut c, &["set", "lang=en"]).contains("Language: English"));
+    let mut c = Command::new(env!("CARGO_BIN_EXE_auxipak"));
+    assert!(run(&mut c, &["list"]).contains("No application"));
 }

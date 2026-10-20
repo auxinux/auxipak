@@ -21,6 +21,7 @@ use auxipak_core::index::{
     AppsIndex, ChannelIndex, RepoIndex, RevocationList, APPS_TARGET, INDEX_META_VERSION, REPO_INDEX_TARGET, REVOCATIONS_TARGET,
 };
 use auxipak_core::platform::{Arch, Channel, SystemProfile};
+use auxipak_core::tr;
 use chrono::{DateTime, Duration, Utc};
 use futures::StreamExt;
 use serde::{Deserialize, Serialize};
@@ -111,14 +112,23 @@ fn to_chrono(t: jiff::Timestamp) -> DateTime<Utc> {
 
 async fn read_target(repo: &tough::Repository, name: &str) -> Result<Option<Vec<u8>>> {
     let tn = TargetName::new(name).map_err(|e| anyhow!("{e}"))?;
-    let Some(mut stream) = repo.read_target(&tn).await.map_err(|e| anyhow!("lecture de {name} : {e}"))? else {
+    let Some(mut stream) = repo
+        .read_target(&tn)
+        .await
+        .map_err(|e| anyhow!(tr!("lecture de {name} : {e}", "reading {name}: {e}")))?
+    else {
         return Ok(None);
     };
     let mut out = Vec::new();
     while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|e| anyhow!("{name} : vérification TUF échouée : {e}"))?;
+        let chunk = chunk.map_err(|e| {
+            anyhow!(tr!(
+                "{name} : vérification TUF échouée : {e}",
+                "{name}: TUF verification failed: {e}"
+            ))
+        })?;
         if out.len() + chunk.len() > MAX_INDEX_SIZE {
-            bail!("{name} : index trop volumineux");
+            bail!(tr!("{name} : index trop volumineux", "{name}: index too large"));
         }
         out.extend_from_slice(&chunk);
     }
@@ -151,36 +161,49 @@ pub async fn sync(cfg: &RepoConfig, paths: &Paths, profile: &SystemProfile) -> R
         }
     }
     let repo = loaded.ok_or_else(|| {
-        anyhow!(
+        anyhow!(tr!(
             "dépôt « {} » : métadonnées TUF refusées ou inaccessibles : {}",
+            "repository \"{}\": TUF metadata refused or unreachable: {}",
             cfg.name,
             last_err.map(|e| e.to_string()).unwrap_or_default()
-        )
+        ))
     })?;
 
     let index_bytes = read_target(&repo, REPO_INDEX_TARGET)
         .await?
-        .context("index.json absent du dépôt")?;
-    let index: RepoIndex = serde_json::from_slice(&index_bytes).context("index.json invalide")?;
+        .context(tr!("index.json absent du dépôt", "index.json missing from the repository"))?;
+    let index: RepoIndex = serde_json::from_slice(&index_bytes).context(tr!("index.json invalide", "invalid index.json"))?;
     if index.meta_version != INDEX_META_VERSION {
-        bail!("version de métadonnées d'index non prise en charge : {}", index.meta_version);
+        bail!(tr!(
+            "version de métadonnées d'index non prise en charge : {}",
+            "unsupported index metadata version: {}",
+            index.meta_version
+        ));
     }
-    let apps_bytes = read_target(&repo, &index.apps).await?.context("apps.json absent")?;
-    let apps: AppsIndex = serde_json::from_slice(&apps_bytes).context("apps.json invalide")?;
+    let apps_bytes = read_target(&repo, &index.apps)
+        .await?
+        .context(tr!("apps.json absent", "apps.json missing"))?;
+    let apps: AppsIndex = serde_json::from_slice(&apps_bytes).context(tr!("apps.json invalide", "invalid apps.json"))?;
     let rev_bytes = read_target(&repo, &index.revocations)
         .await?
-        .context("revocations.json absent")?;
-    let revocations: RevocationList = serde_json::from_slice(&rev_bytes).context("revocations.json invalide")?;
+        .context(tr!("revocations.json absent", "revocations.json missing"))?;
+    let revocations: RevocationList =
+        serde_json::from_slice(&rev_bytes).context(tr!("revocations.json invalide", "invalid revocations.json"))?;
 
     let channel = profile.channel();
     let mut channel_bytes = None;
     let mut channel_index = None;
     if let Some(ch) = channel {
         if let Some(cref) = index.channels.iter().find(|c| c.channel == ch && c.arch == profile.arch) {
-            let b = read_target(&repo, &cref.target).await?.context("sous-index absent")?;
-            let ci: ChannelIndex = serde_json::from_slice(&b).context("sous-index invalide")?;
+            let b = read_target(&repo, &cref.target)
+                .await?
+                .context(tr!("sous-index absent", "sub-index missing"))?;
+            let ci: ChannelIndex = serde_json::from_slice(&b).context(tr!("sous-index invalide", "invalid sub-index"))?;
             if ci.channel != ch || ci.arch != profile.arch {
-                bail!("sous-index incohérent (canal ou architecture)");
+                bail!(tr!(
+                    "sous-index incohérent (canal ou architecture)",
+                    "inconsistent sub-index (channel or architecture)"
+                ));
             }
             channel_bytes = Some(b);
             channel_index = Some(ci);
@@ -239,13 +262,16 @@ pub fn load_cached(cfg: &RepoConfig, paths: &Paths) -> Result<Option<RepoData>> 
     if !sf.exists() {
         return Ok(None);
     }
-    let state: SyncState = serde_json::from_slice(&std::fs::read(&sf)?).context("état de cache invalide")?;
+    let state: SyncState =
+        serde_json::from_slice(&std::fs::read(&sf)?).context(tr!("état de cache invalide", "invalid cache state"))?;
     if state.url != cfg.url {
         // L'URL du dépôt a changé : le cache ne correspond plus.
         return Ok(None);
     }
     let vdir = verified_dir(paths, &cfg.name);
-    let read = |n: &str| -> Result<Vec<u8>> { std::fs::read(vdir.join(n)).with_context(|| format!("cache incomplet : {n}")) };
+    let read = |n: &str| -> Result<Vec<u8>> {
+        std::fs::read(vdir.join(n)).with_context(|| tr!("cache incomplet : {n}", "incomplete cache: {n}"))
+    };
     let index: RepoIndex = serde_json::from_slice(&read(REPO_INDEX_TARGET)?)?;
     let apps: AppsIndex = serde_json::from_slice(&read(APPS_TARGET)?)?;
     let revocations: RevocationList = serde_json::from_slice(&read(REVOCATIONS_TARGET)?)?;
@@ -308,13 +334,14 @@ pub async fn ensure(cfg: &RepoConfig, config: &Config, paths: &Paths, profile: &
             warning: None,
         },
         Err(e) => {
-            tracing::warn!(repo = %cfg.name, error = %e, "synchronisation échouée");
+            tracing::warn!(repo = %cfg.name, error = %e, "{}", tr!("synchronisation échouée", "sync failed"));
             match (need, cached) {
                 (Need::Browse, Some(c)) => {
                     let age = (Utc::now() - c.state.synced_at).num_minutes();
                     let usable = c.state.profile_fingerprint == profile.fingerprint();
-                    let warning = format!(
+                    let warning = tr!(
                         "dépôt « {} » : synchronisation impossible ({e:#}) ; utilisation du dernier index validé, vieux de {age} min",
+                        "repository \"{}\": sync failed ({e:#}); using the last verified index, {age} min old",
                         cfg.name
                     );
                     Loaded {
@@ -324,7 +351,7 @@ pub async fn ensure(cfg: &RepoConfig, config: &Config, paths: &Paths, profile: &
                 }
                 _ => Loaded {
                     data: None,
-                    warning: Some(format!("dépôt « {} » : {e:#}", cfg.name)),
+                    warning: Some(tr!("dépôt « {} » : {e:#}", "repository \"{}\": {e:#}", cfg.name)),
                 },
             }
         }
@@ -335,13 +362,13 @@ pub async fn ensure(cfg: &RepoConfig, config: &Config, paths: &Paths, profile: &
 pub fn age_label(state: &SyncState) -> String {
     let d: Duration = Utc::now() - state.synced_at;
     if d.num_minutes() < 1 {
-        "moins d'une minute".into()
+        tr!("moins d'une minute", "less than a minute")
     } else if d.num_hours() < 1 {
         format!("{} min", d.num_minutes())
     } else if d.num_days() < 1 {
         format!("{} h", d.num_hours())
     } else {
-        format!("{} jours", d.num_days())
+        tr!("{} jours", "{} days", d.num_days())
     }
 }
 

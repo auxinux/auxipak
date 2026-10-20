@@ -17,24 +17,44 @@ fn animated() -> bool {
     std::env::var_os("AUXIPAK_NO_PROGRESS").is_none() && std::io::stderr().is_terminal()
 }
 
-/// Taille lisible : « 58,3 Mo ».
+fn fr() -> bool {
+    auxipak_core::i18n::is_fr()
+}
+
+/// Taille lisible : « 58,3 Mo » (français) ou « 58.3 MB » (anglais).
 pub fn human(bytes: u64) -> String {
-    const U: [&str; 5] = ["o", "Ko", "Mo", "Go", "To"];
+    human_in(bytes, fr())
+}
+
+fn human_in(bytes: u64, fr: bool) -> String {
+    let units: [&str; 5] = if fr {
+        ["o", "Ko", "Mo", "Go", "To"]
+    } else {
+        ["B", "KB", "MB", "GB", "TB"]
+    };
     let mut v = bytes as f64;
     let mut i = 0;
-    while v >= 1024.0 && i < U.len() - 1 {
+    while v >= 1024.0 && i < units.len() - 1 {
         v /= 1024.0;
         i += 1;
     }
     let s = if i == 0 {
-        format!("{bytes} o")
+        format!("{bytes} {}", units[0])
     } else {
-        format!("{v:.1} {}", U[i])
+        format!("{v:.1} {}", units[i])
     };
-    s.replace('.', ",")
+    if fr {
+        s.replace('.', ",")
+    } else {
+        s
+    }
 }
 
 fn duration(d: Duration) -> String {
+    duration_in(d, fr())
+}
+
+fn duration_in(d: Duration, _fr: bool) -> String {
     let s = d.as_secs();
     if s >= 3600 {
         format!("{} h {:02} min", s / 3600, (s % 3600) / 60)
@@ -47,6 +67,11 @@ fn duration(d: Duration) -> String {
 
 /// Ligne de progression d'un téléchargement (pure, testable).
 fn render(label: &str, done: u64, total: Option<u64>, elapsed: Duration) -> String {
+    render_in(label, done, total, elapsed, fr())
+}
+
+fn render_in(label: &str, done: u64, total: Option<u64>, elapsed: Duration, fr: bool) -> String {
+    let human = |b: u64| human_in(b, fr);
     let secs = elapsed.as_secs_f64().max(0.001);
     let rate = done as f64 / secs;
     match total.filter(|t| *t > 0) {
@@ -54,7 +79,12 @@ fn render(label: &str, done: u64, total: Option<u64>, elapsed: Duration) -> Stri
             let ratio = (done as f64 / t as f64).clamp(0.0, 1.0);
             let full = (ratio * BAR as f64).round() as usize;
             let eta = if rate > 0.0 && done < t {
-                format!("  reste {}", duration(Duration::from_secs_f64((t - done) as f64 / rate)))
+                let left = duration_in(Duration::from_secs_f64((t - done) as f64 / rate), fr);
+                if fr {
+                    format!("  reste {left}")
+                } else {
+                    format!("  {left} left")
+                }
             } else {
                 String::new()
             };
@@ -125,8 +155,9 @@ impl Download {
     /// Termine la ligne (succès).
     pub fn finish(mut self) {
         let el = self.start.elapsed();
-        let line = format!(
+        let line = auxipak_core::tr!(
             "  ✓ {}  {} en {} ({}/s)",
+            "  ✓ {}  {} in {} ({}/s)",
             self.label,
             human(self.done),
             duration(el),
@@ -231,26 +262,41 @@ mod tests {
 
     #[test]
     fn tailles() {
-        assert_eq!(human(512), "512 o");
-        assert_eq!(human(1536), "1,5 Ko");
-        assert_eq!(human(140 * 1024 * 1024), "140,0 Mo");
+        assert_eq!(human_in(512, true), "512 o");
+        assert_eq!(human_in(1536, true), "1,5 Ko");
+        assert_eq!(human_in(140 * 1024 * 1024, true), "140,0 Mo");
+        assert_eq!(human_in(512, false), "512 B");
+        assert_eq!(human_in(1536, false), "1.5 KB");
+        assert_eq!(human_in(140 * 1024 * 1024, false), "140.0 MB");
     }
 
     #[test]
     fn ligne_de_progression() {
-        let l = render(
+        let l = render_in(
             "Firefox.dmg",
             50 * 1024 * 1024,
             Some(100 * 1024 * 1024),
             Duration::from_secs(5),
+            true,
         );
         assert!(l.contains("50 %"), "{l}");
         assert!(l.contains("50,0 Mo/100,0 Mo"), "{l}");
         assert!(l.contains("10,0 Mo/s"), "{l}");
         assert!(l.contains("reste 5 s"), "{l}");
         assert_eq!(l.matches('█').count() + l.matches('░').count(), BAR);
-        let u = render("x", 2048, None, Duration::from_secs(1));
+        let u = render_in("x", 2048, None, Duration::from_secs(1), true);
         assert!(u.contains("2,0 Ko") && !u.contains('%'), "{u}");
-        assert_eq!(duration(Duration::from_secs(125)), "2 min 05 s");
+        assert_eq!(duration_in(Duration::from_secs(125), true), "2 min 05 s");
+        let e = render_in(
+            "Firefox.dmg",
+            50 * 1024 * 1024,
+            Some(100 * 1024 * 1024),
+            Duration::from_secs(5),
+            false,
+        );
+        assert!(
+            e.contains("50.0 MB/100.0 MB") && e.contains("10.0 MB/s") && e.contains("5 s left"),
+            "{e}"
+        );
     }
 }

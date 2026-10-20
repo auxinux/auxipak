@@ -3,7 +3,7 @@
 
 use anyhow::{anyhow, bail, Context, Result};
 use auxipak_core::hash::{digest_eq, sha256_file};
-use auxipak_core::netpolicy;
+use auxipak_core::{netpolicy, tr};
 use futures::StreamExt;
 use std::io::Write;
 use std::path::Path;
@@ -37,7 +37,7 @@ fn client(policy: &RedirectPolicy, origin: &Url) -> Result<reqwest::Client> {
     let origin_scheme = origin.scheme().to_string();
     let redirect = reqwest::redirect::Policy::custom(move |attempt| {
         if attempt.previous().len() >= 5 {
-            return attempt.error("trop de redirections");
+            return attempt.error(tr!("trop de redirections", "too many redirects"));
         }
         let next = attempt.url().clone();
         let local_http = insecure
@@ -67,12 +67,13 @@ pub fn ensure_space(dir: &Path, needed: u64) -> Result<()> {
     // Marge de 5 % + 64 Mio.
     let required = needed + needed / 20 + 64 * 1024 * 1024;
     if avail < required {
-        bail!(
+        bail!(tr!(
             "espace disque insuffisant dans {} : {} Mio disponibles, {} Mio nécessaires",
+            "not enough disk space in {}: {} MiB available, {} MiB needed",
             dir.display(),
             avail / 1_048_576,
             required / 1_048_576
-        );
+        ));
     }
     Ok(())
 }
@@ -84,34 +85,46 @@ pub async fn fetch(url: &Url, dest: &Path, expect: &Expect, policy: &RedirectPol
     if dest.exists() {
         let (sha, size) = sha256_file(dest)?;
         if digest_eq(&sha, &expect.sha256) && expect.size.map(|s| s == size).unwrap_or(true) {
-            eprintln!("  ✓ {label} (déjà téléchargé, empreinte vérifiée)");
+            eprintln!(
+                "{}",
+                tr!(
+                    "  ✓ {label} (déjà téléchargé, empreinte vérifiée)",
+                    "  ✓ {label} (already downloaded, checksum verified)"
+                )
+            );
             return Ok(());
         }
         std::fs::remove_file(dest)?;
     }
-    let dir = dest.parent().context("destination sans répertoire parent")?;
+    let dir = dest.parent().context(tr!(
+        "destination sans répertoire parent",
+        "destination has no parent directory"
+    ))?;
     ensure_space(dir, expect.size.unwrap_or(0))?;
     let part = dest.with_extension(format!("{}.part", dest.extension().and_then(|e| e.to_str()).unwrap_or("dl")));
     match url.scheme() {
         "file" => {
-            let src = url.to_file_path().map_err(|_| anyhow!("URL de fichier invalide"))?;
+            let src = url
+                .to_file_path()
+                .map_err(|_| anyhow!(tr!("URL de fichier invalide", "invalid file URL")))?;
             let len = std::fs::metadata(&src)?.len();
             if len > expect.max_size {
-                bail!("fichier trop volumineux ({len} octets)");
+                bail!(tr!("fichier trop volumineux ({len} octets)", "file too large ({len} bytes)"));
             }
             std::fs::copy(&src, &part)?;
         }
         "https" | "http" => download_http(url, &part, expect, policy, label).await?,
-        s => bail!("schéma non pris en charge : {s}"),
+        s => bail!(tr!("schéma non pris en charge : {s}", "unsupported scheme: {s}")),
     }
-    let check = crate::progress::Step::start("vérification de l'empreinte SHA-256");
+    let check = crate::progress::Step::start(tr!("vérification de l'empreinte SHA-256", "verifying SHA-256 checksum"));
     let (sha, size) = sha256_file(&part)?;
     if !digest_eq(&sha, &expect.sha256) || expect.size.map(|s| s != size).unwrap_or(false) {
         let _ = std::fs::remove_file(&part);
-        bail!(
+        bail!(tr!(
             "vérification d'intégrité échouée pour {url} : SHA-256 attendu {}, obtenu {sha} ({size} octets)",
+            "integrity check failed for {url}: expected SHA-256 {}, got {sha} ({size} bytes)",
             expect.sha256
-        );
+        ));
     }
     check.finish();
     std::fs::rename(&part, dest)?;
@@ -120,7 +133,7 @@ pub async fn fetch(url: &Url, dest: &Path, expect: &Expect, policy: &RedirectPol
 
 async fn download_http(url: &Url, part: &Path, expect: &Expect, policy: &RedirectPolicy, label: &str) -> Result<()> {
     if url.scheme() == "http" && !policy.allow_insecure_localhost {
-        bail!("téléchargement HTTP refusé : {url}");
+        bail!(tr!("téléchargement HTTP refusé : {url}", "HTTP download refused: {url}"));
     }
     let c = client(policy, url)?;
     let mut attempt = 0;
@@ -142,20 +155,26 @@ async fn download_http(url: &Url, part: &Path, expect: &Expect, policy: &Redirec
         }
         let mut bar = crate::progress::Download::new(label, expect.size);
         let result: Result<()> = async {
-            let resp = req.send().await.with_context(|| format!("connexion à {url}"))?;
+            let resp = req
+                .send()
+                .await
+                .with_context(|| tr!("connexion à {url}", "connecting to {url}"))?;
             let status = resp.status();
             let append = status == reqwest::StatusCode::PARTIAL_CONTENT && existing > 0;
             if !status.is_success() {
                 if status == reqwest::StatusCode::RANGE_NOT_SATISFIABLE {
                     std::fs::remove_file(part)?;
                 }
-                bail!("{url} : réponse HTTP {status}");
+                bail!(tr!("{url} : réponse HTTP {status}", "{url}: HTTP response {status}"));
             }
             if let Some(len) = resp.content_length() {
                 let total = if append { existing + len } else { len };
                 bar.set_total(Some(total));
                 if total > expect.max_size || expect.size.map(|s| total != s).unwrap_or(false) {
-                    bail!("{url} : taille annoncée inattendue ({total} octets)");
+                    bail!(tr!(
+                        "{url} : taille annoncée inattendue ({total} octets)",
+                        "{url}: unexpected announced size ({total} bytes)"
+                    ));
                 }
             }
             let mut file = std::fs::OpenOptions::new()
@@ -167,12 +186,12 @@ async fn download_http(url: &Url, part: &Path, expect: &Expect, policy: &Redirec
             let mut written = if append { existing } else { 0 };
             let mut stream = resp.bytes_stream();
             while let Some(chunk) = stream.next().await {
-                let chunk = chunk.context("téléchargement interrompu")?;
+                let chunk = chunk.context(tr!("téléchargement interrompu", "download interrupted"))?;
                 written += chunk.len() as u64;
                 if written > expect.max_size || expect.size.map(|s| written > s).unwrap_or(false) {
                     drop(file);
                     let _ = std::fs::remove_file(part);
-                    bail!("{url} : taille maximale dépassée");
+                    bail!(tr!("{url} : taille maximale dépassée", "{url}: maximum size exceeded"));
                 }
                 file.write_all(&chunk)?;
                 bar.set(written);
@@ -188,7 +207,7 @@ async fn download_http(url: &Url, part: &Path, expect: &Expect, policy: &Redirec
             }
             Err(e) if attempt < 4 => {
                 bar.abandon();
-                tracing::warn!(%url, attempt, error = %e, "nouvelle tentative de téléchargement");
+                tracing::warn!(%url, attempt, error = %e, "{}", tr!("nouvelle tentative de téléchargement", "retrying download"));
                 tokio::time::sleep(Duration::from_secs(1 << attempt)).await;
             }
             Err(e) => {

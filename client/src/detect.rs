@@ -17,14 +17,24 @@ pub struct StoredProfile {
 pub fn detect() -> Result<SystemProfile> {
     if let Ok(over) = std::env::var("AUXIPAK_PROFILE_OVERRIDE") {
         // Tests et diagnostic : profil fourni en JSON.
-        return serde_json::from_str(&over).context("AUXIPAK_PROFILE_OVERRIDE invalide");
+        return serde_json::from_str(&over).context(auxipak_core::tr!(
+            "AUXIPAK_PROFILE_OVERRIDE invalide",
+            "invalid AUXIPAK_PROFILE_OVERRIDE"
+        ));
     }
-    let arch = detect_arch().context("architecture non prise en charge")?;
+    let arch = detect_arch().context(auxipak_core::tr!(
+        "architecture non prise en charge",
+        "unsupported architecture"
+    ))?;
     match Os::current() {
         Some(Os::Linux) => detect_linux(Path::new("/"), arch),
         Some(Os::Windows) => Ok(detect_windows(arch)),
         Some(Os::Macos) => Ok(detect_macos(arch)),
-        None => anyhow::bail!("système d'exploitation non pris en charge : {}", std::env::consts::OS),
+        None => anyhow::bail!(auxipak_core::tr!(
+            "système d'exploitation non pris en charge : {}",
+            "unsupported operating system: {}",
+            std::env::consts::OS
+        )),
     }
 }
 
@@ -63,7 +73,7 @@ pub fn detect_linux(root: &Path, arch: Arch) -> Result<SystemProfile> {
         .iter()
         .map(|p| root.join(p))
         .find(|p| p.exists())
-        .context("os-release introuvable")?;
+        .context(auxipak_core::tr!("os-release introuvable", "os-release not found"))?;
     let content = std::fs::read_to_string(&osr)?;
     let parsed = platform::parse_os_release(&content);
     // Indices d'un système immuable : marqueur AuxiNuxOS, OSTree, racine en lecture seule.

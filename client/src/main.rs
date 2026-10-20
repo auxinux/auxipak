@@ -17,7 +17,8 @@ mod selfupdate;
 use anyhow::{bail, Context, Result};
 use auxipak_core::archive::{self, Limits};
 use auxipak_core::signature::{KeyPurpose, PackageSignature};
-use clap::{Parser, Subcommand};
+use auxipak_core::tr;
+use clap::{CommandFactory, FromArgMatches, Parser, Subcommand};
 use config::{Config, RepoConfig};
 use engine::{Env, InstallOpts};
 use paths::Paths;
@@ -55,11 +56,15 @@ enum Cmd {
     },
     /// Installer une application (ex. « firefox » ou « Firefox-150.1-fr »).
     Install {
+        /// Identifiant, nom ou nom de fichier du paquet.
         package: String,
+        /// Version ou contrainte de version (ex. 150.1 ou « >=150 »).
         #[arg(long)]
         version: Option<String>,
+        /// Langue de paquet préférée (ex. fr, en).
         #[arg(long)]
         lang: Option<String>,
+        /// Installer depuis ce dépôt uniquement.
         #[arg(long)]
         repo: Option<String>,
         /// Autoriser explicitement les scripts personnalisés du paquet.
@@ -68,11 +73,13 @@ enum Cmd {
         /// Faire suivre par AuxiPak une application déjà installée nativement, sans la réinstaller.
         #[arg(long)]
         adopt: bool,
+        /// Réinstaller même si cette version est déjà installée.
         #[arg(long)]
         reinstall: bool,
     },
     /// Désinstaller une application gérée par AuxiPak.
     Remove {
+        /// Identifiant de l'application installée.
         package: String,
         /// Supprimer même si d'autres applications en dépendent.
         #[arg(long)]
@@ -80,6 +87,7 @@ enum Cmd {
         /// Supprimer aussi les dépendances installées automatiquement devenues inutiles.
         #[arg(long)]
         autoremove: bool,
+        /// Autoriser explicitement les scripts de désinstallation du paquet.
         #[arg(long)]
         allow_scripts: bool,
     },
@@ -94,7 +102,9 @@ enum Cmd {
     },
     /// Mettre à niveau AuxiPak lui-même puis toutes les applications gérées, ou celle indiquée.
     Upgrade {
+        /// Identifiant de l'application à mettre à niveau (par défaut : toutes).
         package: Option<String>,
+        /// Autoriser explicitement les scripts personnalisés des paquets.
         #[arg(long)]
         allow_scripts: bool,
         /// Ne pas mettre à jour AuxiPak lui-même.
@@ -109,12 +119,15 @@ enum Cmd {
     },
     /// Afficher les métadonnées, dépendances, statut et informations de sécurité.
     Info {
+        /// Identifiant ou nom de l'application.
         package: String,
+        /// Ne jamais contacter le réseau.
         #[arg(long)]
         offline: bool,
     },
     /// Vérifier un fichier .aupak local (structure, manifeste, signature). N'exécute rien.
     Verify {
+        /// Fichier de paquet (.aupak).
         file: PathBuf,
         /// Document de signature (par défaut : <fichier>.sig s'il existe).
         #[arg(long)]
@@ -143,7 +156,9 @@ enum RepoCmd {
     List,
     /// Ajouter un dépôt externe.
     Add {
+        /// URL du dépôt (HTTPS).
         url: String,
+        /// Nom local du dépôt (par défaut : déduit du nom d'hôte).
         #[arg(long)]
         name: Option<String>,
         /// root.json TUF de confiance (obtenu par un canal sûr).
@@ -163,7 +178,10 @@ enum RepoCmd {
         allow_insecure_localhost: bool,
     },
     /// Retirer un dépôt.
-    Remove { name: String },
+    Remove {
+        /// Nom du dépôt.
+        name: String,
+    },
 }
 
 fn init_logging(paths: &Paths) {
@@ -200,23 +218,186 @@ fn apply_language(paths: &Paths) {
 
 #[tokio::main]
 async fn main() -> ExitCode {
-    let cli = Cli::parse();
+    // La langue doit être connue avant l'analyse de la ligne de commande (aide).
     let paths = Paths::detect();
+    apply_language(&paths);
+    let matches = localize_help(Cli::command()).get_matches();
+    let cli = match Cli::from_arg_matches(&matches) {
+        Ok(c) => c,
+        Err(e) => e.exit(),
+    };
     if let Err(e) = paths.ensure() {
-        eprintln!("erreur : impossible de préparer {} : {e}", paths.state_dir.display());
+        eprintln!(
+            "{}",
+            tr!(
+                "erreur : impossible de préparer {} : {e}",
+                "error: cannot prepare {}: {e}",
+                paths.state_dir.display()
+            )
+        );
         return ExitCode::from(1);
     }
-    apply_language(&paths);
     init_logging(&paths);
     selfupdate::cleanup_old();
-    tracing::info!(args = ?std::env::args().collect::<Vec<_>>(), "démarrage");
+    tracing::info!(args = ?std::env::args().collect::<Vec<_>>(), "{}", tr!("démarrage", "start"));
     match run(cli, paths).await {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
-            tracing::error!(error = %format!("{e:#}"), "échec");
-            eprintln!("erreur : {e:#}");
+            tracing::error!(error = %format!("{e:#}"), "{}", tr!("échec", "failure"));
+            eprintln!("{}", tr!("erreur : {e:#}", "error: {e:#}"));
             ExitCode::from(1)
         }
+    }
+}
+
+/// Aide en anglais : les commentaires de documentation (français) servent
+/// de texte d'aide en français ; cette table les remplace sinon.
+/// Chemin : sous-commandes séparées par des espaces ; argument vide : la
+/// description de la commande elle-même.
+const HELP_EN: &[(&str, &str, &str)] = &[
+    ("", "json", "JSON output (query commands)."),
+    (
+        "search",
+        "",
+        "Search the indexes for an application (local cache, refreshed when needed).",
+    ),
+    ("search", "query", "Search term (identifier, name or description)."),
+    ("search", "offline", "Never use the network."),
+    (
+        "install",
+        "",
+        "Install an application (e.g. \"firefox\" or \"Firefox-150.1-fr\").",
+    ),
+    ("install", "package", "Application identifier, name or package file name."),
+    (
+        "install",
+        "version",
+        "Version or version constraint (e.g. 150.1 or \">=150\").",
+    ),
+    ("install", "lang", "Preferred package language (e.g. fr, en)."),
+    ("install", "repo", "Install from this repository only."),
+    ("install", "allow_scripts", "Explicitly allow the package's custom scripts."),
+    (
+        "install",
+        "adopt",
+        "Track an application already installed natively with AuxiPak, without reinstalling it.",
+    ),
+    ("install", "reinstall", "Reinstall even if this version is already installed."),
+    ("remove", "", "Remove an application managed by AuxiPak."),
+    ("remove", "package", "Identifier of the installed application."),
+    ("remove", "force", "Remove even if other applications depend on it."),
+    (
+        "remove",
+        "autoremove",
+        "Also remove automatically installed dependencies that are no longer needed.",
+    ),
+    ("remove", "allow_scripts", "Explicitly allow the package's removal scripts."),
+    (
+        "update",
+        "",
+        "Sync the indexes of all repositories (does not upgrade applications).",
+    ),
+    (
+        "set",
+        "",
+        "Change a setting: \"auxipak set lang en\" or \"auxipak set lang fr\".",
+    ),
+    ("set", "key", "Setting (lang); \"lang=fr\" is also accepted."),
+    ("set", "value", "Value (fr, en); omitted: shows the current value."),
+    (
+        "upgrade",
+        "",
+        "Upgrade AuxiPak itself, then all managed applications, or the one given.",
+    ),
+    (
+        "upgrade",
+        "package",
+        "Identifier of the application to upgrade (default: all).",
+    ),
+    ("upgrade", "allow_scripts", "Explicitly allow the packages' custom scripts."),
+    ("upgrade", "no_self", "Do not update AuxiPak itself."),
+    ("list", "", "List the applications installed and tracked by AuxiPak."),
+    (
+        "list",
+        "check",
+        "Check that each application is really present (reconciliation).",
+    ),
+    ("info", "", "Show metadata, dependencies, status and security information."),
+    ("info", "package", "Application identifier or name."),
+    ("info", "offline", "Never use the network."),
+    (
+        "verify",
+        "",
+        "Check a local .aupak file (structure, manifest, signature). Runs nothing.",
+    ),
+    ("verify", "file", "Package file (.aupak)."),
+    (
+        "verify",
+        "signature",
+        "Signature document (default: <file>.sig if it exists).",
+    ),
+    ("clean", "", "Clean the cache (downloaded packages, working directories)."),
+    ("clean", "all", "Also remove the cached indexes (a sync will be needed)."),
+    ("repo", "", "Manage repositories."),
+    ("repo list", "", "List the configured repositories."),
+    ("repo add", "", "Add an external repository."),
+    ("repo add", "url", "Repository URL (HTTPS)."),
+    (
+        "repo add",
+        "name",
+        "Local name of the repository (default: derived from the host name).",
+    ),
+    (
+        "repo add",
+        "root",
+        "Trusted TUF root.json (obtained through a secure channel).",
+    ),
+    ("repo add", "keys", "Public package signing keys (package-keys.json)."),
+    (
+        "repo add",
+        "trust_on_first_use",
+        "Fetch root.json and the keys from the repository itself (trust on first use, less secure).",
+    ),
+    (
+        "repo add",
+        "allow_scripts",
+        "Allow this repository's scripts to run (not recommended).",
+    ),
+    ("repo remove", "", "Remove a repository."),
+    ("repo remove", "name", "Name of the repository."),
+    ("repair", "", "Resume or clean up interrupted operations."),
+    ("doctor", "", "Diagnostics: system profile, repositories, cache state."),
+];
+
+/// Remplace l'aide par sa version anglaise si l'interface n'est pas en français.
+fn localize_help(cmd: clap::Command) -> clap::Command {
+    if auxipak_core::i18n::is_fr() {
+        return cmd;
+    }
+    let mut cmd = cmd
+        .about("AuxiPak — application distribution and management for the AuxiNux ecosystem")
+        .long_about(
+            "AuxiPak installs, upgrades and removes applications distributed as .aupak packages, \
+             using the native mechanisms allowed on each system (APT, auxi, MSI, pkg…).\n\
+             AuxiPak never updates the operating system itself.",
+        );
+    for (path, arg, text) in HELP_EN {
+        cmd = apply_help(cmd, path, arg, text);
+    }
+    cmd
+}
+
+fn apply_help(cmd: clap::Command, path: &str, arg: &str, text: &'static str) -> clap::Command {
+    match path.split_once(' ') {
+        Some((head, rest)) => cmd.mut_subcommand(head, |c| apply_help(c, rest, arg, text)),
+        None if path.is_empty() => cmd.mut_arg(arg, |a| a.help(text)),
+        None => cmd.mut_subcommand(path, |c| {
+            if arg.is_empty() {
+                c.about(text).long_about(None::<&str>)
+            } else {
+                c.mut_arg(arg, |a| a.help(text))
+            }
+        }),
     }
 }
 
@@ -224,8 +405,12 @@ fn pending_warning(paths: &Paths) {
     if let Ok(p) = Transaction::pending(paths) {
         if !p.is_empty() {
             eprintln!(
-                "avertissement : {} opération(s) interrompue(s) détectée(s) ; exécutez « auxipak repair »",
-                p.len()
+                "{}",
+                tr!(
+                    "avertissement : {} opération(s) interrompue(s) détectée(s) ; exécutez « auxipak repair »",
+                    "warning: {} interrupted operation(s) detected; run \"auxipak repair\"",
+                    p.len()
+                )
             );
         }
     }
@@ -236,20 +421,35 @@ async fn env_for(paths: Paths, need: Need) -> Result<Env> {
     let status = detect::load_or_detect(&paths)?;
     if status.first_run {
         eprintln!(
-            "premier lancement : profil système enregistré ({} {}, {})",
-            status.profile.distribution, status.profile.version, status.profile.arch
+            "{}",
+            tr!(
+                "premier lancement : profil système enregistré ({} {}, {})",
+                "first run: system profile saved ({} {}, {})",
+                status.profile.distribution,
+                status.profile.version,
+                status.profile.arch
+            )
         );
     }
     if status.changed {
         eprintln!(
-            "changement de système détecté ({}) : les index vont être resynchronisés",
-            status.profile.pretty_name
+            "{}",
+            tr!(
+                "changement de système détecté ({}) : les index vont être resynchronisés",
+                "system change detected ({}): the indexes will be synced again",
+                status.profile.pretty_name
+            )
         );
     }
     if status.profile.channel().is_none() {
         eprintln!(
-            "avertissement : {} ({}) n'est pas une plateforme prise en charge par AuxiPak",
-            status.profile.pretty_name, status.profile.distribution
+            "{}",
+            tr!(
+                "avertissement : {} ({}) n'est pas une plateforme prise en charge par AuxiPak",
+                "warning: {} ({}) is not a platform supported by AuxiPak",
+                status.profile.pretty_name,
+                status.profile.distribution
+            )
         );
     }
     let env = Env::load(paths, config, status.profile, need).await;
@@ -266,14 +466,21 @@ async fn run(cli: Cli, paths: Paths) -> Result<()> {
                 env_for(paths, Need::Browse).await?
             };
             if env.repos.is_empty() {
-                bail!("aucun index disponible (exécutez « auxipak update » avec une connexion réseau)");
+                bail!(tr!(
+                    "aucun index disponible (exécutez « auxipak update » avec une connexion réseau)",
+                    "no index available (run \"auxipak update\" with a network connection)"
+                ));
             }
             for r in &env.repos {
                 if r.freshness(env.config.cache_ttl_seconds, &env.profile) != repo::Freshness::Fresh {
                     eprintln!(
-                        "index « {} » : dernière synchronisation il y a {}",
-                        r.config.name,
-                        repo::age_label(&r.state)
+                        "{}",
+                        tr!(
+                            "index « {} » : dernière synchronisation il y a {}",
+                            "index \"{}\": last synced {} ago",
+                            r.config.name,
+                            repo::age_label(&r.state)
+                        )
                     );
                 }
             }
@@ -292,11 +499,17 @@ async fn run(cli: Cli, paths: Paths) -> Result<()> {
                     .collect();
                 println!("{}", serde_json::to_string_pretty(&v)?);
             } else if hits.is_empty() {
-                println!("Aucun résultat.");
+                println!("{}", tr!("Aucun résultat.", "No results."));
             } else {
+                let fr = auxipak_core::i18n::is_fr();
                 println!(
                     "{:<22} {:<20} {:<12} {:<8} {:<12} {:<9} DESCRIPTION",
-                    "ID", "NOM", "VERSION", "LANGUE", "STATUT", "PLATEF."
+                    "ID",
+                    if fr { "NOM" } else { "NAME" },
+                    "VERSION",
+                    if fr { "LANGUE" } else { "LANGUAGE" },
+                    if fr { "STATUT" } else { "STATUS" },
+                    if fr { "PLATEF." } else { "PLATFORM" }
                 );
                 for c in hits {
                     println!(
@@ -369,7 +582,7 @@ async fn run(cli: Cli, paths: Paths) -> Result<()> {
                 None => (key, value),
             };
             if !matches!(key.to_ascii_lowercase().as_str(), "lang" | "language" | "langue") {
-                bail!(auxipak_core::tr!(
+                bail!(tr!(
                     "préférence inconnue : {key} (disponible : lang)",
                     "unknown setting: {key} (available: lang)"
                 ));
@@ -379,7 +592,7 @@ async fn run(cli: Cli, paths: Paths) -> Result<()> {
                 return Ok(());
             };
             let l = Lang::parse(&value).ok_or_else(|| {
-                anyhow::anyhow!(auxipak_core::tr!(
+                anyhow::anyhow!(tr!(
                     "langue inconnue : {value} (fr, en)",
                     "unknown language: {value} (fr, en)"
                 ))
@@ -387,10 +600,7 @@ async fn run(cli: Cli, paths: Paths) -> Result<()> {
             let file = paths.config_dir.join("language");
             paths::atomic_write(&file, format!("{}\n", l.code()).as_bytes())?;
             i18n::set(l);
-            println!(
-                "{}",
-                auxipak_core::tr!("Langue : français ({})", "Language: English ({})", file.display())
-            );
+            println!("{}", tr!("Langue : français ({})", "Language: English ({})", file.display()));
         }
         Cmd::Update => {
             let config = Config::load(&paths)?;
@@ -399,27 +609,34 @@ async fn run(cli: Cli, paths: Paths) -> Result<()> {
             for r in config.enabled_repos() {
                 match repo::sync(r, &paths, &profile).await {
                     Ok(d) => println!(
-                        "{} : index synchronisé (génération {}, {} version(s) pour {} {}, métadonnées valides jusqu'au {})",
-                        r.name,
-                        d.state.generation,
-                        d.channel.as_ref().map(|c| c.releases.len()).unwrap_or(0),
-                        profile.channel().map(|c| c.as_str()).unwrap_or("?"),
-                        profile.arch,
-                        d.state.metadata_expires.format("%Y-%m-%d %H:%M UTC")
+                        "{}",
+                        tr!(
+                            "{} : index synchronisé (génération {}, {} version(s) pour {} {}, métadonnées valides jusqu'au {})",
+                            "{}: index synced (generation {}, {} version(s) for {} {}, metadata valid until {})",
+                            r.name,
+                            d.state.generation,
+                            d.channel.as_ref().map(|c| c.releases.len()).unwrap_or(0),
+                            profile.channel().map(|c| c.as_str()).unwrap_or("?"),
+                            profile.arch,
+                            d.state.metadata_expires.format("%Y-%m-%d %H:%M UTC")
+                        )
                     ),
                     Err(e) => {
                         failures += 1;
-                        eprintln!("{} : échec : {e:#}", r.name);
+                        eprintln!("{}", tr!("{} : échec : {e:#}", "{}: failed: {e:#}", r.name));
                     }
                 }
             }
             if failures > 0 {
-                bail!("{failures} dépôt(s) n'ont pas pu être synchronisés");
+                bail!(tr!(
+                    "{failures} dépôt(s) n'ont pas pu être synchronisés",
+                    "{failures} repository(ies) could not be synced"
+                ));
             }
             if let Ok(Some(a)) = selfupdate::check(&config).await {
                 println!(
                     "{}",
-                    auxipak_core::tr!(
+                    tr!(
                         "AuxiPak {} est disponible (version actuelle {}) : auxipak upgrade",
                         "AuxiPak {} is available (current version {}): auxipak upgrade",
                         a.version,
@@ -446,7 +663,7 @@ async fn run(cli: Cli, paths: Paths) -> Result<()> {
                     Ok(Some(a)) => {
                         eprintln!(
                             "{}",
-                            auxipak_core::tr!(
+                            tr!(
                                 "Mise à jour d'AuxiPak : {} → {}",
                                 "Updating AuxiPak: {} → {}",
                                 selfupdate::CURRENT,
@@ -458,20 +675,22 @@ async fn run(cli: Cli, paths: Paths) -> Result<()> {
                                 for f in files {
                                     println!(
                                         "{}",
-                                        auxipak_core::tr!(
-                                            "  ✓ {} mis à jour ({})",
-                                            "  ✓ {} updated ({})",
-                                            f.display(),
-                                            a.version
-                                        )
+                                        tr!("  ✓ {} mis à jour ({})", "  ✓ {} updated ({})", f.display(), a.version)
                                     );
                                 }
                             }
-                            Err(e) => eprintln!("{}", auxipak_core::tr!("avertissement : {e:#}", "warning: {e:#}")),
+                            Err(e) => eprintln!("{}", tr!("avertissement : {e:#}", "warning: {e:#}")),
                         }
                     }
                     Ok(None) => {}
-                    Err(e) => tracing::warn!(error = %e, "vérification de la version d'AuxiPak impossible"),
+                    Err(e) => tracing::warn!(
+                        error = %e,
+                        "{}",
+                        tr!(
+                            "vérification de la version d'AuxiPak impossible",
+                            "cannot check for a newer AuxiPak version"
+                        )
+                    ),
                 }
             }
             let env = env_for(paths, Need::Install).await?;
@@ -522,11 +741,24 @@ async fn run(cli: Cli, paths: Paths) -> Result<()> {
             if cli.json {
                 println!("{}", serde_json::to_string_pretty(&reg.apps)?);
             } else if reg.apps.is_empty() {
-                println!("Aucune application installée par AuxiPak.");
-            } else {
                 println!(
-                    "{:<22} {:<12} {:<10} {:<10} {:<10} {:<10} INSTALLÉ LE",
-                    "ID", "VERSION", "DÉPÔT", "MÉTHODE", "GEST.", "ÉTAT"
+                    "{}",
+                    tr!(
+                        "Aucune application installée par AuxiPak.",
+                        "No application installed by AuxiPak."
+                    )
+                );
+            } else {
+                let fr = auxipak_core::i18n::is_fr();
+                println!(
+                    "{:<22} {:<12} {:<10} {:<10} {:<10} {:<10} {}",
+                    "ID",
+                    "VERSION",
+                    if fr { "DÉPÔT" } else { "REPO" },
+                    if fr { "MÉTHODE" } else { "METHOD" },
+                    if fr { "GEST." } else { "MANAGER" },
+                    if fr { "ÉTAT" } else { "STATE" },
+                    if fr { "INSTALLÉ LE" } else { "INSTALLED ON" }
                 );
                 for a in reg.apps.values() {
                     let mut state = format!("{:?}", a.state).to_lowercase();
@@ -534,11 +766,11 @@ async fn run(cli: Cli, paths: Paths) -> Result<()> {
                         state.push('*');
                     }
                     if revoked.contains(&a.id) {
-                        state.push_str(" RÉVOQUÉE");
+                        state.push_str(if fr { " RÉVOQUÉE" } else { " REVOKED" });
                     }
                     if let Some(p) = presence.get(&a.id) {
                         match p {
-                            Some(false) => state.push_str(" (absente!)"),
+                            Some(false) => state.push_str(if fr { " (absente!)" } else { " (missing!)" }),
                             None => state.push_str(" (?)"),
                             _ => {}
                         }
@@ -552,14 +784,32 @@ async fn run(cli: Cli, paths: Paths) -> Result<()> {
                         a.manager,
                         state,
                         a.installed_at.format("%Y-%m-%d %H:%M"),
-                        if a.auto_installed { " (dépendance)" } else { "" }
+                        if !a.auto_installed {
+                            ""
+                        } else if fr {
+                            " (dépendance)"
+                        } else {
+                            " (dependency)"
+                        }
                     );
                 }
                 if !revoked.is_empty() {
-                    println!("ATTENTION : version(s) révoquée(s) installée(s) — mettez à niveau ou désinstallez-les");
+                    println!(
+                        "{}",
+                        tr!(
+                            "ATTENTION : version(s) révoquée(s) installée(s) — mettez à niveau ou désinstallez-les",
+                            "WARNING: revoked version(s) installed — upgrade or remove them"
+                        )
+                    );
                 }
                 if reg.apps.values().any(|a| a.simulated) {
-                    println!("* installation réalisée en mode simulation (tests) : non valide comme installation réelle");
+                    println!(
+                        "{}",
+                        tr!(
+                            "* installation réalisée en mode simulation (tests) : non valide comme installation réelle",
+                            "* installed in simulation mode (tests): not valid as a real installation"
+                        )
+                    );
                 }
             }
         }
@@ -580,12 +830,25 @@ async fn run(cli: Cli, paths: Paths) -> Result<()> {
             if pending.is_empty() {
                 freed += remove_dir_size(&paths.work_dir())?;
             } else {
-                eprintln!("répertoires de travail conservés : opérations interrompues en attente (« auxipak repair »)");
+                eprintln!(
+                    "{}",
+                    tr!(
+                        "répertoires de travail conservés : opérations interrompues en attente (« auxipak repair »)",
+                        "working directories kept: interrupted operations pending (\"auxipak repair\")"
+                    )
+                );
             }
             if all {
                 freed += remove_dir_size(&paths.cache_dir.join("repos"))?;
             }
-            println!("Cache nettoyé ({} Kio libérés).", freed / 1024);
+            println!(
+                "{}",
+                tr!(
+                    "Cache nettoyé ({} Kio libérés).",
+                    "Cache cleaned ({} KiB freed).",
+                    freed / 1024
+                )
+            );
         }
         Cmd::Repo { cmd } => repo_cmd(&paths, cmd, cli.json).await?,
         Cmd::Repair => {
@@ -608,52 +871,118 @@ async fn run(cli: Cli, paths: Paths) -> Result<()> {
             let config = Config::load(&paths)?;
             let st = detect::load_or_detect(&paths)?;
             let p = &st.profile;
+            let fr = auxipak_core::i18n::is_fr();
+            let yes_no = |b: bool| match (b, fr) {
+                (true, true) => "oui",
+                (false, true) => "non",
+                (true, false) => "yes",
+                (false, false) => "no",
+            };
             println!(
-                "Système      : {} ({} {}, {})",
-                p.pretty_name, p.distribution, p.version, p.arch
+                "{}",
+                tr!(
+                    "Système      : {} ({} {}, {})",
+                    "System       : {} ({} {}, {})",
+                    p.pretty_name,
+                    p.distribution,
+                    p.version,
+                    p.arch
+                )
             );
             println!(
-                "Canal        : {}",
-                p.channel().map(|c| c.as_str()).unwrap_or("non pris en charge")
+                "{}",
+                tr!(
+                    "Canal        : {}",
+                    "Channel      : {}",
+                    p.channel()
+                        .map(|c| c.as_str().to_string())
+                        .unwrap_or_else(|| tr!("non pris en charge", "not supported"))
+                )
             );
-            println!("Immuable     : {}", if p.immutable { "oui" } else { "non" });
+            println!("{}", tr!("Immuable     : {}", "Immutable    : {}", yes_no(p.immutable)));
             println!(
-                "Portée       : {:?} (administrateur : {})",
-                paths.scope,
-                privileges::is_elevated()
+                "{}",
+                tr!(
+                    "Portée       : {} (administrateur : {})",
+                    "Scope        : {} (administrator: {})",
+                    match (paths.scope, fr) {
+                        (paths::Scope::System, true) => "système",
+                        (paths::Scope::User, true) => "utilisateur",
+                        (paths::Scope::System, false) => "system",
+                        (paths::Scope::User, false) => "user",
+                    },
+                    yes_no(privileges::is_elevated())
+                )
             );
             println!("Configuration: {}", paths.config_file().display());
-            println!("État         : {}", paths.state_dir.display());
+            println!("{}", tr!("État         : {}", "State        : {}", paths.state_dir.display()));
             println!(
-                "Cache        : {} (durée de validité {} s)",
-                paths.cache_dir.display(),
-                config.cache_ttl_seconds
+                "{}",
+                tr!(
+                    "Cache        : {} (durée de validité {} s)",
+                    "Cache        : {} (valid for {} s)",
+                    paths.cache_dir.display(),
+                    config.cache_ttl_seconds
+                )
             );
-            println!("Journal      : {}", paths.log_file().display());
+            println!(
+                "{}",
+                tr!("Journal      : {}", "Log          : {}", paths.log_file().display())
+            );
+            println!(
+                "{}",
+                tr!("Langue       : {}", "Language     : {}", auxipak_core::i18n::current().code())
+            );
             if executor::is_simulation() {
-                println!("MODE SIMULATION ACTIF (AUXIPAK_TEST_TOOLS_DIR)");
+                println!(
+                    "{}",
+                    tr!(
+                        "MODE SIMULATION ACTIF (AUXIPAK_TEST_TOOLS_DIR)",
+                        "SIMULATION MODE ACTIVE (AUXIPAK_TEST_TOOLS_DIR)"
+                    )
+                );
             }
             for r in &config.repositories {
                 let trust = match r.trust(&paths) {
-                    Ok(t) => format!("confiance : {}", t.source),
-                    Err(e) => format!("CONFIANCE ABSENTE : {e}"),
+                    Ok(t) => tr!("confiance : {}", "trust: {}", t.source),
+                    Err(e) => tr!("CONFIANCE ABSENTE : {e}", "NO TRUST ROOT: {e}"),
                 };
                 let cache = match repo::load_cached(r, &paths) {
-                    Ok(Some(d)) => format!(
+                    Ok(Some(d)) => tr!(
                         "« {} », génération {}, synchronisé il y a {} ({:?})",
+                        "\"{}\", generation {}, synced {} ago ({:?})",
                         d.index.repository.title,
                         d.index.generation,
                         repo::age_label(&d.state),
                         d.freshness(config.cache_ttl_seconds, p)
                     ),
-                    _ => "jamais synchronisé".into(),
+                    _ => tr!("jamais synchronisé", "never synced"),
                 };
-                println!("Dépôt {} : {} — {} — {}", r.name, r.url, trust, cache);
+                println!(
+                    "{}",
+                    tr!(
+                        "Dépôt {} : {} — {} — {}",
+                        "Repository {}: {} — {} — {}",
+                        r.name,
+                        r.url,
+                        trust,
+                        cache
+                    )
+                );
             }
             let pending = Transaction::pending(&paths)?;
-            println!("Opérations interrompues : {}", pending.len());
+            println!(
+                "{}",
+                tr!("Opérations interrompues : {}", "Interrupted operations: {}", pending.len())
+            );
             if !config.adapters.auxi.validated && p.distribution == auxipak_core::platform::Distribution::Auxinuxos {
-                println!("Adaptateur auxi : syntaxe NON VALIDÉE sur ce système (voir docs/CLI_REFERENCE.md)");
+                println!(
+                    "{}",
+                    tr!(
+                        "Adaptateur auxi : syntaxe NON VALIDÉE sur ce système (voir docs/CLI_REFERENCE.md)",
+                        "auxi adapter: syntax NOT VALIDATED on this system (see docs/CLI_REFERENCE.md)"
+                    )
+                );
             }
         }
     }
@@ -715,7 +1044,15 @@ fn info(env: &Env, package: &str, json: bool) -> Result<()> {
         (Ok(c), _) => c,
         (Err(e), None) => return Err(e),
         (Err(_), Some(a)) => {
-            println!("{} {} (installé, absent des index disponibles)", a.id, a.version);
+            println!(
+                "{}",
+                tr!(
+                    "{} {} (installé, absent des index disponibles)",
+                    "{} {} (installed, not in the available indexes)",
+                    a.id,
+                    a.version
+                )
+            );
             println!("{}", serde_json::to_string_pretty(a)?);
             return Ok(());
         }
@@ -724,7 +1061,17 @@ fn info(env: &Env, package: &str, json: bool) -> Result<()> {
     let versions: Vec<String> = catalog::all_candidates(&env.repos)
         .iter()
         .filter(|x| x.release.id == rel.id && x.repo.config.name == c.repo.config.name)
-        .map(|x| format!("{}{}", x.release.version, if x.is_revoked() { " (révoquée)" } else { "" }))
+        .map(|x| {
+            format!(
+                "{}{}",
+                x.release.version,
+                if x.is_revoked() {
+                    tr!(" (révoquée)", " (revoked)")
+                } else {
+                    String::new()
+                }
+            )
+        })
         .collect();
     if json {
         println!(
@@ -740,56 +1087,132 @@ fn info(env: &Env, package: &str, json: bool) -> Result<()> {
     println!("{} ({})", c.name(), rel.id);
     if let Some(a) = c.app {
         println!("  {}", a.summary);
-        println!("Éditeur        : {}", a.publisher);
-        println!("Licence        : {}", a.license);
+        println!("{}", tr!("Éditeur        : {}", "Publisher      : {}", a.publisher));
+        println!("{}", tr!("Licence        : {}", "License        : {}", a.license));
         if let Some(h) = &a.homepage {
-            println!("Site           : {h}");
+            println!("{}", tr!("Site           : {h}", "Website        : {h}"));
         }
     }
-    println!("Statut AuxiNux : {}", c.status().label());
+    println!("{}", tr!("Statut AuxiNux : {}", "AuxiNux status : {}", c.status().label()));
     if let Some(note) = c.app.and_then(|a| a.status_note.as_ref()) {
-        println!("  Réserves     : {note}");
+        println!("{}", tr!("  Réserves     : {note}", "  Caveats      : {note}"));
     }
-    println!("Version        : {} (disponibles : {})", rel.version, versions.join(", "));
-    println!("Langues        : {}", rel.languages.join(", "));
     println!(
-        "Plateforme     : {} — {} — {}",
-        rel.platform,
-        rel.distributions.iter().map(|d| d.as_str()).collect::<Vec<_>>().join(", "),
-        rel.architectures.iter().map(|a| a.as_str()).collect::<Vec<_>>().join(", ")
+        "{}",
+        tr!(
+            "Version        : {} (disponibles : {})",
+            "Version        : {} (available: {})",
+            rel.version,
+            versions.join(", ")
+        )
     );
     println!(
-        "Dépôt          : {}{}",
-        c.repo.config.name,
-        if c.repo.config.official { " (officiel)" } else { " (externe)" }
+        "{}",
+        tr!("Langues        : {}", "Languages      : {}", rel.languages.join(", "))
     );
-    println!("Mode           : {} — privilèges : {:?}", rel.mode, rel.privileges);
+    println!(
+        "{}",
+        tr!(
+            "Plateforme     : {} — {} — {}",
+            "Platform       : {} — {} — {}",
+            rel.platform,
+            rel.distributions.iter().map(|d| d.as_str()).collect::<Vec<_>>().join(", "),
+            rel.architectures.iter().map(|a| a.as_str()).collect::<Vec<_>>().join(", ")
+        )
+    );
+    println!(
+        "{}",
+        tr!(
+            "Dépôt          : {}{}",
+            "Repository     : {}{}",
+            c.repo.config.name,
+            if c.repo.config.official {
+                tr!(" (officiel)", " (official)")
+            } else {
+                tr!(" (externe)", " (external)")
+            }
+        )
+    );
+    println!(
+        "{}",
+        tr!(
+            "Mode           : {} — privilèges : {:?}",
+            "Mode           : {} — privileges: {:?}",
+            rel.mode,
+            rel.privileges
+        )
+    );
     let deps: Vec<String> = rel.dependencies.iter().map(|d| format!("{} ({})", d.id, d.version)).collect();
     println!(
-        "Dépendances    : {}",
-        if deps.is_empty() { "aucune".into() } else { deps.join(", ") }
+        "{}",
+        tr!(
+            "Dépendances    : {}",
+            "Dependencies   : {}",
+            if deps.is_empty() {
+                tr!("aucune", "none")
+            } else {
+                deps.join(", ")
+            }
+        )
     );
-    println!("Sécurité :");
-    println!("  Fichier      : {} ({} octets)", rel.file_name, rel.size);
+    let fr = auxipak_core::i18n::is_fr();
+    let yes_no = |b: bool| match (b, fr) {
+        (true, true) => "OUI",
+        (false, true) => "non",
+        (true, false) => "YES",
+        (false, false) => "no",
+    };
+    println!("{}", tr!("Sécurité :", "Security:"));
+    println!(
+        "{}",
+        tr!(
+            "  Fichier      : {} ({} octets)",
+            "  File         : {} ({} bytes)",
+            rel.file_name,
+            rel.size
+        )
+    );
     println!("  SHA-256      : {}", rel.sha256);
-    println!("  Signature    : clé {} ({})", rel.signature.key_id, rel.signature.target);
+    println!(
+        "{}",
+        tr!(
+            "  Signature    : clé {} ({})",
+            "  Signature    : key {} ({})",
+            rel.signature.key_id,
+            rel.signature.target
+        )
+    );
     println!(
         "  Scripts      : {}",
         if rel.uses_scripts {
-            "OUI — autorisation explicite requise"
+            tr!("OUI — autorisation explicite requise", "YES — explicit permission required")
         } else {
-            "non"
+            yes_no(false).to_string()
         }
     );
-    println!("  Révoqué      : {}", if c.is_revoked() { "OUI" } else { "non" });
-    println!("  Publié le    : {}", rel.published_at.format("%Y-%m-%d %H:%M UTC"));
+    println!(
+        "{}",
+        tr!("  Révoqué      : {}", "  Revoked      : {}", yes_no(c.is_revoked()))
+    );
+    println!(
+        "{}",
+        tr!(
+            "  Publié le    : {}",
+            "  Published on : {}",
+            rel.published_at.format("%Y-%m-%d %H:%M UTC")
+        )
+    );
     if let Some(i) = installed {
         println!(
-            "Installé       : {} le {} ({:?}, {})",
-            i.version,
-            i.installed_at.format("%Y-%m-%d"),
-            i.state,
-            i.manager
+            "{}",
+            tr!(
+                "Installé       : {} le {} ({:?}, {})",
+                "Installed      : {} on {} ({:?}, {})",
+                i.version,
+                i.installed_at.format("%Y-%m-%d"),
+                i.state,
+                i.manager
+            )
         );
     }
     Ok(())
@@ -797,9 +1220,13 @@ fn info(env: &Env, package: &str, json: bool) -> Result<()> {
 
 fn verify(paths: &Paths, file: &std::path::Path, signature: Option<PathBuf>, json: bool) -> Result<()> {
     if !auxipak_core::archive::is_package_path(file) {
-        bail!("le fichier doit porter l'extension .aupak");
+        bail!(tr!(
+            "le fichier doit porter l'extension .aupak",
+            "the file must have the .aupak extension"
+        ));
     }
-    let insp = archive::inspect(file, &Limits::default()).map_err(|e| anyhow::anyhow!("paquet INVALIDE : {e}"))?;
+    let insp = archive::inspect(file, &Limits::default())
+        .map_err(|e| anyhow::anyhow!(tr!("paquet INVALIDE : {e}", "INVALID package: {e}")))?;
     let sig_path = signature.or_else(|| {
         let p = PathBuf::from(format!("{}.sig", file.display()));
         p.exists().then_some(p)
@@ -808,7 +1235,7 @@ fn verify(paths: &Paths, file: &std::path::Path, signature: Option<PathBuf>, jso
     if let Some(sp) = &sig_path {
         let doc = PackageSignature::from_json(&std::fs::read(sp)?)?;
         let config = Config::load(paths)?;
-        let mut last = Err("aucune clé de confiance configurée".to_string());
+        let mut last = Err(tr!("aucune clé de confiance configurée", "no trusted key configured"));
         for r in &config.repositories {
             if let Ok(t) = r.trust(paths) {
                 match doc.verify(
@@ -818,7 +1245,13 @@ fn verify(paths: &Paths, file: &std::path::Path, signature: Option<PathBuf>, jso
                     &[KeyPurpose::PackageSigning],
                 ) {
                     Ok(v) => {
-                        last = Ok(format!("valide (clé {} — {}, dépôt {})", v.key_id, v.owner, r.name));
+                        last = Ok(tr!(
+                            "valide (clé {} — {}, dépôt {})",
+                            "valid (key {} — {}, repository {})",
+                            v.key_id,
+                            v.owner,
+                            r.name
+                        ));
                         break;
                     }
                     Err(e) => last = Err(e.to_string()),
@@ -838,25 +1271,41 @@ fn verify(paths: &Paths, file: &std::path::Path, signature: Option<PathBuf>, jso
                 "targets": m.targets.iter().map(|t| &t.name).collect::<Vec<_>>(),
                 "uses_scripts": m.targets.iter().any(|t| t.uses_scripts()),
                 "warnings": insp.warnings.iter().map(|w| w.to_string()).collect::<Vec<_>>(),
-                "signature": sig_result.as_ref().map(|r| match r { Ok(s) => s.clone(), Err(e) => format!("INVALIDE : {e}") }),
+                "signature": sig_result.as_ref().map(|r| match r { Ok(s) => s.clone(), Err(e) => tr!("INVALIDE : {e}", "INVALID: {e}") }),
             }))?
         );
     } else {
-        println!("Paquet       : {}", file.display());
+        println!("{}", tr!("Paquet       : {}", "Package      : {}", file.display()));
         println!("Application  : {} {} ({})", m.name, m.version, m.id);
         println!(
-            "Structure    : conforme au format .aupak v{} ({} entrées)",
-            archive::AUPAK_FORMAT_VERSION,
-            insp.entries.len()
+            "{}",
+            tr!(
+                "Structure    : conforme au format .aupak v{} ({} entrées)",
+                "Structure    : conforms to the .aupak v{} format ({} entries)",
+                archive::AUPAK_FORMAT_VERSION,
+                insp.entries.len()
+            )
         );
-        println!("Manifeste    : valide (schéma et règles sémantiques)");
+        println!(
+            "{}",
+            tr!(
+                "Manifeste    : valide (schéma et règles sémantiques)",
+                "Manifest     : valid (schema and semantic rules)"
+            )
+        );
         println!("SHA-256      : {}", insp.archive_sha256);
         println!(
-            "Taille       : {} octets ({} décompressés)",
-            insp.archive_size, insp.total_unpacked
+            "{}",
+            tr!(
+                "Taille       : {} octets ({} décompressés)",
+                "Size         : {} bytes ({} unpacked)",
+                insp.archive_size,
+                insp.total_unpacked
+            )
         );
         println!(
-            "Variantes    : {}",
+            "{}{}",
+            tr!("Variantes    : ", "Targets      : "),
             m.targets
                 .iter()
                 .map(|t| format!("{} [{} {}]", t.name, t.platform, t.mode))
@@ -864,19 +1313,31 @@ fn verify(paths: &Paths, file: &std::path::Path, signature: Option<PathBuf>, jso
                 .join(", ")
         );
         if m.targets.iter().any(|t| t.uses_scripts()) {
-            println!("Scripts      : présents (exécution soumise à autorisation explicite)");
+            println!(
+                "{}",
+                tr!(
+                    "Scripts      : présents (exécution soumise à autorisation explicite)",
+                    "Scripts      : present (running them requires explicit permission)"
+                )
+            );
         }
         for w in &insp.warnings {
             println!("{w}");
         }
         match &sig_result {
-            None => println!("Signature    : non vérifiée (aucun document .sig fourni)"),
+            None => println!(
+                "{}",
+                tr!(
+                    "Signature    : non vérifiée (aucun document .sig fourni)",
+                    "Signature    : not verified (no .sig document provided)"
+                )
+            ),
             Some(Ok(s)) => println!("Signature    : {s}"),
-            Some(Err(e)) => println!("Signature    : INVALIDE — {e}"),
+            Some(Err(e)) => println!("{}", tr!("Signature    : INVALIDE — {e}", "Signature    : INVALID — {e}")),
         }
     }
     if let Some(Err(e)) = sig_result {
-        bail!("signature invalide : {e}");
+        bail!(tr!("signature invalide : {e}", "invalid signature: {e}"));
     }
     Ok(())
 }
@@ -890,14 +1351,26 @@ async fn repo_cmd(paths: &Paths, cmd: RepoCmd, json: bool) -> Result<()> {
                 return Ok(());
             }
             for r in &config.repositories {
-                let kind = if r.official { "officiel" } else { "EXTERNE" };
+                let kind = if r.official {
+                    tr!("officiel", "official")
+                } else {
+                    tr!("EXTERNE", "EXTERNAL")
+                };
                 println!(
                     "{:<12} {:<9} {:<8} {}{}",
                     r.name,
                     kind,
-                    if r.enabled { "actif" } else { "inactif" },
+                    if r.enabled {
+                        tr!("actif", "enabled")
+                    } else {
+                        tr!("inactif", "disabled")
+                    },
                     r.url,
-                    if r.allow_scripts { " (scripts autorisés)" } else { "" }
+                    if r.allow_scripts {
+                        tr!(" (scripts autorisés)", " (scripts allowed)")
+                    } else {
+                        String::new()
+                    }
                 );
             }
         }
@@ -923,20 +1396,29 @@ async fn repo_cmd(paths: &Paths, cmd: RepoCmd, json: bool) -> Result<()> {
                     .to_lowercase(),
             };
             if !auxipak_core::ids::is_valid_repo_name(&name) {
-                bail!("nom de dépôt invalide : {name} (utilisez --name)");
+                bail!(tr!(
+                    "nom de dépôt invalide : {name} (utilisez --name)",
+                    "invalid repository name: {name} (use --name)"
+                ));
             }
             if config.repo(&name).is_some() {
-                bail!("le dépôt « {name} » existe déjà");
+                bail!(tr!("le dépôt « {name} » existe déjà", "repository \"{name}\" already exists"));
             }
             let trust_dir = paths.config_dir.join("trust").join(&name);
             std::fs::create_dir_all(&trust_dir)?;
             let (root_bytes, keys_bytes) = match (root, keys, trust_on_first_use) {
                 (Some(r), Some(k), _) => (
-                    std::fs::read(&r).context("lecture de --root")?,
-                    std::fs::read(&k).context("lecture de --keys")?,
+                    std::fs::read(&r).context(tr!("lecture de --root", "reading --root"))?,
+                    std::fs::read(&k).context(tr!("lecture de --keys", "reading --keys"))?,
                 ),
                 (None, None, true) => {
-                    eprintln!("ATTENTION : confiance au premier usage — vérifiez les empreintes ci-dessous auprès de l'éditeur du dépôt");
+                    eprintln!(
+                        "{}",
+                        tr!(
+                            "ATTENTION : confiance au premier usage — vérifiez les empreintes ci-dessous auprès de l'éditeur du dépôt",
+                            "WARNING: trust on first use — check the fingerprints below with the repository publisher"
+                        )
+                    );
                     let client = reqwest::Client::builder()
                         .redirect(reqwest::redirect::Policy::none())
                         .build()?;
@@ -948,7 +1430,9 @@ async fn repo_cmd(paths: &Paths, cmd: RepoCmd, json: bool) -> Result<()> {
                         }
                     };
                     if base.scheme() == "file" {
-                        let p = base.to_file_path().map_err(|_| anyhow::anyhow!("URL invalide"))?;
+                        let p = base
+                            .to_file_path()
+                            .map_err(|_| anyhow::anyhow!(tr!("URL invalide", "invalid URL")))?;
                         (
                             std::fs::read(p.join("metadata/1.root.json"))?,
                             std::fs::read(p.join("keys/package-keys.json"))?,
@@ -960,21 +1444,28 @@ async fn repo_cmd(paths: &Paths, cmd: RepoCmd, json: bool) -> Result<()> {
                         )
                     }
                 }
-                _ => bail!("fournissez --root et --keys (obtenus par un canal sûr), ou --trust-on-first-use"),
+                _ => bail!(tr!(
+                    "fournissez --root et --keys (obtenus par un canal sûr), ou --trust-on-first-use",
+                    "provide --root and --keys (obtained through a secure channel), or --trust-on-first-use"
+                )),
             };
             let summary = auxipak_core::tuf::summarize_root(&root_bytes)?;
             let keys: auxipak_core::signature::TrustedKeys =
-                serde_json::from_slice(&keys_bytes).context("package-keys.json invalide")?;
+                serde_json::from_slice(&keys_bytes).context(tr!("package-keys.json invalide", "invalid package-keys.json"))?;
             paths::atomic_write(&trust_dir.join("root.json"), &root_bytes)?;
             paths::atomic_write(&trust_dir.join("package-keys.json"), &keys_bytes)?;
             println!(
-                "Racine TUF version {} (expire {}), empreinte {}",
-                summary.version,
-                summary.expires,
-                auxipak_core::hash::sha256_hex(&root_bytes)
+                "{}",
+                tr!(
+                    "Racine TUF version {} (expire {}), empreinte {}",
+                    "TUF root version {} (expires {}), fingerprint {}",
+                    summary.version,
+                    summary.expires,
+                    auxipak_core::hash::sha256_hex(&root_bytes)
+                )
             );
             for k in &keys.keys {
-                println!("Clé de paquets {} — {}", k.key_id, k.owner);
+                println!("{}", tr!("Clé de paquets {} — {}", "Package key {} — {}", k.key_id, k.owner));
             }
             config.repositories.push(RepoConfig {
                 name: name.clone(),
@@ -991,18 +1482,30 @@ async fn repo_cmd(paths: &Paths, cmd: RepoCmd, json: bool) -> Result<()> {
                 priority: 10,
             });
             config.save(paths)?;
-            println!("Dépôt externe « {name} » ajouté. Exécutez « auxipak update ».");
+            println!(
+                "{}",
+                tr!(
+                    "Dépôt externe « {name} » ajouté. Exécutez « auxipak update ».",
+                    "External repository \"{name}\" added. Run \"auxipak update\"."
+                )
+            );
         }
         RepoCmd::Remove { name } => {
             let before = config.repositories.len();
             config.repositories.retain(|r| r.name != name);
             if config.repositories.len() == before {
-                bail!("dépôt inconnu : {name}");
+                bail!(tr!("dépôt inconnu : {name}", "unknown repository: {name}"));
             }
             config.save(paths)?;
             repo::drop_cache(paths, &name)?;
             let _ = std::fs::remove_dir_all(paths.config_dir.join("trust").join(&name));
-            println!("Dépôt « {name} » retiré (les applications installées restent dans le registre).");
+            println!(
+                "{}",
+                tr!(
+                    "Dépôt « {name} » retiré (les applications installées restent dans le registre).",
+                    "Repository \"{name}\" removed (installed applications stay in the registry)."
+                )
+            );
         }
     }
     Ok(())

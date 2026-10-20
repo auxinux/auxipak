@@ -14,6 +14,7 @@ use auxipak_core::archive::{self, Inspection, Limits};
 use auxipak_core::manifest::{Install, Manifest, Privileges, Target, MANIFEST_FILE};
 use auxipak_core::platform::SystemProfile;
 use auxipak_core::signature::{KeyPurpose, PackageSignature, VerifiedSignature};
+use auxipak_core::tr;
 use auxipak_core::version::VersionReq;
 use chrono::Utc;
 use std::collections::BTreeSet;
@@ -53,7 +54,7 @@ impl Env {
 
     pub fn print_warnings(&self) {
         for w in &self.warnings {
-            eprintln!("avertissement : {w}");
+            eprintln!("{}", tr!("avertissement : {w}", "warning: {w}"));
         }
     }
 }
@@ -84,13 +85,19 @@ pub async fn fetch_and_verify(env: &Env, c: &Candidate<'_>) -> Result<VerifiedPa
     let r = c.repo;
     let rel = c.release;
     if c.is_revoked() {
-        bail!("{} {} a été révoqué : installation refusée", rel.id, rel.version);
+        bail!(tr!(
+            "{} {} a été révoqué : installation refusée",
+            "{} {} has been revoked: installation refused",
+            rel.id,
+            rel.version
+        ));
     }
     if r.freshness(env.config.cache_ttl_seconds, &env.profile) != repo::Freshness::Fresh {
-        bail!(
+        bail!(tr!(
             "l'index du dépôt « {} » n'est pas à jour : exécutez « auxipak update »",
+            "the index of repository \"{}\" is out of date: run \"auxipak update\"",
             r.config.name
-        );
+        ));
     }
     let base = targets_url(r)?;
     let url = base.join(&rel.target)?;
@@ -113,7 +120,7 @@ pub async fn fetch_and_verify(env: &Env, c: &Candidate<'_>) -> Result<VerifiedPa
         &rel.file_name,
     )
     .await
-    .with_context(|| format!("téléchargement de {}", rel.file_name))?;
+    .with_context(|| tr!("téléchargement de {}", "downloading {}", rel.file_name))?;
 
     // Signature détachée.
     let trust = r.config.trust(&env.paths)?;
@@ -125,26 +132,43 @@ pub async fn fetch_and_verify(env: &Env, c: &Candidate<'_>) -> Result<VerifiedPa
             let doc = PackageSignature::from_json(&bytes)?;
             let v = doc
                 .verify(&rel.sha256, rel.size, &trust.package_keys, &[KeyPurpose::PackageSigning])
-                .map_err(|e| anyhow!("signature du paquet {} refusée : {e}", rel.file_name))?;
+                .map_err(|e| {
+                    anyhow!(tr!(
+                        "signature du paquet {} refusée : {e}",
+                        "package signature {} refused: {e}",
+                        rel.file_name
+                    ))
+                })?;
             if doc.payload.package.id != rel.id || doc.payload.package.version != rel.version {
-                bail!("la signature ne correspond pas à {} {}", rel.id, rel.version);
+                bail!(tr!(
+                    "la signature ne correspond pas à {} {}",
+                    "the signature does not match {} {}",
+                    rel.id,
+                    rel.version
+                ));
             }
             Some(v)
         }
-        Err(e) if signature_required => bail!("signature obligatoire introuvable pour {} : {e:#}", rel.file_name),
+        Err(e) if signature_required => bail!(tr!(
+            "signature obligatoire introuvable pour {} : {e:#}",
+            "required signature not found for {}: {e:#}",
+            rel.file_name
+        )),
         Err(_) => None,
     };
 
-    let inspection = archive::inspect(&dest, &Limits::default()).map_err(|e| anyhow!("paquet refusé : {e}"))?;
+    let inspection =
+        archive::inspect(&dest, &Limits::default()).map_err(|e| anyhow!(tr!("paquet refusé : {e}", "package refused: {e}")))?;
     let m = &inspection.manifest;
     if m.id != rel.id || m.version != rel.version {
-        bail!(
+        bail!(tr!(
             "le manifeste ({} {}) ne correspond pas à l'index ({} {})",
+            "the manifest ({} {}) does not match the index ({} {})",
             m.id,
             m.version,
             rel.id,
             rel.version
-        );
+        ));
     }
     Ok(VerifiedPackage {
         path: dest,
@@ -157,7 +181,9 @@ async fn fetch_small(url: &url::Url, policy: &RedirectPolicy) -> Result<Vec<u8>>
     let tmp = tempfile::tempdir()?;
     let p = tmp.path().join("sig");
     match url.scheme() {
-        "file" => Ok(std::fs::read(url.to_file_path().map_err(|_| anyhow!("URL invalide"))?)?),
+        "file" => Ok(std::fs::read(
+            url.to_file_path().map_err(|_| anyhow!(tr!("URL invalide", "invalid URL")))?,
+        )?),
         _ => {
             // Petite taille, sans empreinte connue : téléchargement direct limité.
             let client = reqwest::Client::builder()
@@ -165,7 +191,7 @@ async fn fetch_small(url: &url::Url, policy: &RedirectPolicy) -> Result<Vec<u8>>
                 .timeout(std::time::Duration::from_secs(60))
                 .build()?;
             if url.scheme() == "http" && !policy.allow_insecure_localhost {
-                bail!("HTTP refusé");
+                bail!(tr!("HTTP refusé", "HTTP refused"));
             }
             let resp = client.get(url.clone()).send().await?;
             if !resp.status().is_success() {
@@ -173,7 +199,7 @@ async fn fetch_small(url: &url::Url, policy: &RedirectPolicy) -> Result<Vec<u8>>
             }
             let b = resp.bytes().await?;
             if b.len() > 64 * 1024 {
-                bail!("document de signature trop volumineux");
+                bail!(tr!("document de signature trop volumineux", "signature document too large"));
             }
             std::fs::write(&p, &b)?;
             Ok(b.to_vec())
@@ -198,7 +224,11 @@ fn visit<'a>(
     is_dep: bool,
 ) -> Result<()> {
     if !visiting.insert(c.release.id.clone()) {
-        bail!("dépendance circulaire impliquant {}", c.release.id);
+        bail!(tr!(
+            "dépendance circulaire impliquant {}",
+            "circular dependency involving {}",
+            c.release.id
+        ));
     }
     for d in &c.release.dependencies {
         if out.iter().any(|(x, _)| x.release.id == d.id) {
@@ -214,8 +244,15 @@ fn visit<'a>(
             language: None,
             repo: None,
         };
-        let dc = catalog::resolve(&env.repos, &d.id, &sel, &env.config.package_language())
-            .with_context(|| format!("dépendance {} ({}) de {}", d.id, d.version, c.release.id))?;
+        let dc = catalog::resolve(&env.repos, &d.id, &sel, &env.config.package_language()).with_context(|| {
+            tr!(
+                "dépendance {} ({}) de {}",
+                "dependency {} ({}) of {}",
+                d.id,
+                d.version,
+                c.release.id
+            )
+        })?;
         visit(env, dc, registry, out, visiting, true)?;
     }
     visiting.remove(&c.release.id);
@@ -275,24 +312,32 @@ fn copy_tree(from: &Path, to: &Path) -> Result<()> {
 /// Manifeste et cible enregistrés d'une application installée.
 pub fn stored_target(paths: &Paths, app: &InstalledApp) -> Result<(Manifest, Target)> {
     let p = paths.app_state_dir(&app.id).join(MANIFEST_FILE);
-    let bytes = std::fs::read(&p).with_context(|| format!("manifeste enregistré introuvable : {}", p.display()))?;
+    let bytes = std::fs::read(&p).with_context(|| {
+        tr!(
+            "manifeste enregistré introuvable : {}",
+            "stored manifest not found: {}",
+            p.display()
+        )
+    })?;
     let (m, _) = Manifest::parse(&bytes)?;
-    let t = m
-        .targets
-        .iter()
-        .find(|t| t.name == app.target)
-        .cloned()
-        .ok_or_else(|| anyhow!("variante {} absente du manifeste enregistré", app.target))?;
+    let t = m.targets.iter().find(|t| t.name == app.target).cloned().ok_or_else(|| {
+        anyhow!(tr!(
+            "variante {} absente du manifeste enregistré",
+            "target {} missing from the stored manifest",
+            app.target
+        ))
+    })?;
     Ok((m, t))
 }
 
 fn require_privileges(target: &Target) -> Result<()> {
     if target.effective_privileges() == Privileges::Admin && !crate::privileges::is_elevated() {
-        bail!(
+        bail!(tr!(
             "cette installation exige les droits d'administration ({}) : {}",
+            "this installation requires administrator rights ({}): {}",
             target.install.method_name(),
             crate::privileges::elevation_hint()
-        );
+        ));
     }
     Ok(())
 }
@@ -303,9 +348,11 @@ fn scripts_allowed(env: &Env, c: &Candidate, opts: &InstallOpts, signed: bool, t
     }
     let allowed = (opts.allow_scripts || c.repo.config.allow_scripts) && (signed || !c.repo.config.require_signatures);
     if !allowed {
-        bail!(
+        bail!(tr!(
             "{} {} contient des scripts personnalisés ({}). Leur exécution exige une autorisation explicite : \
              examinez le paquet (« auxipak info {} ») puis relancez avec --allow-scripts",
+            "{} {} contains custom scripts ({}). Running them requires explicit permission: \
+             review the package (\"auxipak info {}\") then run again with --allow-scripts",
             c.release.id,
             c.release.version,
             target
@@ -319,7 +366,7 @@ fn scripts_allowed(env: &Env, c: &Candidate, opts: &InstallOpts, signed: bool, t
                 .collect::<Vec<_>>()
                 .join(", "),
             c.release.id
-        );
+        ));
     }
     let _ = env;
     Ok(true)
@@ -337,7 +384,12 @@ pub async fn install_one(
     let existing = registry.get(&rel.id).cloned();
     if let Some(e) = &existing {
         if e.version == rel.version && !opts.reinstall && e.state != InstallState::Partial {
-            return Ok(format!("{} {} est déjà installé", rel.id, rel.version));
+            return Ok(tr!(
+                "{} {} est déjà installé",
+                "{} {} is already installed",
+                rel.id,
+                rel.version
+            ));
         }
     }
     let vp = fetch_and_verify(env, c).await?;
@@ -347,7 +399,13 @@ pub async fn install_one(
     let scripts_ok = scripts_allowed(env, c, opts, vp.signature.is_some(), &target)?;
     let simulated = crate::executor::is_simulation();
     if simulated {
-        eprintln!("ATTENTION : MODE SIMULATION (AUXIPAK_TEST_TOOLS_DIR) — aucune installation réelle ne valide ce résultat");
+        eprintln!(
+            "{}",
+            tr!(
+                "ATTENTION : MODE SIMULATION (AUXIPAK_TEST_TOOLS_DIR) — aucune installation réelle ne valide ce résultat",
+                "WARNING: SIMULATION MODE (AUXIPAK_TEST_TOOLS_DIR) — no real installation backs this result"
+            )
+        );
     }
 
     // Réconciliation : une application installée hors AuxiPak n'est jamais revendiquée implicitement.
@@ -366,11 +424,13 @@ pub async fn install_one(
         };
         if methods::detect(&probe).await.unwrap_or(None) == Some(true) {
             if !opts.adopt {
-                bail!(
+                bail!(tr!(
                     "{} semble déjà installé par un autre moyen (gestionnaire natif ou installation manuelle). \
                      AuxiPak ne le revendique pas automatiquement : utilisez --adopt pour le faire suivre sans réinstaller",
+                    "{} already seems to be installed by other means (native package manager or manual installation). \
+                     AuxiPak does not claim it automatically: use --adopt to track it without reinstalling",
                     rel.id
-                );
+                ));
             }
             let tmp = tempfile::tempdir()?;
             archive::extract(&vp.path, tmp.path(), &Limits::default())?;
@@ -391,9 +451,11 @@ pub async fn install_one(
             );
             registry.apps.insert(rel.id.clone(), rec);
             registry.save(&env.paths)?;
-            return Ok(format!(
+            return Ok(tr!(
                 "{} {} pris en charge (installation existante adoptée)",
-                rel.id, rel.version
+                "{} {} is now tracked (existing installation adopted)",
+                rel.id,
+                rel.version
             ));
         }
     }
@@ -511,7 +573,8 @@ async fn install_txn(
     let extracted = work.join("pkg");
     std::fs::create_dir_all(&extracted)?;
     download::ensure_space(&work, vp.inspection.total_unpacked)?;
-    archive::extract(&vp.path, &extracted, &Limits::default()).map_err(|e| anyhow!("extraction : {e}"))?;
+    archive::extract(&vp.path, &extracted, &Limits::default())
+        .map_err(|e| anyhow!(tr!("extraction : {e}", "extraction: {e}")))?;
     txn.set_phase(Phase::Extracted)?;
     crash_point("after_extract");
     let staged = stage_app_state(&env.paths, &rel.id, &extracted)?;
@@ -523,7 +586,14 @@ async fn install_txn(
             // Le système est modifié dès cette étape : la transaction le reflète.
             txn.pending_record = Some(prev.clone());
             txn.set_phase(Phase::Installing)?;
-            eprintln!("  désinstallation de la version {} avant mise à niveau", prev.version);
+            eprintln!(
+                "{}",
+                tr!(
+                    "  désinstallation de la version {} avant mise à niveau",
+                    "  removing version {} before upgrading",
+                    prev.version
+                )
+            );
             remove_installed(env, prev, scripts_ok).await?;
         }
     }
@@ -554,12 +624,23 @@ async fn install_txn(
         scripts_allowed: scripts_ok,
         owned_files: &owned,
     };
-    eprintln!("  installation ({} / {})", target.mode, target.install.method_name());
+    eprintln!(
+        "{}",
+        tr!(
+            "  installation ({} / {})",
+            "  installing ({} / {})",
+            target.mode,
+            target.install.method_name()
+        )
+    );
     let outcome = methods::install(&ctx, txn).await?;
     crash_point("after_install");
     txn.set_phase(Phase::Installed)?;
     if methods::detect(&ctx).await? == Some(false) {
-        bail!("l'installateur s'est terminé sans erreur mais l'application n'est pas détectée");
+        bail!(tr!(
+            "l'installateur s'est terminé sans erreur mais l'application n'est pas détectée",
+            "the installer finished without error but the application is not detected"
+        ));
     }
     // Fichiers de l'ancienne version qui ne font plus partie de la nouvelle.
     if !owned.is_empty() {
@@ -583,13 +664,19 @@ async fn install_txn(
     registry.apps.insert(rel.id.clone(), rec);
     registry.save(&env.paths)?;
     let mut msg = match existing {
-        Some(p) if p.version != rel.version => format!("{} mis à niveau : {} → {}", rel.id, p.version, rel.version),
-        _ => format!("{} {} installé", rel.id, rel.version),
+        Some(p) if p.version != rel.version => tr!(
+            "{} mis à niveau : {} → {}",
+            "{} upgraded: {} → {}",
+            rel.id,
+            p.version,
+            rel.version
+        ),
+        _ => tr!("{} {} installé", "{} {} installed", rel.id, rel.version),
     };
     if outcome.reboot || target.reboot == auxipak_core::manifest::Reboot::Required {
-        msg.push_str(" (redémarrage requis)");
+        msg.push_str(&tr!(" (redémarrage requis)", " (restart required)"));
     } else if target.reboot == auxipak_core::manifest::Reboot::Recommended {
-        msg.push_str(" (redémarrage recommandé)");
+        msg.push_str(&tr!(" (redémarrage recommandé)", " (restart recommended)"));
     }
     Ok(msg)
 }
@@ -600,14 +687,20 @@ async fn rollback(env: &Env, txn: Transaction, registry: &mut Registry, existing
     let _ = std::fs::remove_dir_all(&staged);
     if txn.phase < Phase::Installing {
         let _ = txn.finish();
-        return "aucune modification du système n'a été effectuée".into();
+        return tr!(
+            "aucune modification du système n'a été effectuée",
+            "no change was made to the system"
+        );
     }
     // Fichiers copiés par AuxiPak : retour arrière précis (sauf ceux de la version précédente).
     let owned: Vec<PathBuf> = existing.map(|e| e.files.clone()).unwrap_or_default();
     let ours: Vec<PathBuf> = txn.files_written.iter().filter(|f| !owned.contains(f)).cloned().collect();
     if !ours.is_empty() && methods::remove_files(&ours).is_ok() && existing.is_none() && is_files_only(&txn) {
         let _ = txn.finish();
-        return "les fichiers partiellement installés ont été supprimés".into();
+        return tr!(
+            "les fichiers partiellement installés ont été supprimés",
+            "the partially installed files have been removed"
+        );
     }
     // L'installateur natif a pu modifier le système : état « partiel » enregistré.
     if let Some(mut rec) = txn.pending_record.clone() {
@@ -626,7 +719,10 @@ async fn rollback(env: &Env, txn: Transaction, registry: &mut Registry, existing
         let _ = registry.save(&env.paths);
     }
     let _ = txn.finish();
-    "installation partielle enregistrée : utilisez « auxipak remove » pour nettoyer ou relancez l'installation".into()
+    tr!(
+        "installation partielle enregistrée : utilisez « auxipak remove » pour nettoyer ou relancez l'installation",
+        "partial installation recorded: use \"auxipak remove\" to clean up or run the installation again"
+    )
 }
 
 fn is_files_only(txn: &Transaction) -> bool {
@@ -637,17 +733,22 @@ fn is_files_only(txn: &Transaction) -> bool {
 pub async fn remove_installed(env: &Env, app: &InstalledApp, scripts_allowed: bool) -> Result<bool> {
     if app.state == InstallState::Adopted {
         eprintln!(
-            "  {} avait été adopté : désinstallation via le gestionnaire d'origine",
-            app.id
+            "{}",
+            tr!(
+                "  {} avait été adopté : désinstallation via le gestionnaire d'origine",
+                "  {} was adopted: removing it through its original package manager",
+                app.id
+            )
         );
     }
     let (_, target) = stored_target(&env.paths, app)?;
     require_privileges(&target)?;
     if target.uses_scripts() && !scripts_allowed {
-        bail!(
+        bail!(tr!(
             "la désinstallation de {} exécute des scripts : relancez avec --allow-scripts",
+            "removing {} runs scripts: run again with --allow-scripts",
             app.id
-        );
+        ));
     }
     let root = env.paths.app_state_dir(&app.id);
     let work = tempfile::Builder::new().prefix("remove-").tempdir_in({
@@ -678,16 +779,19 @@ pub async fn remove(
     allow_scripts: bool,
     registry: &mut Registry,
 ) -> Result<Vec<String>> {
-    let app = registry
-        .get(id)
-        .cloned()
-        .ok_or_else(|| anyhow!("{id} n'est pas installé par AuxiPak (voir « auxipak list »)"))?;
+    let app = registry.get(id).cloned().ok_or_else(|| {
+        anyhow!(tr!(
+            "{id} n'est pas installé par AuxiPak (voir « auxipak list »)",
+            "{id} is not installed by AuxiPak (see \"auxipak list\")"
+        ))
+    })?;
     let dependents: Vec<String> = registry.dependents(id).iter().map(|a| a.id.clone()).collect();
     if !dependents.is_empty() && !force {
-        bail!(
+        bail!(tr!(
             "{id} est requis par : {} (utilisez --force pour passer outre)",
+            "{id} is required by: {} (use --force to override)",
             dependents.join(", ")
-        );
+        ));
     }
     let mut msgs = Vec::new();
     let mut txn = Transaction::begin(&env.paths, "remove", id, &app.version, None)?;
@@ -700,10 +804,15 @@ pub async fn remove(
     let _ = std::fs::remove_dir_all(env.paths.data_dir.join(id));
     let _ = std::fs::remove_dir(env.paths.apps_dir.join(id));
     txn.finish()?;
-    msgs.push(format!(
+    msgs.push(tr!(
         "{id} {} désinstallé{}",
+        "{id} {} removed{}",
         app.version,
-        if reboot { " (redémarrage requis)" } else { "" }
+        if reboot {
+            tr!(" (redémarrage requis)", " (restart required)")
+        } else {
+            String::new()
+        }
     ));
     // Dépendances devenues orphelines.
     let orphans: Vec<String> = registry.orphans().iter().map(|a| a.id.clone()).collect();
@@ -712,13 +821,17 @@ pub async fn remove(
             let sub = Box::pin(remove(env, &o, false, true, allow_scripts, registry)).await?;
             msgs.extend(sub);
         } else {
-            msgs.push(format!(
-                "la dépendance {o} n'est plus utilisée (« auxipak remove {o} » ou --autoremove)"
+            msgs.push(tr!(
+                "la dépendance {o} n'est plus utilisée (« auxipak remove {o} » ou --autoremove)",
+                "the dependency {o} is no longer used (\"auxipak remove {o}\" or --autoremove)"
             ));
         }
     }
     if app.method == "deb" || app.manager == "apt" {
-        msgs.push("les dépendances natives éventuelles restent gérées par APT (« apt autoremove » pour les nettoyer)".into());
+        msgs.push(tr!(
+            "les dépendances natives éventuelles restent gérées par APT (« apt autoremove » pour les nettoyer)",
+            "any native dependencies remain managed by APT (\"apt autoremove\" to clean them up)"
+        ));
     }
     Ok(msgs)
 }
@@ -729,7 +842,7 @@ pub async fn upgrade(env: &Env, only: Option<&str>, opts: &InstallOpts, registry
     let ids: Vec<String> = match only {
         Some(id) => {
             if registry.get(id).is_none() {
-                bail!("{id} n'est pas installé par AuxiPak");
+                bail!(tr!("{id} n'est pas installé par AuxiPak", "{id} is not installed by AuxiPak"));
             }
             vec![id.to_string()]
         }
@@ -739,7 +852,10 @@ pub async fn upgrade(env: &Env, only: Option<&str>, opts: &InstallOpts, registry
     for id in ids {
         let app = registry.get(&id).cloned().unwrap();
         if app.state == InstallState::Adopted {
-            msgs.push(format!("{id} : adopté, mise à niveau laissée au gestionnaire d'origine"));
+            msgs.push(tr!(
+                "{id} : adopté, mise à niveau laissée au gestionnaire d'origine",
+                "{id}: adopted, upgrades are left to its original package manager"
+            ));
             continue;
         }
         let lang = app
@@ -748,12 +864,12 @@ pub async fn upgrade(env: &Env, only: Option<&str>, opts: &InstallOpts, registry
             .cloned()
             .unwrap_or_else(|| env.config.package_language());
         match catalog::best_update(&env.repos, &id, &app.repo, &app.version, &lang) {
-            None => msgs.push(format!("{id} {} est à jour", app.version)),
+            None => msgs.push(tr!("{id} {} est à jour", "{id} {} is up to date", app.version)),
             Some(c) => {
                 let auto = app.auto_installed;
                 match install_one(env, &c, opts, auto, registry).await {
                     Ok(m) => msgs.push(m),
-                    Err(e) => errors.push(format!("{id} : {e:#}")),
+                    Err(e) => errors.push(tr!("{id} : {e:#}", "{id}: {e:#}")),
                 }
             }
         }
@@ -771,7 +887,10 @@ pub async fn install(env: &Env, spec: &str, opts: &InstallOpts, registry: &mut R
     let mut msgs = Vec::new();
     for (c, is_dep) in steps {
         if is_dep {
-            eprintln!("dépendance : {} {}", c.release.id, c.release.version);
+            eprintln!(
+                "{}",
+                tr!("dépendance : {} {}", "dependency: {} {}", c.release.id, c.release.version)
+            );
         } else {
             eprintln!(
                 "{} {} ({}, {})",
@@ -802,7 +921,10 @@ pub async fn repair(env: &Env, registry: &mut Registry) -> Result<Vec<String>> {
         let staged = env.paths.state_dir.join("apps").join(format!(".{}.new", txn.app_id));
         if txn.phase < Phase::Installing {
             let _ = std::fs::remove_dir_all(&staged);
-            msgs.push(format!("{label} : interrompu avant toute modification du système, nettoyé"));
+            msgs.push(tr!(
+                "{label} : interrompu avant toute modification du système, nettoyé",
+                "{label}: interrupted before any change to the system, cleaned up"
+            ));
             txn.finish()?;
             continue;
         }
@@ -817,10 +939,14 @@ pub async fn repair(env: &Env, registry: &mut Registry) -> Result<Vec<String>> {
                     registry.apps.remove(&app.id);
                     registry.save(&env.paths)?;
                     let _ = std::fs::remove_dir_all(env.paths.app_state_dir(&app.id));
-                    msgs.push(format!("{label} : la désinstallation avait abouti, registre mis à jour"));
+                    msgs.push(tr!(
+                        "{label} : la désinstallation avait abouti, registre mis à jour",
+                        "{label}: the removal had completed, registry updated"
+                    ));
                 } else {
-                    msgs.push(format!(
+                    msgs.push(tr!(
                         "{label} : application toujours présente, relancez « auxipak remove {} »",
+                        "{label}: application still present, run \"auxipak remove {}\" again",
                         app.id
                     ));
                 }
@@ -829,7 +955,10 @@ pub async fn repair(env: &Env, registry: &mut Registry) -> Result<Vec<String>> {
             continue;
         }
         let Some(mut rec) = txn.pending_record.clone() else {
-            msgs.push(format!("{label} : journal incomplet, nettoyé"));
+            msgs.push(tr!(
+                "{label} : journal incomplet, nettoyé",
+                "{label}: incomplete journal, cleaned up"
+            ));
             txn.finish()?;
             continue;
         };
@@ -855,7 +984,10 @@ pub async fn repair(env: &Env, registry: &mut Registry) -> Result<Vec<String>> {
                 rec.files = txn.files_written.clone();
                 registry.apps.insert(rec.id.clone(), rec);
                 registry.save(&env.paths)?;
-                msgs.push(format!("{label} : installation achevée, enregistrée comme récupérée"));
+                msgs.push(tr!(
+                    "{label} : installation achevée, enregistrée comme récupérée",
+                    "{label}: installation completed, recorded as recovered"
+                ));
             }
             _ => {
                 let prev_files: Vec<PathBuf> = registry.get(&txn.app_id).map(|a| a.files.clone()).unwrap_or_default();
@@ -868,15 +1000,19 @@ pub async fn repair(env: &Env, registry: &mut Registry) -> Result<Vec<String>> {
                 methods::remove_files(&ours)?;
                 let _ = std::fs::remove_dir_all(&staged);
                 if rec.method == "files" || present == Some(false) {
-                    msgs.push(format!("{label} : installation incomplète annulée, fichiers nettoyés"));
+                    msgs.push(tr!(
+                        "{label} : installation incomplète annulée, fichiers nettoyés",
+                        "{label}: incomplete installation rolled back, files cleaned up"
+                    ));
                 } else {
                     rec.state = InstallState::Partial;
                     if registry.get(&rec.id).is_none() {
                         registry.apps.insert(rec.id.clone(), rec);
                         registry.save(&env.paths)?;
                     }
-                    msgs.push(format!(
-                        "{label} : état indéterminé, enregistré comme partiel (« auxipak remove » pour nettoyer)"
+                    msgs.push(tr!(
+                        "{label} : état indéterminé, enregistré comme partiel (« auxipak remove » pour nettoyer)",
+                        "{label}: unknown state, recorded as partial (\"auxipak remove\" to clean up)"
                     ));
                 }
             }
@@ -884,7 +1020,7 @@ pub async fn repair(env: &Env, registry: &mut Registry) -> Result<Vec<String>> {
         txn.finish()?;
     }
     if msgs.is_empty() {
-        msgs.push("aucune opération interrompue".into());
+        msgs.push(tr!("aucune opération interrompue", "no interrupted operation"));
     }
     Ok(msgs)
 }
@@ -937,7 +1073,13 @@ pub fn selector(version: Option<&str>, lang: Option<&str>, repo: Option<&str>) -
 fn crash_point(name: &str) {
     #[cfg(debug_assertions)]
     if std::env::var("AUXIPAK_TEST_CRASH_AT").as_deref() == Ok(name) {
-        eprintln!("[test] interruption simulée au point « {name} »");
+        eprintln!(
+            "{}",
+            tr!(
+                "[test] interruption simulée au point « {name} »",
+                "[test] simulated crash at \"{name}\""
+            )
+        );
         std::process::abort();
     }
     #[cfg(not(debug_assertions))]

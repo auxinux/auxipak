@@ -150,7 +150,9 @@ fn writable(dir: &Path) -> bool {
 /// Remplace `dst` par `src`. Sous Windows, le binaire en cours d'exécution
 /// est renommé (`.old`, supprimé au prochain lancement).
 fn replace(src: &Path, dst: &Path) -> Result<()> {
-    let dir = dst.parent().context("binaire sans répertoire")?;
+    let dir = dst
+        .parent()
+        .context(tr!("binaire sans répertoire", "binary has no parent directory"))?;
     let tmp = dir.join(format!(".{}.new", dst.file_name().unwrap().to_string_lossy()));
     std::fs::copy(src, &tmp)?;
     #[cfg(unix)]
@@ -185,11 +187,14 @@ pub fn cleanup_old() {
 /// Installe la version `a` à la place des binaires actuels.
 pub async fn apply(paths: &Paths, a: &Available, allow_insecure_localhost: bool) -> Result<Vec<PathBuf>> {
     let exe = std::env::current_exe()?.canonicalize()?;
-    let dir = exe.parent().context("binaire sans répertoire")?.to_path_buf();
+    let dir = exe
+        .parent()
+        .context(tr!("binaire sans répertoire", "binary has no parent directory"))?
+        .to_path_buf();
     if !writable(&dir) {
         bail!(tr!(
             "{} n'est pas modifiable par cet utilisateur : relancez « sudo auxipak upgrade » (ou depuis une console administrateur sous Windows)",
-            "{} is not writable by this user: run « sudo auxipak upgrade » (or from an administrator console on Windows)",
+            "{} is not writable by this user: run \"sudo auxipak upgrade\" (or use an administrator console on Windows)",
             dir.display()
         ));
     }

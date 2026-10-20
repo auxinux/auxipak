@@ -11,6 +11,7 @@
 
 use crate::paths::{atomic_write, Paths};
 use anyhow::{bail, Context, Result};
+use auxipak_core::tr;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -107,13 +108,22 @@ impl Registry {
                 _ => Ok(Registry::default()),
             },
             Err(e) => {
-                tracing::error!(error = %e, "registre illisible, utilisation de la sauvegarde");
+                tracing::error!(error = %e, "{}", tr!("registre illisible, utilisation de la sauvegarde", "unreadable registry, using the backup"));
                 match read_registry(&bak)? {
                     Some(r) => {
-                        eprintln!("avertissement : registre principal corrompu, restauration depuis la sauvegarde");
+                        eprintln!(
+                            "{}",
+                            tr!(
+                                "avertissement : registre principal corrompu, restauration depuis la sauvegarde",
+                                "warning: main registry corrupted, restoring from the backup"
+                            )
+                        );
                         Ok(r)
                     }
-                    None => bail!("registre corrompu et aucune sauvegarde : {e:#}"),
+                    None => bail!(tr!(
+                        "registre corrompu et aucune sauvegarde : {e:#}",
+                        "corrupted registry and no backup: {e:#}"
+                    )),
                 }
             }
         }
@@ -159,9 +169,13 @@ fn backup_path(main: &Path) -> PathBuf {
 fn read_registry(p: &Path) -> Result<Option<Registry>> {
     match std::fs::read(p) {
         Ok(b) => {
-            let r: Registry = serde_json::from_slice(&b).with_context(|| format!("{} invalide", p.display()))?;
+            let r: Registry = serde_json::from_slice(&b).with_context(|| tr!("{} invalide", "invalid {}", p.display()))?;
             if r.format != REGISTRY_FORMAT {
-                bail!("format de registre non pris en charge : {}", r.format);
+                bail!(tr!(
+                    "format de registre non pris en charge : {}",
+                    "unsupported registry format: {}",
+                    r.format
+                ));
             }
             Ok(Some(r))
         }
@@ -185,10 +199,11 @@ impl StateLock {
         match f.try_lock() {
             Ok(()) => Ok(StateLock { _file: f }),
             Err(std::fs::TryLockError::WouldBlock) => {
-                bail!(
+                bail!(tr!(
                     "une autre instance d'auxipak est en cours d'exécution (verrou {})",
+                    "another auxipak instance is running (lock {})",
                     paths.lock_file().display()
-                )
+                ))
             }
             Err(std::fs::TryLockError::Error(e)) => Err(e.into()),
         }

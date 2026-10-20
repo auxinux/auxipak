@@ -3,6 +3,7 @@
 use crate::repo::RepoData;
 use anyhow::{bail, Result};
 use auxipak_core::index::{AppMeta, Release, Status};
+use auxipak_core::tr;
 use auxipak_core::version::{self, VersionReq};
 use std::cmp::Ordering;
 
@@ -17,18 +18,40 @@ pub enum DisplayStatus {
 
 impl DisplayStatus {
     pub fn label(&self) -> &'static str {
+        let fr = auxipak_core::i18n::is_fr();
         match self {
-            DisplayStatus::Official(s) => s.label_fr(),
-            DisplayStatus::External => "Externe (non évalué par AuxiNux)",
+            DisplayStatus::Official(s) if fr => s.label_fr(),
+            DisplayStatus::Official(s) => s.label_en(),
+            DisplayStatus::External if fr => "Externe (non évalué par AuxiNux)",
+            DisplayStatus::External => "External (not reviewed by AuxiNux)",
         }
     }
 
     pub fn short(&self) -> &'static str {
+        let fr = auxipak_core::i18n::is_fr();
         match self {
-            DisplayStatus::Official(Status::Verified) => "vérifié",
+            DisplayStatus::Official(Status::Verified) => {
+                if fr {
+                    "vérifié"
+                } else {
+                    "verified"
+                }
+            }
             DisplayStatus::Official(Status::Compatible) => "compatible",
-            DisplayStatus::Official(Status::Unreviewed) => "non évalué",
-            DisplayStatus::External => "externe",
+            DisplayStatus::Official(Status::Unreviewed) => {
+                if fr {
+                    "non évalué"
+                } else {
+                    "unreviewed"
+                }
+            }
+            DisplayStatus::External => {
+                if fr {
+                    "externe"
+                } else {
+                    "external"
+                }
+            }
         }
     }
 }
@@ -179,21 +202,26 @@ pub fn resolve<'a>(repos: &'a [RepoData], spec: &str, sel: &Selector, default_la
     if pool.is_empty() {
         let revoked = revoked_versions(repos, &spec_l, sel);
         if !revoked.is_empty() {
-            bail!(
+            bail!(tr!(
                 "« {spec} » : version(s) {} révoquée(s) : installation refusée",
+                "\"{spec}\": version(s) {} revoked: installation refused",
                 revoked.join(", ")
-            );
+            ));
         }
-        bail!("aucune application « {spec} » n'est disponible pour ce système (essayez « auxipak search {spec} »)");
+        bail!(tr!(
+            "aucune application « {spec} » n'est disponible pour ce système (essayez « auxipak search {spec} »)",
+            "no application \"{spec}\" is available for this system (try \"auxipak search {spec}\")"
+        ));
     }
     let ids: std::collections::BTreeSet<_> = pool.iter().map(|c| (&c.repo.config.name, &c.release.id)).collect();
     if ids.len() > 1 && sel.repo.is_none() {
         let ids: std::collections::BTreeSet<_> = pool.iter().map(|c| &c.release.id).collect();
         if ids.len() > 1 {
-            bail!(
+            bail!(tr!(
                 "« {spec} » est ambigu : {}",
+                "\"{spec}\" is ambiguous: {}",
                 ids.into_iter().cloned().collect::<Vec<_>>().join(", ")
-            );
+            ));
         }
     }
     let matching: Vec<&Candidate> = pool
@@ -213,12 +241,16 @@ pub fn resolve<'a>(repos: &'a [RepoData], spec: &str, sel: &Selector, default_la
         revoked.sort();
         revoked.dedup();
         if !revoked.is_empty() {
-            bail!(
+            bail!(tr!(
                 "« {spec} » : version(s) {} révoquée(s) : installation refusée",
+                "\"{spec}\": version(s) {} revoked: installation refused",
                 revoked.join(", ")
-            );
+            ));
         }
-        bail!("« {spec} » : aucune version ne correspond aux critères demandés");
+        bail!(tr!(
+            "« {spec} » : aucune version ne correspond aux critères demandés",
+            "\"{spec}\": no version matches the requested criteria"
+        ));
     }
     ok.sort_by(|a, b| better(b, a, lang));
     Ok(*ok[0])

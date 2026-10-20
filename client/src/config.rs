@@ -2,7 +2,7 @@
 
 use crate::paths::Paths;
 use anyhow::{bail, Context, Result};
-use auxipak_core::{ids, netpolicy};
+use auxipak_core::{ids, netpolicy, tr};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -176,8 +176,9 @@ impl Config {
     pub fn load(paths: &Paths) -> Result<Config> {
         let file = paths.config_file();
         let cfg: Config = if file.exists() {
-            let text = std::fs::read_to_string(&file).with_context(|| format!("lecture de {}", file.display()))?;
-            toml::from_str(&text).with_context(|| format!("configuration invalide : {}", file.display()))?
+            let text = std::fs::read_to_string(&file).with_context(|| tr!("lecture de {}", "reading {}", file.display()))?;
+            toml::from_str(&text)
+                .with_context(|| tr!("configuration invalide : {}", "invalid configuration: {}", file.display()))?
         } else if let Some(sys) = paths
             .system_config_dir
             .as_ref()
@@ -185,7 +186,8 @@ impl Config {
             .filter(|f| f.exists())
         {
             let text = std::fs::read_to_string(&sys)?;
-            toml::from_str(&text).with_context(|| format!("configuration invalide : {}", sys.display()))?
+            toml::from_str(&text)
+                .with_context(|| tr!("configuration invalide : {}", "invalid configuration: {}", sys.display()))?
         } else {
             Config::default()
         };
@@ -202,23 +204,26 @@ impl Config {
 
     pub fn validate(&self) -> Result<()> {
         if self.cache_ttl_seconds == 0 || self.cache_ttl_seconds > 7 * 24 * 3600 {
-            bail!("cache_ttl_seconds invalide");
+            bail!(tr!("cache_ttl_seconds invalide", "invalid cache_ttl_seconds"));
         }
         let mut names = std::collections::BTreeSet::new();
         for r in &self.repositories {
             if !ids::is_valid_repo_name(&r.name) {
-                bail!("nom de dépôt invalide : {}", r.name);
+                bail!(tr!("nom de dépôt invalide : {}", "invalid repository name: {}", r.name));
             }
             if !names.insert(&r.name) {
-                bail!("dépôt dupliqué : {}", r.name);
+                bail!(tr!("dépôt dupliqué : {}", "duplicate repository: {}", r.name));
             }
             netpolicy::validate_repo_url(&r.url, r.allow_insecure_localhost)
-                .map_err(|e| anyhow::anyhow!("dépôt {} : {e}", r.name))?;
+                .map_err(|e| anyhow::anyhow!(tr!("dépôt {} : {e}", "repository {}: {e}", r.name)))?;
         }
         for (name, a) in [("auxi", &self.adapters.auxi), ("virtuaos", &self.adapters.virtuaos)] {
             for arg in a.install.iter().chain(&a.remove).chain(&a.query).chain(&a.install_local_deb) {
                 if !(arg.starts_with('{') && arg.ends_with('}')) && !ids::is_valid_installer_arg(arg) {
-                    bail!("adaptateur {name} : argument invalide {arg:?}");
+                    bail!(tr!(
+                        "adaptateur {name} : argument invalide {arg:?}",
+                        "{name} adapter: invalid argument {arg:?}"
+                    ));
                 }
             }
         }
@@ -271,28 +276,31 @@ impl RepoConfig {
             (Some(r), Some(k)) => Ok(TrustMaterial {
                 root_json: std::fs::read(&r)?,
                 package_keys: auxipak_core::signature::TrustedKeys::load(&k)
-                    .with_context(|| format!("clés de paquets invalides : {}", k.display()))?,
+                    .with_context(|| tr!("clés de paquets invalides : {}", "invalid package keys: {}", k.display()))?,
                 source: r.display().to_string(),
             }),
             _ if self.official && self.name == "official" => match (embedded::OFFICIAL_ROOT, embedded::OFFICIAL_PACKAGE_KEYS) {
                 (Some(r), Some(k)) => Ok(TrustMaterial {
                     root_json: r.to_vec(),
                     package_keys: serde_json::from_slice(k)?,
-                    source: "ancre embarquée dans le client".into(),
+                    source: tr!("ancre embarquée dans le client", "trust anchor built into the client"),
                 }),
-                _ => bail!(
+                _ => bail!(tr!(
                     "racine de confiance du dépôt « {} » introuvable ({}). Le dépôt officiel n'est pas encore \
                      initialisé dans ce client : voir docs/SIGNING.md",
+                    "trust root of repository \"{}\" not found ({}). The official repository is not yet \
+                     initialized in this client: see docs/SIGNING.md",
                     self.name,
                     self.root.display()
-                ),
+                )),
             },
-            _ => bail!(
+            _ => bail!(tr!(
                 "racine de confiance du dépôt « {} » introuvable ({} / {})",
+                "trust root of repository \"{}\" not found ({} / {})",
                 self.name,
                 self.root.display(),
                 self.package_keys.display()
-            ),
+            )),
         }
     }
 }
