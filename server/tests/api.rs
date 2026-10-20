@@ -936,3 +936,157 @@ async fn install_scripts_and_downloads() {
         );
     }
 }
+
+#[tokio::test]
+#[ignore = "requiert PostgreSQL (AUXIPAK_TEST_DATABASE_URL)"]
+async fn platform_filter_and_cleanup() {
+    let s = start().await;
+    let admin_pw = s.user("root", Role::Admin).await;
+    s.user("pub", Role::Publisher).await;
+    let rev_pw = s.user("rev", Role::Reviewer).await;
+    let admin = s.login("root", &admin_pw).await;
+    let rev = s.login("rev", &rev_pw).await;
+    let pub_token = s.token(&admin, "pub", "human", &["read", "submit"]).await;
+
+    let bad = s.submit(&pub_token, b"pas une archive".to_vec()).await;
+    let sub = s.submit(&pub_token, demo_aupak("1.0.0")).await;
+    let r = s
+        .http
+        .post(s.url(&format!("/api/v1/submissions/{}/approve", sub["id"].as_str().unwrap())))
+        .headers(s.sh(&rev))
+        .json(&json!({}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), StatusCode::OK, "{}", r.text().await.unwrap());
+
+    // Filtre par système (le modèle de projet vise Linux).
+    let get = |q: &'static str| {
+        let (http, url) = (s.http.clone(), s.url(&format!("/api/v1/apps{q}")));
+        async move { http.get(url).send().await.unwrap().json::<Value>().await.unwrap() }
+    };
+    let all = get("").await;
+    assert_eq!(all[0]["platforms"], json!(["linux"]));
+    assert_eq!(get("?platform=linux").await.as_array().unwrap().len(), 1);
+    assert_eq!(get("?platform=windows").await.as_array().unwrap().len(), 0);
+    let html = s
+        .http
+        .get(s.url("/?platform=macos"))
+        .send()
+        .await
+        .unwrap()
+        .text()
+        .await
+        .unwrap();
+    assert!(!html.contains("/apps/demo-app"));
+
+    // Révocation puis suppression des fichiers.
+    let rels: Value = s
+        .http
+        .get(s.url("/api/v1/admin/releases"))
+        .headers(s.sh(&rev))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let rid = rels[0]["id"].as_str().unwrap().to_string();
+    let r = s
+        .http
+        .post(s.url(&format!("/api/v1/admin/releases/{rid}/state")))
+        .headers(s.sh(&rev))
+        .json(&json!({"state": "revoked", "reason": "test"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), StatusCode::OK, "{}", r.text().await.unwrap());
+    let form = |sess: &Session| vec![("csrf", sess.csrf.clone())];
+    let post = |path: String, sess: &Session| {
+        let (http, url, cookie, f) = (s.http.clone(), s.url(&path), sess.cookie.clone(), form(sess));
+        async move {
+            let r = http.post(url).header(COOKIE, cookie).form(&f).send().await.unwrap();
+            r.headers()["location"].to_str().unwrap().to_string()
+        }
+    };
+    // Un publieur ne peut pas supprimer de version.
+    let pub_sess = s.login("pub", "Mot-de-passe-pub-2026").await;
+    assert!(!post(format!("/admin/releases/{rid}/purge"), &pub_sess)
+        .await
+        .contains("cleaned"));
+    assert!(post(format!("/admin/releases/{rid}/purge"), &rev)
+        .await
+        .ends_with("msg=cleaned%3A1"));
+    let dir = s.state.config.packages_dir().join("official/demo-app/1.0.0");
+    assert!(!dir.exists(), "fichiers supprimés");
+    let rels: Value = s
+        .http
+        .get(s.url("/api/v1/admin/releases"))
+        .headers(s.sh(&rev))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(rels.as_array().unwrap().len(), 0, "version masquée");
+    // Toujours refusée par les clients : présente dans revocations.json.
+    auxipak_server::publisher::regenerate(&s.state, "official", None)
+        .await
+        .unwrap();
+    let rev_json = s
+        .http
+        .get(s.url("/repos/official/targets/revocations.json"))
+        .send()
+        .await
+        .unwrap()
+        .text()
+        .await
+        .unwrap();
+    assert!(rev_json.contains("demo-app") && rev_json.contains("1.0.0"), "{rev_json}");
+    // Une version purgée ne change plus d'état.
+    let r = s
+        .http
+        .post(s.url(&format!("/api/v1/admin/releases/{rid}/state")))
+        .headers(s.sh(&rev))
+        .json(&json!({"state": "published"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), StatusCode::CONFLICT);
+
+    // Demandes terminées : l'invalide et la publiée sont supprimées.
+    assert!(post("/admin/submissions/cleanup".into(), &rev)
+        .await
+        .ends_with("msg=cleaned%3A2"));
+    let n: (i64,) = sqlx::query_as("SELECT count(*) FROM submissions")
+        .fetch_one(&s.state.db)
+        .await
+        .unwrap();
+    assert_eq!(n.0, 0);
+    assert!(
+        !auxipak_server::publisher::submission_file(&s.state, uuid::Uuid::parse_str(bad["id"].as_str().unwrap()).unwrap())
+            .exists()
+    );
+
+    // Jetons : un jeton actif ne se supprime pas ; révoqué, il disparaît.
+    let tid: (uuid::Uuid,) = sqlx::query_as("SELECT id FROM api_tokens")
+        .fetch_one(&s.state.db)
+        .await
+        .unwrap();
+    assert!(!post(format!("/admin/tokens/{}/delete", tid.0), &admin)
+        .await
+        .contains("cleaned"));
+    sqlx::query("UPDATE api_tokens SET revoked = true")
+        .execute(&s.state.db)
+        .await
+        .unwrap();
+    assert!(post("/admin/tokens/cleanup".into(), &admin)
+        .await
+        .ends_with("msg=cleaned%3A1"));
+    let n: (i64,) = sqlx::query_as("SELECT count(*) FROM api_tokens")
+        .fetch_one(&s.state.db)
+        .await
+        .unwrap();
+    assert_eq!(n.0, 0);
+}

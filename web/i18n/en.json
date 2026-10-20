@@ -147,5 +147,21 @@
   "yes": "yes",
   "no": "no",
   "filter": "Filter",
-  "all": "All"
+  "all": "All",
+  "platform": "Operating system",
+  "all_platforms": "All systems",
+  "platform_linux": "Linux",
+  "platform_macos": "macOS",
+  "platform_windows": "Windows",
+  "delete": "Delete",
+  "delete_files": "Delete files",
+  "expired": "expired",
+  "cleaned_msg": "{n} item(s) deleted.",
+  "cleanup_confirm": "Permanently delete these items?",
+  "cleanup_tokens": "Delete revoked or expired tokens",
+  "cleanup_releases": "Delete files of revoked releases",
+  "purge_confirm": "Delete the files of this or these revoked release(s)? Clients will keep refusing them.",
+  "purge_help": "Deleted releases disappear from this list but stay in the revocation list: clients keep refusing them.",
+  "cleanup_submissions": "Delete finished submissions",
+  "cleanup_submissions_help": "Invalid, rejected, failed or already published submissions (the published release keeps its own copy). Pending submissions are never deleted."
 }

@@ -11,11 +11,15 @@
   <tbody>
   {% for t in tokens %}
   <tr><td>{{ t.name }}{% if t.provider %}<div class="meta">{{ t.provider }}</div>{% endif %}</td><td>{{ t.username }}</td><td><span class="badge neutral">{{ t.kind }}</span></td>
-    <td>{{ t.scopes|join(', ') }}</td><td>{{ (t.expires_at or '')|date }}</td><td>{{ tr.revoked if t.revoked else tr.active }}</td>
-    <td>{% if not t.revoked %}<form method="post" action="/admin/tokens/{{ t.id }}/revoke"><input type="hidden" name="csrf" value="{{ user.csrf }}"><button class="danger small" type="submit">{{ tr.revoke_token }}</button></form>{% endif %}</td></tr>
+    <td>{{ t.scopes|join(', ') }}</td><td>{{ (t.expires_at or '')|date }}</td><td>{{ tr.revoked if t.revoked else (tr.expired if t.expired else tr.active) }}</td>
+    <td>{% if not t.revoked and not t.expired %}<form method="post" action="/admin/tokens/{{ t.id }}/revoke"><input type="hidden" name="csrf" value="{{ user.csrf }}"><button class="danger small" type="submit">{{ tr.revoke_token }}</button></form>
+      {% else %}<form method="post" action="/admin/tokens/{{ t.id }}/delete"><input type="hidden" name="csrf" value="{{ user.csrf }}"><button class="secondary small" type="submit">🗑 {{ tr.delete }}</button></form>{% endif %}</td></tr>
   {% else %}<tr><td colspan="7">—</td></tr>{% endfor %}
   </tbody>
 </table></div>
+{% if tokens|selectattr('revoked')|list or tokens|selectattr('expired')|list %}
+<form method="post" action="/admin/tokens/cleanup" data-confirm="{{ tr.cleanup_confirm }}"><input type="hidden" name="csrf" value="{{ user.csrf }}"><button class="secondary" type="submit">🧹 {{ tr.cleanup_tokens }}</button></form>
+{% endif %}
 <h2>{{ tr.create }}</h2>
 <form class="card stack" method="post" action="/admin/tokens">
   <input type="hidden" name="csrf" value="{{ user.csrf }}">

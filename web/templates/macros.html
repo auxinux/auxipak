@@ -4,6 +4,7 @@
 {% macro flash(msg, tr) -%}
 {% if msg %}
   {% if msg in ['ok', 'approved', 'rejected'] %}<div class="flash ok" role="status">{{ tr[msg ~ '_msg'] }}</div>
+  {% elif msg is startingwith('cleaned:') %}<div class="flash ok" role="status">{{ tr.cleaned_msg|replace('{n}', msg|replace('cleaned:', '')) }}</div>
   {% elif msg in ['invalid', 'throttled'] %}<div class="flash err" role="alert">{{ tr['login_' ~ msg] }}</div>
   {% else %}<div class="flash err" role="alert">{{ msg }}</div>{% endif %}
 {% endif %}

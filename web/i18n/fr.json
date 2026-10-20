@@ -147,5 +147,21 @@
   "yes": "oui",
   "no": "non",
   "filter": "Filtrer",
-  "all": "Tous"
+  "all": "Tous",
+  "platform": "Système",
+  "all_platforms": "Tous les systèmes",
+  "platform_linux": "Linux",
+  "platform_macos": "macOS",
+  "platform_windows": "Windows",
+  "delete": "Supprimer",
+  "delete_files": "Supprimer les fichiers",
+  "expired": "expiré",
+  "cleaned_msg": "{n} élément(s) supprimé(s).",
+  "cleanup_confirm": "Supprimer définitivement ces éléments ?",
+  "cleanup_tokens": "Supprimer les jetons révoqués ou expirés",
+  "cleanup_releases": "Supprimer les fichiers des versions révoquées",
+  "purge_confirm": "Supprimer les fichiers de cette ou ces versions révoquées ? Elles resteront refusées par les clients.",
+  "purge_help": "Les versions supprimées disparaissent de la liste mais restent dans la liste de révocation : les clients continuent de les refuser.",
+  "cleanup_submissions": "Supprimer les demandes terminées",
+  "cleanup_submissions_help": "Demandes invalides, rejetées, en échec ou déjà publiées (la version publiée garde sa propre copie). Les demandes en attente ne sont jamais supprimées."
 }

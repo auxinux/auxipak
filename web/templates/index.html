@@ -11,6 +11,12 @@
     <option value="{{ s }}" {% if status == s %}selected{% endif %}>{{ tr['status_' ~ s] }}</option>
     {% endfor %}
   </select>
+  <select name="platform" aria-label="{{ tr.platform }}">
+    <option value="">{{ tr.all_platforms }}</option>
+    {% for p in ['linux', 'macos', 'windows'] %}
+    <option value="{{ p }}" {% if platform == p %}selected{% endif %}>{{ tr['platform_' ~ p] }}</option>
+    {% endfor %}
+  </select>
   <button type="submit">{{ tr.search }}</button>
 </form>
 {% if apps %}
@@ -21,6 +27,7 @@
     <h3><a href="/apps/{{ a.id }}">{{ a.name }}</a></h3>
     <div class="row">{{ m.badge(a.status, tr) }}<span class="meta">{{ a.latest_version }} · {{ a.license }}</span></div>
     <p>{{ a.summary }}</p>
+    <div class="row platforms">{% for p in a.platforms %}<span class="badge neutral">{{ tr['platform_' ~ p] or p }}</span>{% endfor %}</div>
     <div class="meta">{{ a.publisher }}{% for r in a.repositories %}{% if r != 'official' %} · <span class="badge neutral">{{ r }}</span>{% endif %}{% endfor %}</div>
   </article>
   {% endfor %}

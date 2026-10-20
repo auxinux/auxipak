@@ -4,6 +4,7 @@
 pub mod api;
 pub mod audit;
 pub mod auth;
+pub mod cleanup;
 pub mod config;
 pub mod error;
 pub mod install;

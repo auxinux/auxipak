@@ -180,7 +180,8 @@ pub async fn update_user(
 
 pub async fn tokens(st: &AppState) -> ApiResult<Vec<TokenRow>> {
     Ok(sqlx::query_as(
-        "SELECT t.id, t.name, t.user_id, u.username, t.kind, t.provider, t.scopes, t.created_at, t.expires_at, t.last_used_at, t.revoked
+        "SELECT t.id, t.name, t.user_id, u.username, t.kind, t.provider, t.scopes, t.created_at, t.expires_at, t.last_used_at, t.revoked,
+                (t.expires_at IS NOT NULL AND t.expires_at < now()) AS expired
          FROM api_tokens t JOIN users u ON u.id = t.user_id ORDER BY t.created_at DESC",
     )
     .fetch_all(&st.db)
@@ -371,7 +372,7 @@ pub async fn releases(st: &AppState, repo: Option<&str>, app: Option<&str>) -> A
         "SELECT r.id, r.repository, r.app_id, r.version, r.file_name, r.size, r.sha256, r.signature_key_id, r.uses_scripts,
                 r.state, r.state_reason, r.published_at, u.username AS published_by
          FROM releases r LEFT JOIN users u ON u.id = r.published_by
-         WHERE ($1::text IS NULL OR r.repository = $1) AND ($2::text IS NULL OR r.app_id = $2)
+         WHERE r.state <> 'purged' AND ($1::text IS NULL OR r.repository = $1) AND ($2::text IS NULL OR r.app_id = $2)
          ORDER BY r.published_at DESC LIMIT 1000",
     )
     .bind(repo)

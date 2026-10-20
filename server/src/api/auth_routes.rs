@@ -161,6 +161,7 @@ pub struct TokenRow {
     pub expires_at: Option<DateTime<Utc>>,
     pub last_used_at: Option<DateTime<Utc>>,
     pub revoked: bool,
+    pub expired: bool,
 }
 
 /// Crée un jeton ; retourne (identifiant, jeton en clair — affiché une seule fois).
@@ -252,7 +253,8 @@ pub async fn create_own_token(
 pub async fn list_own_tokens(State(st): State<AppState>, actor: Actor) -> ApiResult<Json<Vec<TokenRow>>> {
     Ok(Json(
         sqlx::query_as(
-            "SELECT t.id, t.name, t.user_id, u.username, t.kind, t.provider, t.scopes, t.created_at, t.expires_at, t.last_used_at, t.revoked
+            "SELECT t.id, t.name, t.user_id, u.username, t.kind, t.provider, t.scopes, t.created_at, t.expires_at, t.last_used_at, t.revoked,
+                (t.expires_at IS NOT NULL AND t.expires_at < now()) AS expired
              FROM api_tokens t JOIN users u ON u.id = t.user_id WHERE t.user_id = $1 ORDER BY t.created_at DESC",
         )
         .bind(actor.user_id)

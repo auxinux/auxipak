@@ -28,6 +28,12 @@
           <button class="secondary small" type="submit">{{ tr.republish }}</button>
         </form>
         {% endif %}
+        {% if r.state == 'revoked' %}
+        <form method="post" action="/admin/releases/{{ r.id }}/purge" data-confirm="{{ tr.purge_confirm }}">
+          <input type="hidden" name="csrf" value="{{ user.csrf }}">
+          <button class="secondary small" type="submit">🗑 {{ tr.delete_files }}</button>
+        </form>
+        {% endif %}
         {% if r.state != 'revoked' %}
         <form method="post" action="/admin/releases/{{ r.id }}/state" class="row" data-confirm="{{ tr.revoke_confirm }}">
           <input type="hidden" name="csrf" value="{{ user.csrf }}"><input type="hidden" name="state" value="revoked">
@@ -40,4 +46,8 @@
   {% else %}<tr><td colspan="7">—</td></tr>{% endfor %}
   </tbody>
 </table></div>
+{% if user.can_review and list|selectattr('state', 'equalto', 'revoked')|list %}
+<form method="post" action="/admin/releases/cleanup" data-confirm="{{ tr.purge_confirm }}"><input type="hidden" name="csrf" value="{{ user.csrf }}"><button class="secondary" type="submit">🧹 {{ tr.cleanup_releases }}</button></form>
+<p class="meta">{{ tr.purge_help }}</p>
+{% endif %}
 {% endblock %}

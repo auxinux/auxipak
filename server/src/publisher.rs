@@ -290,7 +290,8 @@ async fn regenerate_locked(state: &AppState, repo: &str) -> Result<u64> {
     let mut packages = Vec::new();
     let mut revoked = Vec::new();
     for rel in &releases {
-        if rel.state == "revoked" {
+        // « purged » : révoquée puis fichiers supprimés ; toujours refusée.
+        if rel.state == "revoked" || rel.state == "purged" {
             revoked.push(Revocation {
                 id: rel.app_id.clone(),
                 version: rel.version.clone(),
@@ -453,7 +454,7 @@ pub async fn set_release_state(state: &AppState, actor: &Actor, id: Uuid, new_st
             .fetch_optional(&state.db)
             .await?;
     let (repo, app, version, current) = row.ok_or(ApiError::NotFound)?;
-    if current == "revoked" {
+    if current == "revoked" || current == "purged" {
         return Err(ApiError::Conflict("une version révoquée ne peut plus changer d'état".into()));
     }
     sqlx::query("UPDATE releases SET state = $2, state_reason = $3, state_changed_at = now() WHERE id = $1")

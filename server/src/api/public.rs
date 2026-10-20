@@ -183,6 +183,8 @@ pub struct AppsQuery {
     pub q: Option<String>,
     pub repository: Option<String>,
     pub status: Option<String>,
+    /// `linux`, `macos` ou `windows` : applications ayant une variante pour ce système.
+    pub platform: Option<String>,
 }
 
 #[derive(sqlx::FromRow, Serialize, Clone)]
@@ -195,6 +197,8 @@ pub struct AppListRow {
     pub status: String,
     pub latest_version: Option<String>,
     pub repositories: Vec<String>,
+    /// Systèmes couverts par les versions publiées (`linux`, `macos`, `windows`).
+    pub platforms: Vec<String>,
     pub updated_at: DateTime<Utc>,
 }
 
@@ -207,10 +211,14 @@ pub async fn search_apps(st: &AppState, q: &AppsQuery) -> ApiResult<Vec<AppListR
                 (SELECT r.version FROM releases r WHERE r.app_id = a.id AND r.state = 'published'
                    ORDER BY r.published_at DESC LIMIT 1) AS latest_version,
                 ARRAY(SELECT DISTINCT r.repository FROM releases r WHERE r.app_id = a.id AND r.state = 'published') AS repositories,
+                ARRAY(SELECT DISTINCT t->>'platform' FROM releases r, jsonb_array_elements(r.manifest->'targets') t
+                        WHERE r.app_id = a.id AND r.state = 'published' ORDER BY 1) AS platforms,
                 a.updated_at
          FROM apps a LEFT JOIN evaluations e ON e.app_id = a.id
          WHERE EXISTS (SELECT 1 FROM releases r WHERE r.app_id = a.id AND r.state = 'published'
-                         AND ($2::text IS NULL OR r.repository = $2))
+                         AND ($2::text IS NULL OR r.repository = $2)
+                         AND ($4::text IS NULL OR EXISTS (
+                               SELECT 1 FROM jsonb_array_elements(r.manifest->'targets') t WHERE t->>'platform' = $4)))
            AND (lower(a.id) LIKE $1 OR lower(a.name) LIKE $1 OR lower(a.summary) LIKE $1)
            AND ($3::text IS NULL OR COALESCE(e.status, 'unreviewed') = $3)
          ORDER BY a.name LIMIT 500",
@@ -218,6 +226,7 @@ pub async fn search_apps(st: &AppState, q: &AppsQuery) -> ApiResult<Vec<AppListR
     .bind(pattern)
     .bind(&q.repository)
     .bind(&q.status)
+    .bind(q.platform.as_deref().filter(|p| matches!(*p, "linux" | "macos" | "windows")))
     .fetch_all(&st.db)
     .await?;
     Ok(rows)

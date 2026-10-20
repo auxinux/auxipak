@@ -113,6 +113,12 @@ pub fn router() -> Router<AppState> {
         .route("/admin/users/{id}", post(user_update))
         .route("/admin/tokens", get(tokens_page).post(token_create))
         .route("/admin/tokens/{id}/revoke", post(token_revoke))
+        .route("/admin/tokens/{id}/delete", post(token_delete))
+        .route("/admin/tokens/cleanup", post(tokens_cleanup))
+        .route("/admin/releases/{id}/purge", post(release_purge))
+        .route("/admin/releases/cleanup", post(releases_cleanup))
+        .route("/admin/submissions/{id}/delete", post(submission_delete))
+        .route("/admin/submissions/cleanup", post(submissions_cleanup))
         .route("/admin/audit", get(audit_page))
 }
 
@@ -185,6 +191,7 @@ async fn set_lang(State(st): State<AppState>, Path(lang): Path<String>, Query(q)
 struct SearchQuery {
     q: Option<String>,
     status: Option<String>,
+    platform: Option<String>,
 }
 
 async fn home(State(st): State<AppState>, jar: CookieJar, Query(q): Query<SearchQuery>) -> Response {
@@ -192,17 +199,22 @@ async fn home(State(st): State<AppState>, jar: CookieJar, Query(q): Query<Search
         .status
         .clone()
         .filter(|s| matches!(s.as_str(), "verified" | "compatible" | "unreviewed"));
+    let platform = q
+        .platform
+        .clone()
+        .filter(|p| matches!(p.as_str(), "linux" | "macos" | "windows"));
     let aq = public::AppsQuery {
         q: q.q.clone(),
         repository: None,
         status: status.clone(),
+        platform: platform.clone(),
     };
     match public::search_apps(&st, &aq).await {
         Ok(apps) => page(
             &st,
             &jar,
             "index.html",
-            context! { apps => apps, q => q.q.unwrap_or_default(), status => status, user => web_user(&st, &jar).await },
+            context! { apps => apps, q => q.q.unwrap_or_default(), status => status, platform => platform, user => web_user(&st, &jar).await },
         ),
         Err(e) => error_page(&st, &jar, e),
     }
@@ -951,6 +963,60 @@ async fn token_revoke(State(st): State<AppState>, jar: CookieJar, Path(id): Path
         Ok(()) => back("/admin/tokens", "ok"),
         Err(e) => back("/admin/tokens", &e.to_string()),
     }
+}
+
+// ---------- Nettoyage ----------
+
+/// Résultat d'un nettoyage : nombre d'éléments supprimés, ou l'erreur.
+fn cleaned(path: &str, r: ApiResult<u64>) -> Response {
+    match r {
+        Ok(n) => back(path, &format!("cleaned:{n}")),
+        Err(e) => back(path, &e.to_string()),
+    }
+}
+
+async fn token_delete(State(st): State<AppState>, jar: CookieJar, Path(id): Path<Uuid>, Form(f): Form<CsrfForm>) -> Response {
+    let a = session!(st, jar);
+    tryp!(st, jar, check_csrf(&a, &f.csrf));
+    cleaned("/admin/tokens", crate::cleanup::purge_tokens(&st, &a, Some(id)).await)
+}
+
+async fn tokens_cleanup(State(st): State<AppState>, jar: CookieJar, Form(f): Form<CsrfForm>) -> Response {
+    let a = session!(st, jar);
+    tryp!(st, jar, check_csrf(&a, &f.csrf));
+    cleaned("/admin/tokens", crate::cleanup::purge_tokens(&st, &a, None).await)
+}
+
+async fn release_purge(State(st): State<AppState>, jar: CookieJar, Path(id): Path<Uuid>, Form(f): Form<CsrfForm>) -> Response {
+    let a = session!(st, jar);
+    tryp!(st, jar, check_csrf(&a, &f.csrf));
+    cleaned("/admin/releases", crate::cleanup::purge_releases(&st, &a, Some(id)).await)
+}
+
+async fn releases_cleanup(State(st): State<AppState>, jar: CookieJar, Form(f): Form<CsrfForm>) -> Response {
+    let a = session!(st, jar);
+    tryp!(st, jar, check_csrf(&a, &f.csrf));
+    cleaned("/admin/releases", crate::cleanup::purge_releases(&st, &a, None).await)
+}
+
+async fn submission_delete(
+    State(st): State<AppState>,
+    jar: CookieJar,
+    Path(id): Path<Uuid>,
+    Form(f): Form<CsrfForm>,
+) -> Response {
+    let a = session!(st, jar);
+    tryp!(st, jar, check_csrf(&a, &f.csrf));
+    cleaned(
+        "/admin/submissions",
+        crate::cleanup::purge_submissions(&st, &a, Some(id)).await,
+    )
+}
+
+async fn submissions_cleanup(State(st): State<AppState>, jar: CookieJar, Form(f): Form<CsrfForm>) -> Response {
+    let a = session!(st, jar);
+    tryp!(st, jar, check_csrf(&a, &f.csrf));
+    cleaned("/admin/submissions", crate::cleanup::purge_submissions(&st, &a, None).await)
 }
 
 #[derive(Deserialize, Default)]

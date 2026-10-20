@@ -23,9 +23,14 @@
       <td>{{ s.submitter or '?' }} <span class="badge neutral">{{ s.submitter_kind }}</span></td>
       <td><span class="badge {{ 'verified' if s.status == 'published' else ('revoked' if s.status in ['invalid', 'rejected', 'failed'] else 'compatible') }}">{{ s.status }}</span></td>
       <td>{{ s.created_at|date }}</td>
-      <td><a href="/admin/submissions/{{ s.id }}">{{ tr.view }}</a></td>
+      <td class="row"><a href="/admin/submissions/{{ s.id }}">{{ tr.view }}</a>
+        {% if user.can_review and s.status in ['invalid', 'rejected', 'failed', 'published'] %}<form method="post" action="/admin/submissions/{{ s.id }}/delete"><input type="hidden" name="csrf" value="{{ user.csrf }}"><button class="secondary small" type="submit" title="{{ tr.delete }}">🗑</button></form>{% endif %}</td>
     </tr>
   {% else %}<tr><td colspan="7">—</td></tr>{% endfor %}
   </tbody>
 </table></div>
+{% if user.can_review and list|selectattr('status', 'in', ['invalid', 'rejected', 'failed', 'published'])|list %}
+<form method="post" action="/admin/submissions/cleanup" data-confirm="{{ tr.cleanup_confirm }}"><input type="hidden" name="csrf" value="{{ user.csrf }}"><button class="secondary" type="submit">🧹 {{ tr.cleanup_submissions }}</button></form>
+<p class="meta">{{ tr.cleanup_submissions_help }}</p>
+{% endif %}
 {% endblock %}
