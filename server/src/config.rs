@@ -20,7 +20,7 @@ pub struct Config {
     pub mode: Mode,
     pub database_url: String,
     pub bind: SocketAddr,
-    /// URL publique (`https://pak.auxinux.ca`).
+    /// URL publique (`https://auxipak.auxinux.ca`).
     pub public_url: url::Url,
     /// Données : soumissions, paquets publiés, dépôts générés.
     pub data_dir: PathBuf,
@@ -85,8 +85,8 @@ impl Config {
             }
         }))
         .context(tr!(
-            "AUXIPAK_PUBLIC_URL est obligatoire en production (ex. https://pak.auxinux.ca)",
-            "AUXIPAK_PUBLIC_URL is required in production (e.g. https://pak.auxinux.ca)"
+            "AUXIPAK_PUBLIC_URL est obligatoire en production (ex. https://auxipak.auxinux.ca)",
+            "AUXIPAK_PUBLIC_URL is required in production (e.g. https://auxipak.auxinux.ca)"
         ))?;
         let data_dir = PathBuf::from(var("AUXIPAK_DATA_DIR").unwrap_or_else(|| "/var/lib/auxipak-server".into()));
         let keys_dir = PathBuf::from(var("AUXIPAK_KEYS_DIR").unwrap_or_else(|| "/etc/auxipak-server/keys".into()));

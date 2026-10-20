@@ -199,7 +199,7 @@ version majeure, architecture) est détecté automatiquement et provoque une
 resynchronisation des index.
 
 Sans fichier `config.toml`, la configuration par défaut contient uniquement
-le dépôt officiel `https://pak.auxinux.ca/repos/official/`. Le format complet
+le dépôt officiel `https://auxipak.auxinux.ca/repos/official/`. Le format complet
 de `config.toml` est décrit dans [CLI_REFERENCE.md](CLI_REFERENCE.md#configuration-configtoml).
 
 ## 7. Compilation depuis les sources

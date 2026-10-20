@@ -137,14 +137,14 @@ mod tests {
 
     #[test]
     fn repo_urls() {
-        assert!(validate_repo_url("https://pak.auxinux.ca/repos/official", false).is_ok());
+        assert!(validate_repo_url("https://auxipak.auxinux.ca/repos/official", false).is_ok());
         assert_eq!(
-            validate_repo_url("https://pak.auxinux.ca/repos/official", false)
+            validate_repo_url("https://auxipak.auxinux.ca/repos/official", false)
                 .unwrap()
                 .as_str(),
-            "https://pak.auxinux.ca/repos/official/"
+            "https://auxipak.auxinux.ca/repos/official/"
         );
-        assert!(validate_repo_url("http://pak.auxinux.ca/", true).is_err());
+        assert!(validate_repo_url("http://auxipak.auxinux.ca/", true).is_err());
         assert!(validate_repo_url("http://127.0.0.1:8080/repos/official", false).is_err());
         assert!(validate_repo_url("http://127.0.0.1:8080/repos/official", true).is_ok());
         assert!(validate_repo_url("file:///srv/mirror/", false).is_ok());

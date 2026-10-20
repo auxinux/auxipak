@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
 pub const DEFAULT_TTL: u64 = 3600;
-pub const OFFICIAL_URL: &str = "https://pak.auxinux.ca/repos/official/";
+pub const OFFICIAL_URL: &str = "https://auxipak.auxinux.ca/repos/official/";
 
 /// Ancres de confiance du dépôt officiel, embarquées à la compilation lorsque
 /// `AUXIPAK_OFFICIAL_TRUST_DIR` est défini (voir `build.rs` et docs/SIGNING.md).
@@ -332,7 +332,7 @@ mod tests {
     #[test]
     fn rejects_insecure_repo_urls() {
         let mut c = Config::default();
-        c.repositories[0].url = "http://pak.auxinux.ca/".into();
+        c.repositories[0].url = "http://auxipak.auxinux.ca/".into();
         assert!(c.validate().is_err());
         c.repositories[0].url = "http://127.0.0.1:8080/repos/official/".into();
         assert!(c.validate().is_err());

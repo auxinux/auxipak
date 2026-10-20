@@ -253,7 +253,7 @@ language = "fr"                 # langue préférée pour le choix des paquets
 
 [[repository]]
 name = "official"
-url = "https://pak.auxinux.ca/repos/official/"
+url = "https://auxipak.auxinux.ca/repos/official/"
 root = "trust/official/root.json"               # relatif à <config>, ou absolu
 package_keys = "trust/official/package-keys.json"
 official = true                 # seul un dépôt officiel localement affiche les statuts AuxiNux
@@ -438,7 +438,7 @@ $ auxipak-builder init mon-outil --id mon-outil --name "Mon outil" --publisher "
 $ auxipak-builder validate mon-outil
 $ auxipak-builder --json build mon-outil -o Monoutil-1.0.0-fr.aupak
 $ auxipak-builder test Monoutil-1.0.0-fr.aupak
-$ AUXIPAK_SERVER=https://pak.auxinux.ca AUXIPAK_TOKEN=apk_… auxipak-builder submit Monoutil-1.0.0-fr.aupak --note "version 1.0.0"
+$ AUXIPAK_SERVER=https://auxipak.auxinux.ca AUXIPAK_TOKEN=apk_… auxipak-builder submit Monoutil-1.0.0-fr.aupak --note "version 1.0.0"
 ```
 
 Pour `keys generate`, indiquez un chemin `--out` situé dans un

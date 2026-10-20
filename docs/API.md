@@ -5,7 +5,7 @@ La description OpenAPI 3.1 fait référence : `server/openapi.yaml`, servie par
 `server/src/api/mod.rs` ; un test d'intégration vérifie que chaque route est
 documentée dans le fichier OpenAPI.
 
-- URL de base : `https://pak.auxinux.ca` (développement : `http://127.0.0.1:8080`).
+- URL de base : `https://auxipak.auxinux.ca` (développement : `http://127.0.0.1:8080`).
 - Corps et réponses JSON (UTF-8), sauf mention contraire.
 - Erreurs : `{"error": "<code>", "message": "<texte>"}` avec les codes
   `bad_request` (400), `unauthorized` (401), `forbidden` (403), `not_found`
@@ -15,7 +15,7 @@ documentée dans le fichier OpenAPI.
   fichiers de projet) sont lus en flux, limités par `AUXIPAK_MAX_UPLOAD_BYTES`
   (8 Gio par défaut) et, pour un fichier de projet Builder, 4 Gio.
 
-Dans les exemples : `URL=https://pak.auxinux.ca`, `TOKEN=apk_…`.
+Dans les exemples : `URL=https://auxipak.auxinux.ca`, `TOKEN=apk_…`.
 
 ## 1. Authentification
 
@@ -186,7 +186,7 @@ portée `build` ; `submit` exige en plus `submit`.
 ### Connexion et création d'un jeton « agent »
 
 ```bash
-URL=https://pak.auxinux.ca
+URL=https://auxipak.auxinux.ca
 # 1. Session (humain)
 CSRF=$(curl -fsS -c cookies.txt -H 'Content-Type: application/json' \
   -d '{"username":"alice","password":"<mot de passe>"}' \
@@ -260,7 +260,7 @@ Scénario : un agent (Claude Code ou autre) dispose d'un jeton `agent`
 approuver ni publier.
 
 ```bash
-URL=https://pak.auxinux.ca
+URL=https://auxipak.auxinux.ca
 AUTH="Authorization: Bearer $AUXIPAK_TOKEN"
 ```
 

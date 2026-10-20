@@ -9,7 +9,7 @@ processus à vecteur d'arguments, sans interpréteur de commandes.
 - Fichier : `instruction.auxipak`, à la racine de l'archive `.aupak`, YAML
   UTF-8, 256 Kio au plus.
 - Schéma JSON officiel : `schemas/instruction.auxipak.schema.json`
-  (`$id` : `https://pak.auxinux.ca/schemas/instruction.auxipak/1.json`),
+  (`$id` : `https://auxipak.auxinux.ca/schemas/instruction.auxipak/1.json`),
   embarqué dans tous les binaires.
 - Implémentation : `shared/src/manifest.rs`.
 

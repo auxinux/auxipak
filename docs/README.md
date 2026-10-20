@@ -1,7 +1,7 @@
 # Documentation d'AuxiPak
 
 AuxiPak est le service de distribution d'applications de l'écosystème AuxiNux
-(<https://pak.auxinux.ca>). Cette documentation décrit la version 1.0.0.
+(<https://auxipak.auxinux.ca>). Cette documentation décrit la version 1.0.0.
 
 ## Pour commencer
 

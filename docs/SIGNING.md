@@ -230,7 +230,7 @@ une clé `package-signing` listée dans le `package-keys.json` du serveur :
 ```console
 $ auxipak-builder sign MonOutil-1.0.0-fr.aupak --key secrets/cle-paquets.pem
 $ auxipak-builder verify-signature MonOutil-1.0.0-fr.aupak --keys package-keys.json
-$ auxipak-builder submit MonOutil-1.0.0-fr.aupak --server https://pak.auxinux.ca --token "$AUXIPAK_TOKEN"
+$ auxipak-builder submit MonOutil-1.0.0-fr.aupak --server https://auxipak.auxinux.ca --token "$AUXIPAK_TOKEN"
 ```
 
 `submit` joint automatiquement `MonOutil-1.0.0-fr.aupak.sig`. Pour une
@@ -239,7 +239,7 @@ demande existante :
 ```console
 $ curl -fsS -X PUT -H "Authorization: Bearer $AUXIPAK_TOKEN" \
     --data-binary @MonOutil-1.0.0-fr.aupak.sig \
-    https://pak.auxinux.ca/api/v1/submissions/<id>/signature
+    https://auxipak.auxinux.ca/api/v1/submissions/<id>/signature
 ```
 
 La signature est vérifiée immédiatement (clé connue, non révoquée, usage

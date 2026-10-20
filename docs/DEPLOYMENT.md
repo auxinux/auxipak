@@ -1,7 +1,7 @@
 # Déploiement du serveur (Debian 13)
 
 Ce document décrit le déploiement d'`auxipak-server` pour
-`pak.auxinux.ca` sur **Debian 13 « trixie »** : Docker Compose (recommandé)
+`auxipak.auxinux.ca` sur **Debian 13 « trixie »** : Docker Compose (recommandé)
 ou service systemd natif, derrière Nginx avec un certificat Let's Encrypt.
 
 ## 1. Vue d'ensemble
@@ -27,7 +27,7 @@ Internet ──► 80/443 Nginx (TLS, HSTS, limitation des connexions)
 
 ## 2. Prérequis
 
-- Debian 13 à jour, accès root, nom DNS `pak.auxinux.ca` pointant vers le
+- Debian 13 à jour, accès root, nom DNS `auxipak.auxinux.ca` pointant vers le
   serveur (A/AAAA).
 - Docker Engine et le greffon Compose v2 (commande `docker compose`), par
   exemple depuis le dépôt officiel Docker pour Debian.
@@ -80,7 +80,7 @@ dans le conteneur (`/etc/auxipak-server/keys:ro`).
 
 | Variable (`.env`) | Valeur |
 |---|---|
-| `AUXIPAK_PUBLIC_URL` | `https://pak.auxinux.ca` |
+| `AUXIPAK_PUBLIC_URL` | `https://auxipak.auxinux.ca` |
 | `POSTGRES_PASSWORD` | valeur aléatoire ; **préférer une valeur hexadécimale** (`openssl rand -hex 32`) : elle est insérée telle quelle dans l'URL de connexion `postgres://auxipak:<mot de passe>@db:5432/auxipak`, où `/`, `+` ou `=` (sortie base64) poseraient problème |
 | `AUXIPAK_KEYS_HOST_DIR` | `/etc/auxipak-server/keys` |
 | `AUXIPAK_REQUIRE_DISTINCT_APPROVER` | `true` |
@@ -121,7 +121,7 @@ de signature des paquets et avertit s'il n'existe aucun administrateur.
 Le script demande le mot de passe deux fois sans écho (12 caractères
 minimum, plusieurs types de caractères) et exécute `auxipak-server
 create-admin --username admin` dans le conteneur. Créez ensuite, depuis
-`https://pak.auxinux.ca/admin`, au moins un second compte `reviewer` : avec
+`https://auxipak.auxinux.ca/admin`, au moins un second compte `reviewer` : avec
 `AUXIPAK_REQUIRE_DISTINCT_APPROVER=true`, l'auteur d'une soumission ne peut
 pas l'approuver lui-même.
 
@@ -131,9 +131,9 @@ pas l'approuver lui-même.
 # cp /opt/auxipak/deploy/nginx/auxipak-limits.conf /etc/nginx/conf.d/
 # install -d /etc/nginx/snippets /var/www/letsencrypt
 # cp /opt/auxipak/deploy/nginx/auxipak-proxy.conf /etc/nginx/snippets/
-# certbot certonly --nginx -d pak.auxinux.ca          # avant d'activer le site
-# cp /opt/auxipak/deploy/nginx/pak.auxinux.ca.conf /etc/nginx/sites-available/
-# ln -s /etc/nginx/sites-available/pak.auxinux.ca.conf /etc/nginx/sites-enabled/
+# certbot certonly --nginx -d auxipak.auxinux.ca          # avant d'activer le site
+# cp /opt/auxipak/deploy/nginx/auxipak.auxinux.ca.conf /etc/nginx/sites-available/
+# ln -s /etc/nginx/sites-available/auxipak.auxinux.ca.conf /etc/nginx/sites-enabled/
 # nginx -t && systemctl reload nginx
 # systemctl list-timers | grep certbot                # renouvellement automatique
 ```
@@ -149,9 +149,9 @@ Nginx. Les en-têtes de sécurité applicatifs (CSP, `X-Frame-Options`,
 Vérification depuis l'extérieur :
 
 ```console
-$ curl -fsS https://pak.auxinux.ca/api/v1/health
-$ curl -fsS https://pak.auxinux.ca/index | jq .
-$ curl -fsSI https://pak.auxinux.ca/repos/official/metadata/timestamp.json
+$ curl -fsS https://auxipak.auxinux.ca/api/v1/health
+$ curl -fsS https://auxipak.auxinux.ca/index | jq .
+$ curl -fsSI https://auxipak.auxinux.ca/repos/official/metadata/timestamp.json
 ```
 
 ### 3.7 Mandataire HTTPS sur une autre machine (panneau d'hébergement)

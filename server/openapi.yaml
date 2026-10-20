@@ -3,7 +3,7 @@ info:
   title: AuxiPak Server API
   version: "1.0.0"
   description: |
-    API REST du serveur AuxiPak (https://pak.auxinux.ca).
+    API REST du serveur AuxiPak (https://auxipak.auxinux.ca).
 
     **Authentification** : jeton Bearer (`Authorization: Bearer apk_…`) ou cookie
     de session (interface Web ; les requêtes non sûres exigent alors l'en-tête
@@ -22,7 +22,7 @@ info:
   license:
     name: GPL-3.0-or-later
 servers:
-  - url: https://pak.auxinux.ca
+  - url: https://auxipak.auxinux.ca
   - url: http://127.0.0.1:8080
     description: Développement local
 tags:

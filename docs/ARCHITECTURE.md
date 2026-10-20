@@ -29,7 +29,7 @@ ajouter une distribution Linux.
 ## 2. Vue d'ensemble
 
 ```text
-                         ┌──────────────────────────── pak.auxinux.ca ─────────────────────────────┐
+                         ┌──────────────────────────── auxipak.auxinux.ca ─────────────────────────────┐
   Éditeur / CI / agent   │  Nginx (443, TLS) ──► auxipak-server (127.0.0.1:8080)                     │
   auxipak-builder ──────►│                        ├── API REST /api/v1 (axum)                         │
   (submit, API Builder)  │                        ├── Interface Web (MiniJinja, fr/en)                │

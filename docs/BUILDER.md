@@ -87,7 +87,7 @@ Enregistrez une fois le serveur et le jeton (fichier
 sous Windows) :
 
 ```console
-$ auxipak-builder set server=https://pak.auxinux.ca
+$ auxipak-builder set server=https://auxipak.auxinux.ca
 $ auxipak-builder set token             # demande le jeton (hors de l'historique du shell)
 $ auxipak-builder config                # affiche les réglages, jeton masqué
 ```
@@ -109,7 +109,7 @@ l'exécuter ; une analyse en échec donne le statut `invalid` (détails dans
 ### 1.6 Approbation
 
 Un relecteur (rôle `reviewer` ou `admin`, **autre personne que l'auteur**
-par défaut) ouvre `https://pak.auxinux.ca/admin/submissions`, examine le
+par défaut) ouvre `https://auxipak.auxinux.ca/admin/submissions`, examine le
 rapport (contrôles, avertissements, points d'attention : scripts,
 téléchargements distants, installateurs `exe`, permissions étendues,
 absence de déclaration de vie privée, télémétrie obligatoire) et approuve ou
@@ -174,7 +174,7 @@ jobs:
           auxipak-builder test dist/MonOutil.aupak
       - name: Soumettre (demande de publication)
         env:
-          AUXIPAK_SERVER: https://pak.auxinux.ca
+          AUXIPAK_SERVER: https://auxipak.auxinux.ca
           AUXIPAK_TOKEN: ${{ secrets.AUXIPAK_TOKEN }}
         run: auxipak-builder --json submit dist/MonOutil.aupak --note "CI ${GITHUB_REF_NAME} ${GITHUB_SHA}"
 ```

@@ -1,7 +1,7 @@
 # AuxiPak
 
 **AuxiPak** est le service de distribution d'applications multiplateforme de
-l'écosystème AuxiNux : <https://pak.auxinux.ca>.
+l'écosystème AuxiNux : <https://auxipak.auxinux.ca>.
 
 Il permet de rechercher, installer, mettre à niveau et désinstaller des
 applications sur Debian, Ubuntu, AuxiNuxOS, VirtuaOS, Windows et macOS, à

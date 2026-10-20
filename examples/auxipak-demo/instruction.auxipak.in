@@ -9,7 +9,7 @@ description: |
   Petite application de test développée pour le projet AuxiPak. Elle affiche
   sa version et ne fait rien d'autre : aucune donnée collectée, aucun accès réseau.
 license: "GPL-3.0-or-later"
-homepage: "https://pak.auxinux.ca"
+homepage: "https://auxipak.auxinux.ca"
 languages: [fr, en]
 categories: [utilities]
 privacy:
