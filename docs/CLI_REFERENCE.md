@@ -90,9 +90,19 @@ TUF complète) ; **ne met pas à jour les applications**. Affiche, par dépôt,
 la génération, le nombre de versions pour le canal du système et la date
 d'expiration des métadonnées. Code de sortie 1 si au moins un dépôt échoue.
 
-### `upgrade [PACKAGE] [--allow-scripts]`
+### `upgrade [PACKAGE] [--allow-scripts] [--no-self]`
 
-Met à niveau toutes les applications gérées, ou celle indiquée, vers la
+Sans `PACKAGE`, met d'abord à jour **AuxiPak lui-même** : le client lit
+`/downloads/SHA256SUMS` sur le serveur du dépôt officiel, télécharge
+l'archive de sa plateforme si elle est plus récente, vérifie son SHA-256 et
+remplace `auxipak` (et `auxipak-builder` s'il est installé dans le même
+répertoire). Il faut pouvoir écrire dans ce répertoire : `sudo auxipak
+upgrade` pour `/usr/local/bin`, console administrateur sous Windows (le
+binaire en cours d'exécution est renommé `.old` et supprimé au lancement
+suivant). `--no-self` saute cette étape ; `auxipak update` signale seulement
+qu'une version est disponible.
+
+Met ensuite à niveau toutes les applications gérées, ou celle indiquée, vers la
 meilleure version non révoquée **du même dépôt**, en privilégiant la langue
 installée. Les applications adoptées sont laissées à leur gestionnaire
 d'origine. Exige des index frais. Stratégie selon `upgrade.strategy` du

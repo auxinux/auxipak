@@ -33,6 +33,7 @@ pub enum Tool {
     Brew,
     Bash,
     PowerShell,
+    Tar,
 }
 
 impl Tool {
@@ -50,6 +51,7 @@ impl Tool {
             Tool::Brew => "brew",
             Tool::Bash => "bash",
             Tool::PowerShell => "powershell",
+            Tool::Tar => "tar",
         }
     }
 
@@ -80,6 +82,12 @@ impl Tool {
                 .join("WindowsPowerShell")
                 .join("v1.0")
                 .join("powershell.exe")],
+            // Windows 10 (1803) et plus : bsdtar, qui lit aussi les .zip.
+            Tool::Tar => vec![
+                "/usr/bin/tar".into(),
+                "/bin/tar".into(),
+                sysroot.join("System32").join("tar.exe"),
+            ],
         }
     }
 }

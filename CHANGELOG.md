@@ -5,6 +5,20 @@ le projet applique le [versionnage sémantique](https://semver.org/lang/fr/).
 
 ## [Non publié]
 
+### Ajouté
+
+- `auxipak upgrade` met d'abord à jour AuxiPak lui-même (et
+  `auxipak-builder` s'il est installé à côté) à partir des binaires publiés
+  par le serveur du dépôt officiel (`/downloads/`, empreinte SHA-256
+  vérifiée) ; `--no-self` l'évite. `auxipak update` signale une nouvelle
+  version.
+- Administration : suppression des jetons révoqués ou expirés, des fichiers
+  des versions révoquées (qui restent refusées par les clients) et des
+  demandes terminées.
+- Catalogue : filtre par système (Linux, macOS, Windows) et systèmes
+  couverts affichés sur chaque fiche ; paramètre `platform` de
+  `/api/v1/apps`.
+
 ### Modifié
 
 - Extension des paquets : `.aupak` (au lieu de `.apak`, déjà utilisée par

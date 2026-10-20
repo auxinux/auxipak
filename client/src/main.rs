@@ -12,6 +12,7 @@ mod privileges;
 mod progress;
 mod registry;
 mod repo;
+mod selfupdate;
 
 use anyhow::{bail, Context, Result};
 use auxipak_core::archive::{self, Limits};
@@ -84,11 +85,14 @@ enum Cmd {
     },
     /// Forcer la synchronisation des index de tous les dépôts (ne met pas à jour les applications).
     Update,
-    /// Mettre à niveau toutes les applications gérées, ou celle indiquée.
+    /// Mettre à niveau AuxiPak lui-même puis toutes les applications gérées, ou celle indiquée.
     Upgrade {
         package: Option<String>,
         #[arg(long)]
         allow_scripts: bool,
+        /// Ne pas mettre à jour AuxiPak lui-même.
+        #[arg(long)]
+        no_self: bool,
     },
     /// Lister les applications installées et suivies par AuxiPak.
     List {
@@ -177,6 +181,7 @@ async fn main() -> ExitCode {
         return ExitCode::from(1);
     }
     init_logging(&paths);
+    selfupdate::cleanup_old();
     tracing::info!(args = ?std::env::args().collect::<Vec<_>>(), "démarrage");
     match run(cli, paths).await {
         Ok(()) => ExitCode::SUCCESS,
@@ -354,10 +359,64 @@ async fn run(cli: Cli, paths: Paths) -> Result<()> {
             if failures > 0 {
                 bail!("{failures} dépôt(s) n'ont pas pu être synchronisés");
             }
+            if let Ok(Some(a)) = selfupdate::check(&config).await {
+                println!(
+                    "{}",
+                    auxipak_core::tr!(
+                        "AuxiPak {} est disponible (version actuelle {}) : auxipak upgrade",
+                        "AuxiPak {} is available (current version {}): auxipak upgrade",
+                        a.version,
+                        selfupdate::CURRENT
+                    )
+                );
+            }
         }
-        Cmd::Upgrade { package, allow_scripts } => {
+        Cmd::Upgrade {
+            package,
+            allow_scripts,
+            no_self,
+        } => {
             let _lock = StateLock::acquire(&paths)?;
             pending_warning(&paths);
+            if package.is_none() && !no_self {
+                let config = Config::load(&paths)?;
+                let insecure = config
+                    .enabled_repos()
+                    .find(|r| r.official)
+                    .map(|r| r.allow_insecure_localhost)
+                    .unwrap_or(false);
+                match selfupdate::check(&config).await {
+                    Ok(Some(a)) => {
+                        eprintln!(
+                            "{}",
+                            auxipak_core::tr!(
+                                "Mise à jour d'AuxiPak : {} → {}",
+                                "Updating AuxiPak: {} → {}",
+                                selfupdate::CURRENT,
+                                a.version
+                            )
+                        );
+                        match selfupdate::apply(&paths, &a, insecure).await {
+                            Ok(files) => {
+                                for f in files {
+                                    println!(
+                                        "{}",
+                                        auxipak_core::tr!(
+                                            "  ✓ {} mis à jour ({})",
+                                            "  ✓ {} updated ({})",
+                                            f.display(),
+                                            a.version
+                                        )
+                                    );
+                                }
+                            }
+                            Err(e) => eprintln!("{}", auxipak_core::tr!("avertissement : {e:#}", "warning: {e:#}")),
+                        }
+                    }
+                    Ok(None) => {}
+                    Err(e) => tracing::warn!(error = %e, "vérification de la version d'AuxiPak impossible"),
+                }
+            }
             let env = env_for(paths, Need::Install).await?;
             let mut reg = Registry::load(&env.paths)?;
             let opts = InstallOpts {
