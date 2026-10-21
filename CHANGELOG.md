@@ -5,6 +5,17 @@ le projet applique le [versionnage sémantique](https://semver.org/lang/fr/).
 
 ## [Non publié]
 
+### Modifié
+
+- `auxipak update` affiche une barre de progression par dépôt puis un résumé
+  d'une ligne (« ✓ Cache à jour » ou « ✓ Cache déjà à jour », nombre
+  d'applications) ; le détail précédent (génération, versions, validité des
+  métadonnées) reste disponible avec `--verbose`.
+- `auxipak upgrade` n'est plus muet quand il n'y a rien à faire : il confirme
+  qu'AuxiPak est à jour, signale un échec de vérification de version (au lieu
+  de le consigner seulement dans le journal) et indique qu'aucune application
+  n'est installée.
+
 ## [1.0.3] — 2026-10-20
 
 ### Ajouté

@@ -83,12 +83,17 @@ Les dépendances natives installées par APT restent gérées par APT
 (`apt autoremove`). Une application adoptée est désinstallée via son
 gestionnaire d'origine.
 
-### `update`
+### `update [-v|--verbose]`
 
 Force la synchronisation des index de tous les dépôts actifs (vérification
-TUF complète) ; **ne met pas à jour les applications**. Affiche, par dépôt,
-la génération, le nombre de versions pour le canal du système et la date
-d'expiration des métadonnées. Code de sortie 1 si au moins un dépôt échoue.
+TUF complète) ; **ne met pas à jour les applications**. Dans un terminal,
+une barre de progression indique l'étape en cours pour chaque dépôt
+(métadonnées TUF, index, catalogue, révocations, versions pour ce système),
+puis une seule ligne résume le résultat : « ✓ Cache à jour » (nouvelle
+génération reçue) ou « ✓ Cache déjà à jour », avec le nombre d'applications
+disponibles. `--verbose` affiche en plus, par dépôt, la génération, le
+nombre de versions pour le canal du système et la date d'expiration des
+métadonnées. Code de sortie 1 si au moins un dépôt échoue.
 
 ### `upgrade [PACKAGE] [--allow-scripts] [--no-self]`
 
@@ -100,7 +105,9 @@ répertoire). Il faut pouvoir écrire dans ce répertoire : `sudo auxipak
 upgrade` pour `/usr/local/bin`, console administrateur sous Windows (le
 binaire en cours d'exécution est renommé `.old` et supprimé au lancement
 suivant). `--no-self` saute cette étape ; `auxipak update` signale seulement
-qu'une version est disponible.
+qu'une version est disponible. Si AuxiPak est déjà à jour, une ligne
+« ✓ AuxiPak est à jour (version) » le confirme ; si la vérification échoue
+(serveur injoignable), un avertissement l'indique.
 
 Met ensuite à niveau toutes les applications gérées, ou celle indiquée, vers la
 meilleure version non révoquée **du même dépôt**, en privilégiant la langue

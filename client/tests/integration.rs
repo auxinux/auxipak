@@ -312,7 +312,10 @@ fn install_list_upgrade_remove_with_cache() {
     f.publish();
     assert!(!f.ok(&["search", "hello"]).contains("1.1.0"));
     // … jusqu'à « update », qui force la synchronisation.
-    assert!(f.ok(&["update"]).contains("génération 2"));
+    let upd = f.ok(&["update"]);
+    assert!(upd.contains("Cache à jour") && !upd.contains("génération"), "{upd}");
+    let upd = f.ok(&["update", "--verbose"]);
+    assert!(upd.contains("génération 2") && upd.contains("Cache déjà à jour"), "{upd}");
     assert!(f.ok(&["search", "hello"]).contains("1.1.0"));
     let up = f.ok(&["upgrade", "hello"]);
     assert!(up.contains("1.0.0 → 1.1.0"), "{up}");
@@ -324,6 +327,8 @@ fn install_list_upgrade_remove_with_cache() {
     f.ok(&["remove", "hello"]);
     assert!(!f.installed_bin("hello").exists());
     assert!(f.ok(&["list"]).contains("Aucune application"));
+    let up = f.ok(&["upgrade", "--no-self"]);
+    assert!(up.contains("rien à mettre à niveau"), "{up}");
     f.ok(&["clean", "--all"]);
     assert!(!f.home().join("cache/repos").exists());
 }

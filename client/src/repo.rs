@@ -136,7 +136,22 @@ async fn read_target(repo: &tough::Repository, name: &str) -> Result<Option<Vec<
 }
 
 /// Synchronise un dépôt (vérification TUF complète).
+/// Nombre d'étapes signalées par [`sync_with`].
+pub const SYNC_STEPS: usize = 5;
+
 pub async fn sync(cfg: &RepoConfig, paths: &Paths, profile: &SystemProfile) -> Result<RepoData> {
+    sync_with(cfg, paths, profile, &mut |_, _| {}).await
+}
+
+/// Synchronise un dépôt en signalant chaque étape terminée à `step`
+/// (numéro de 1 à [`SYNC_STEPS`], libellé de l'étape suivante).
+pub async fn sync_with(
+    cfg: &RepoConfig,
+    paths: &Paths,
+    profile: &SystemProfile,
+    step: &mut dyn FnMut(usize, &str),
+) -> Result<RepoData> {
+    step(0, &tr!("métadonnées TUF", "TUF metadata"));
     let trust: TrustMaterial = cfg.trust(paths)?;
     let (meta, targets) = repo_urls(cfg)?;
     let dir = cache_dir(paths, &cfg.name);
@@ -169,6 +184,7 @@ pub async fn sync(cfg: &RepoConfig, paths: &Paths, profile: &SystemProfile) -> R
         ))
     })?;
 
+    step(1, &tr!("index du dépôt", "repository index"));
     let index_bytes = read_target(&repo, REPO_INDEX_TARGET)
         .await?
         .context(tr!("index.json absent du dépôt", "index.json missing from the repository"))?;
@@ -180,16 +196,19 @@ pub async fn sync(cfg: &RepoConfig, paths: &Paths, profile: &SystemProfile) -> R
             index.meta_version
         ));
     }
+    step(2, &tr!("catalogue des applications", "application catalog"));
     let apps_bytes = read_target(&repo, &index.apps)
         .await?
         .context(tr!("apps.json absent", "apps.json missing"))?;
     let apps: AppsIndex = serde_json::from_slice(&apps_bytes).context(tr!("apps.json invalide", "invalid apps.json"))?;
+    step(3, &tr!("révocations", "revocations"));
     let rev_bytes = read_target(&repo, &index.revocations)
         .await?
         .context(tr!("revocations.json absent", "revocations.json missing"))?;
     let revocations: RevocationList =
         serde_json::from_slice(&rev_bytes).context(tr!("revocations.json invalide", "invalid revocations.json"))?;
 
+    step(4, &tr!("versions pour ce système", "versions for this system"));
     let channel = profile.channel();
     let mut channel_bytes = None;
     let mut channel_index = None;
@@ -210,6 +229,7 @@ pub async fn sync(cfg: &RepoConfig, paths: &Paths, profile: &SystemProfile) -> R
         }
     }
 
+    step(SYNC_STEPS, "");
     let expires = [
         repo.timestamp().signed.expires,
         repo.snapshot().signed.expires,

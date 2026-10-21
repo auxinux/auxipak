@@ -92,7 +92,11 @@ enum Cmd {
         allow_scripts: bool,
     },
     /// Forcer la synchronisation des index de tous les dépôts (ne met pas à jour les applications).
-    Update,
+    Update {
+        /// Afficher le détail de chaque dépôt (génération, versions, validité des métadonnées).
+        #[arg(short, long)]
+        verbose: bool,
+    },
     /// Régler une préférence : « auxipak set lang fr » ou « auxipak set lang en ».
     Set {
         /// Préférence (lang) ; « lang=fr » est aussi accepté.
@@ -296,6 +300,11 @@ const HELP_EN: &[(&str, &str, &str)] = &[
         "update",
         "",
         "Sync the indexes of all repositories (does not upgrade applications).",
+    ),
+    (
+        "update",
+        "verbose",
+        "Show details for each repository (generation, versions, metadata validity).",
     ),
     (
         "set",
@@ -602,25 +611,37 @@ async fn run(cli: Cli, paths: Paths) -> Result<()> {
             i18n::set(l);
             println!("{}", tr!("Langue : français ({})", "Language: English ({})", file.display()));
         }
-        Cmd::Update => {
+        Cmd::Update { verbose } => {
             let config = Config::load(&paths)?;
             let profile = detect::load_or_detect(&paths)?.profile;
             let mut failures = 0;
+            let mut changed = false;
+            let mut apps = 0;
             for r in config.enabled_repos() {
-                match repo::sync(r, &paths, &profile).await {
-                    Ok(d) => println!(
-                        "{}",
-                        tr!(
-                            "{} : index synchronisé (génération {}, {} version(s) pour {} {}, métadonnées valides jusqu'au {})",
-                            "{}: index synced (generation {}, {} version(s) for {} {}, metadata valid until {})",
-                            r.name,
-                            d.state.generation,
-                            d.channel.as_ref().map(|c| c.releases.len()).unwrap_or(0),
-                            profile.channel().map(|c| c.as_str()).unwrap_or("?"),
-                            profile.arch,
-                            d.state.metadata_expires.format("%Y-%m-%d %H:%M UTC")
-                        )
-                    ),
+                let before = repo::load_cached(r, &paths).ok().flatten().map(|d| d.state.generation);
+                let mut bar = progress::Steps::new(&r.name, repo::SYNC_STEPS);
+                let res = repo::sync_with(r, &paths, &profile, &mut |done, detail| bar.set(done, detail)).await;
+                bar.clear();
+                match res {
+                    Ok(d) => {
+                        changed |= before != Some(d.state.generation);
+                        apps += d.apps.apps.len();
+                        if verbose {
+                            println!(
+                                "{}",
+                                tr!(
+                                    "{} : index synchronisé (génération {}, {} version(s) pour {} {}, métadonnées valides jusqu'au {})",
+                                    "{}: index synced (generation {}, {} version(s) for {} {}, metadata valid until {})",
+                                    r.name,
+                                    d.state.generation,
+                                    d.channel.as_ref().map(|c| c.releases.len()).unwrap_or(0),
+                                    profile.channel().map(|c| c.as_str()).unwrap_or("?"),
+                                    profile.arch,
+                                    d.state.metadata_expires.format("%Y-%m-%d %H:%M UTC")
+                                )
+                            );
+                        }
+                    }
                     Err(e) => {
                         failures += 1;
                         eprintln!("{}", tr!("{} : échec : {e:#}", "{}: failed: {e:#}", r.name));
@@ -632,6 +653,23 @@ async fn run(cli: Cli, paths: Paths) -> Result<()> {
                     "{failures} dépôt(s) n'ont pas pu être synchronisés",
                     "{failures} repository(ies) could not be synced"
                 ));
+            }
+            if changed {
+                println!(
+                    "{}",
+                    tr!(
+                        "✓ Cache à jour : {apps} application(s) disponible(s)",
+                        "✓ Cache updated: {apps} application(s) available"
+                    )
+                );
+            } else {
+                println!(
+                    "{}",
+                    tr!(
+                        "✓ Cache déjà à jour : {apps} application(s) disponible(s)",
+                        "✓ Cache already up to date: {apps} application(s) available"
+                    )
+                );
             }
             if let Ok(Some(a)) = selfupdate::check(&config).await {
                 println!(
@@ -682,15 +720,24 @@ async fn run(cli: Cli, paths: Paths) -> Result<()> {
                             Err(e) => eprintln!("{}", tr!("avertissement : {e:#}", "warning: {e:#}")),
                         }
                     }
-                    Ok(None) => {}
-                    Err(e) => tracing::warn!(
-                        error = %e,
+                    Ok(None) => println!(
                         "{}",
                         tr!(
-                            "vérification de la version d'AuxiPak impossible",
-                            "cannot check for a newer AuxiPak version"
+                            "✓ AuxiPak est à jour ({})",
+                            "✓ AuxiPak is up to date ({})",
+                            selfupdate::CURRENT
                         )
                     ),
+                    Err(e) => {
+                        tracing::warn!(error = %e, "self-update check failed");
+                        eprintln!(
+                            "{}",
+                            tr!(
+                                "avertissement : impossible de vérifier si une version plus récente d'AuxiPak existe : {e:#}",
+                                "warning: cannot check for a newer AuxiPak version: {e:#}"
+                            )
+                        );
+                    }
                 }
             }
             let env = env_for(paths, Need::Install).await?;
@@ -699,7 +746,17 @@ async fn run(cli: Cli, paths: Paths) -> Result<()> {
                 allow_scripts,
                 ..Default::default()
             };
-            for m in engine::upgrade(&env, package.as_deref(), &opts, &mut reg).await? {
+            let msgs = engine::upgrade(&env, package.as_deref(), &opts, &mut reg).await?;
+            if msgs.is_empty() {
+                println!(
+                    "{}",
+                    tr!(
+                        "✓ Aucune application installée par AuxiPak : rien à mettre à niveau.",
+                        "✓ No application installed by AuxiPak: nothing to upgrade."
+                    )
+                );
+            }
+            for m in msgs {
                 println!("{m}");
             }
         }

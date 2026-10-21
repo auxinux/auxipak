@@ -180,6 +180,69 @@ impl Download {
     }
 }
 
+/// Ligne de progression par étapes (pure, testable) :
+/// « official  [████████░░░░] 2/5  catalogue des applications ».
+fn render_steps(label: &str, done: usize, total: usize, detail: &str) -> String {
+    let total = total.max(1);
+    let done = done.min(total);
+    let full = done * BAR / total;
+    let line = format!("  {label}  [{}{}] {done}/{total}", "█".repeat(full), "░".repeat(BAR - full));
+    if detail.is_empty() {
+        line
+    } else {
+        format!("{line}  {detail}")
+    }
+}
+
+/// Barre de progression d'une opération en étapes connues (synchronisation
+/// d'un dépôt). N'affiche rien hors d'un terminal ; la ligne est effacée à la
+/// fin, le résumé étant écrit par l'appelant.
+pub struct Steps {
+    label: String,
+    total: usize,
+    animated: bool,
+    width: usize,
+}
+
+impl Steps {
+    pub fn new(label: &str, total: usize) -> Steps {
+        Steps {
+            label: label.to_string(),
+            total,
+            animated: animated(),
+            width: 0,
+        }
+    }
+
+    /// `done` étapes terminées ; `detail` : étape en cours.
+    pub fn set(&mut self, done: usize, detail: &str) {
+        if !self.animated {
+            return;
+        }
+        let line = render_steps(&self.label, done, self.total, detail);
+        let n = line.chars().count();
+        let pad = self.width.saturating_sub(n);
+        self.width = n;
+        let mut e = std::io::stderr().lock();
+        let _ = write!(e, "\r{line}{}", " ".repeat(pad));
+        let _ = e.flush();
+    }
+
+    /// Efface la ligne (succès ou échec : l'appelant écrit la suite).
+    pub fn clear(&mut self) {
+        if self.animated && self.width > 0 {
+            eprint!("\r{}\r", " ".repeat(self.width));
+            self.width = 0;
+        }
+    }
+}
+
+impl Drop for Steps {
+    fn drop(&mut self) {
+        self.clear();
+    }
+}
+
 /// Indicateur d'étape : « ⠋ copie de Firefox.app (3 s) », puis « ✓ … (5 s) ».
 pub struct Step {
     label: String,
@@ -258,6 +321,17 @@ pub async fn step<T, E>(label: impl Into<String>, fut: impl std::future::Future<
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn steps_line() {
+        let l = render_steps("official", 2, 5, "catalogue");
+        assert!(l.starts_with("  official  ["));
+        assert!(l.contains("] 2/5  catalogue"));
+        assert_eq!(l.matches('█').count(), 2 * BAR / 5);
+        assert_eq!(render_steps("r", 9, 5, ""), render_steps("r", 5, 5, ""));
+        assert!(render_steps("r", 5, 5, "").ends_with("] 5/5"));
+        assert!(render_steps("r", 0, 0, "").contains("0/1"));
+    }
+
     use super::*;
 
     #[test]
