@@ -203,8 +203,8 @@ pub fn resolve<'a>(repos: &'a [RepoData], spec: &str, sel: &Selector, default_la
         let revoked = revoked_versions(repos, &spec_l, sel);
         if !revoked.is_empty() {
             bail!(tr!(
-                "« {spec} » : version(s) {} révoquée(s) : installation refusée",
-                "\"{spec}\": version(s) {} revoked: installation refused",
+                "« {spec} » : aucune version installable, version(s) {} révoquée(s) (essayez « auxipak search {spec} »)",
+                "\"{spec}\": no installable version, version(s) {} revoked (try \"auxipak search {spec}\")",
                 revoked.join(", ")
             ));
         }
@@ -242,8 +242,8 @@ pub fn resolve<'a>(repos: &'a [RepoData], spec: &str, sel: &Selector, default_la
         revoked.dedup();
         if !revoked.is_empty() {
             bail!(tr!(
-                "« {spec} » : version(s) {} révoquée(s) : installation refusée",
-                "\"{spec}\": version(s) {} revoked: installation refused",
+                "« {spec} » : aucune version installable, version(s) {} révoquée(s) (essayez « auxipak search {spec} »)",
+                "\"{spec}\": no installable version, version(s) {} revoked (try \"auxipak search {spec}\")",
                 revoked.join(", ")
             ));
         }

@@ -5,6 +5,23 @@ le projet applique le [versionnage sémantique](https://semver.org/lang/fr/).
 
 ## [Non publié]
 
+## [1.0.5] — 2026-10-21
+
+### Sécurité
+
+- Mise à jour de `rustls-webpki` (0.103.16) et `webpki-root-certs` (1.0.10) :
+  RUSTSEC-2026-0382 et RUSTSEC-2026-0383 (certificats intermédiaires
+  révoqués de la confiance acceptés lors de la vérification TLS).
+
+### Corrigé
+
+- `auxipak upgrade` : la ligne « ✓ AuxiPak est à jour » est écrite sur la
+  sortie d'erreur ; la sortie standard ne porte que le résultat des
+  applications (un `auxipak upgrade | grep -q …` interrompait le client).
+- `auxipak install` : quand toutes les versions d'une application sont
+  révoquées, le message indique qu'aucune version n'est installable et
+  suggère `auxipak search`.
+
 ## [1.0.4] — 2026-10-21
 
 ### Ajouté

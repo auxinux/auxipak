@@ -720,7 +720,9 @@ async fn run(cli: Cli, paths: Paths) -> Result<()> {
                             Err(e) => eprintln!("{}", tr!("avertissement : {e:#}", "warning: {e:#}")),
                         }
                     }
-                    Ok(None) => println!(
+                    // Sur la sortie d'erreur, comme « Mise à jour d'AuxiPak » : la
+                    // sortie standard ne porte que le résultat des applications.
+                    Ok(None) => eprintln!(
                         "{}",
                         tr!(
                             "✓ AuxiPak est à jour ({})",
