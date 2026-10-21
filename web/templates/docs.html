@@ -5,6 +5,32 @@
 <section class="card">
   <h2>{{ tr.docs_client }}</h2>
   <p>{{ tr.docs_client_text }}</p>
+</section>
+<section class="card" id="install">
+  <h2>{{ tr.docs_install }}</h2>
+  <h3>{{ tr.docs_install_unix }}</h3>
+  <p>{{ tr.docs_install_unix_text }}</p>
+  <pre>curl -fsSL {{ base }}install.sh | sh</pre>
+  <p>{{ tr.docs_install_builder_unix }}</p>
+  <pre>curl -fsSL {{ base }}install.sh | sh -s -- --with-builder</pre>
+  <h3>{{ tr.docs_install_windows }}</h3>
+  <p>{{ tr.docs_install_windows_text }}</p>
+  <pre>irm {{ base }}install.ps1 | iex</pre>
+  <p>{{ tr.docs_install_builder_windows }}</p>
+  <pre>$env:AUXIPAK_WITH_BUILDER = "1"; irm {{ base }}install.ps1 | iex</pre>
+  <h3>{{ tr.docs_install_check }}</h3>
+  <pre>auxipak --version
+auxipak doctor
+auxipak update</pre>
+  <p>{{ tr.docs_install_trust }}</p>
+  <h3>{{ tr.docs_install_manual }}</h3>
+  <p>{{ tr.docs_install_manual_text }} <a href="{{ base }}downloads/SHA256SUMS">{{ base }}downloads/</a></p>
+  <h3>{{ tr.docs_uninstall }}</h3>
+<pre>curl -fsSL {{ base }}uninstall.sh | sh           # Linux, macOS
+irm {{ base }}uninstall.ps1 | iex                 # Windows</pre>
+  <p class="meta">{{ tr.docs_uninstall_text }}</p>
+</section>
+<section class="card">
   <h2>{{ tr.docs_commands }}</h2>
 <pre>auxipak update                  # {{ tr.docs_cmd_update }}
 auxipak search firefox

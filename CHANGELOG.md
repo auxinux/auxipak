@@ -5,6 +5,14 @@ le projet applique le [versionnage sémantique](https://semver.org/lang/fr/).
 
 ## [Non publié]
 
+## [1.0.4] — 2026-10-21
+
+### Ajouté
+
+- Page « Installation » du site : installation du client pas à pas par
+  système (Linux, macOS, Windows), avec auxipak-builder, vérification,
+  installation manuelle et désinstallation.
+
 ### Modifié
 
 - `auxipak update` affiche une barre de progression par dépôt puis un résumé
