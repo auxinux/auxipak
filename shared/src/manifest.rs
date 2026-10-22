@@ -580,7 +580,11 @@ impl Target {
         if self.platform != p.os {
             return Err(tr!("plateforme {} ≠ {}", "platform {} ≠ {}", self.platform, p.os));
         }
-        if p.os == Os::Linux && !self.distributions.contains(&p.distribution) {
+        // Une variante de la distribution de base (Debian pour AuxiNux OS)
+        // convient, mais une variante propre au système lui est préférée.
+        let distribution_exact = p.os != Os::Linux || self.distributions.contains(&p.distribution);
+        let via_base = p.distribution.base().is_some_and(|b| self.distributions.contains(&b));
+        if p.os == Os::Linux && !distribution_exact && !via_base {
             return Err(tr!(
                 "distribution {} non visée ({})",
                 "distribution {} not targeted ({})",
@@ -608,6 +612,7 @@ impl Target {
             }
         }
         Ok(MatchQuality {
+            distribution_exact,
             native,
             arch_exact,
             version_constrained: self.os_version.is_some(),
@@ -616,8 +621,12 @@ impl Target {
 }
 
 /// Qualité d'une correspondance (utilisée pour départager plusieurs variantes).
+/// L'ordre des champs est celui de la comparaison.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct MatchQuality {
+    /// Variante propre à la distribution (et non à sa base, voir
+    /// [`Distribution::base`]).
+    pub distribution_exact: bool,
     /// Exécution native (et non par émulation x86_64 sur arm64).
     pub native: bool,
     pub arch_exact: bool,
@@ -1805,6 +1814,39 @@ targets:
         crate::i18n::set(crate::i18n::Lang::En);
         let err = m.select_target(&mac).unwrap_err();
         assert!(err.contains("no target of"), "{err}");
+    }
+
+    #[test]
+    fn auxinuxos_uses_debian_variants_unless_it_has_its_own() {
+        let aux = profile(crate::platform::tests::AUXINUXOS_030, Arch::X86_64);
+        assert_eq!(aux.distribution, Distribution::Auxinuxos);
+        // Variante propre : préférée à la variante Debian.
+        let (m, _) = Manifest::parse(DEMO.as_bytes()).unwrap();
+        assert_eq!(m.select_target(&aux).unwrap().name, "auxinuxos");
+        // Sans elle : la variante Debian s'applique (AuxiNux OS = Debian 13),
+        // contrainte de version comprise.
+        let only_debian = DEMO.replace("    distributions: [auxinuxos]\n", "    distributions: [ubuntu]\n");
+        let only_debian = only_debian.replace("      manager: auxi", "      manager: apt");
+        let (m, _) = Manifest::parse(only_debian.as_bytes()).unwrap();
+        assert_eq!(m.select_target(&aux).unwrap().name, "debian");
+        let aux_arm = profile(crate::platform::tests::AUXINUXOS_030, Arch::Arm64);
+        assert_eq!(m.select_target(&aux_arm).unwrap().name, "debian-arm");
+        let mut aux12 = aux_arm.clone();
+        aux12.version = "12".into();
+        assert_eq!(m.select_target(&aux12).unwrap().name, "debian");
+        // Une variante Ubuntu seule ne convient pas.
+        let only_ubuntu = only_debian.replace("[debian, ubuntu]", "[ubuntu]").replace(
+            "    distributions: [debian]\n    architectures: [arm64]",
+            "    distributions: [ubuntu]\n    architectures: [arm64]",
+        );
+        let (m, _) = Manifest::parse(only_ubuntu.as_bytes()).unwrap();
+        crate::i18n::set(crate::i18n::Lang::En);
+        let err = m.select_target(&aux).unwrap_err();
+        assert!(err.contains("distribution auxinuxos not targeted"), "{err}");
+        // Debian ne prend jamais une variante AuxiNux OS.
+        let (m, _) = Manifest::parse(DEMO.as_bytes()).unwrap();
+        let t = m.targets.iter().find(|t| t.name == "auxinuxos").unwrap();
+        assert!(t.matches(&profile("ID=debian\nVERSION_ID=13\n", Arch::X86_64)).is_err());
     }
 
     #[test]

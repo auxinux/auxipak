@@ -204,7 +204,7 @@ install: { method: package_manager, manager: apt, packages: [firefox-esr] }
 | Gestionnaire | Autorisé sur | Appel effectué par le client |
 |---|---|---|
 | `apt` | Debian, Ubuntu (jamais AuxiNuxOS/VirtuaOS) | `/usr/bin/apt-get install -y --no-install-recommends <paquets>` avec `DEBIAN_FRONTEND=noninteractive` |
-| `auxi` | AuxiNuxOS | adaptateur `auxi` (défaut supposé : `auxi install <paquets>`, **à valider**, voir [CLI_REFERENCE.md](CLI_REFERENCE.md#adaptateur-auxi-auxinuxos)) |
+| `auxi` | AuxiNuxOS | adaptateur `auxi` : `auxi --yes install --deb <paquets>` (voir [CLI_REFERENCE.md](CLI_REFERENCE.md#adaptateur-auxi-auxinuxos)). Sur AuxiNux OS, une variante `debian` avec `manager: apt` passe aussi par `auxi` |
 | `virtuaos` | VirtuaOS | adaptateur VirtuaOS (non configuré par défaut) |
 | `winget` | Windows | pour chaque paquet : `winget install --id <id> --exact --silent --accept-package-agreements --accept-source-agreements --disable-interactivity` |
 | `brew` | macOS | `brew install <paquets>` ; refusé si `allow_brew = false` ou si le client tourne en administrateur |

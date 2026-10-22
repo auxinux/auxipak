@@ -160,6 +160,20 @@ impl Distribution {
             _ => None,
         }
     }
+
+    /// Distribution de base dont les variantes conviennent aussi à ce système,
+    /// à défaut d'une variante qui lui est propre.
+    ///
+    /// AuxiNux OS est une Debian (même `VERSION_ID`, mêmes dépôts) dont seul
+    /// le gestionnaire diffère : APT y est bloqué, `auxi` installe. Ses
+    /// variantes `debian` s'y appliquent donc, APT étant remplacé par
+    /// l'adaptateur `auxi`. VirtuaOS n'a pas de base reconnue.
+    pub fn base(&self) -> Option<Distribution> {
+        match self {
+            Distribution::Auxinuxos => Some(Distribution::Debian),
+            _ => None,
+        }
+    }
 }
 
 impl fmt::Display for Distribution {
@@ -231,6 +245,12 @@ impl Channel {
     /// Nom de cible TUF du sous-index de ce canal pour une architecture.
     pub fn index_target(&self, arch: Arch) -> String {
         format!("channels/{}/{}.json", self.as_str(), arch.as_str())
+    }
+
+    /// Canal de repli : celui de la distribution de base ([`Distribution::base`]),
+    /// consulté en plus du canal propre (`linux/deb` pour AuxiNux OS).
+    pub fn fallback_for(d: Distribution) -> Option<Channel> {
+        d.base().and_then(Channel::for_distribution)
     }
 
     /// Canal correspondant à une distribution, s'il existe.
@@ -342,10 +362,20 @@ pub fn parse_os_release(content: &str) -> OsRelease {
 
 /// Déduit la distribution à partir d'un `os-release`.
 ///
-/// L'ordre de priorité est : `ID` exact, puis `ID_LIKE`. Une dérivée
-/// d'Ubuntu ou de Debian non reconnue est rattachée à sa base uniquement via
-/// `ID_LIKE`, ce qui permet d'utiliser le canal `linux/deb`.
+/// L'ordre de priorité est : `VARIANT_ID` (AuxiNux OS, VirtuaOS), `ID`
+/// exact, puis `ID_LIKE`. Une dérivée d'Ubuntu ou de Debian non reconnue est
+/// rattachée à sa base uniquement via `ID_LIKE`, ce qui permet d'utiliser le
+/// canal `linux/deb`.
+///
+/// AuxiNux OS garde volontairement `ID=debian` (dépôts et logiciels tiers
+/// visent Debian 13) et se signale par `VARIANT_ID=auxinuxos` : sans ce
+/// champ, il serait pris pour une Debian et AuxiPak appellerait `apt-get`,
+/// qui y est bloqué.
 pub fn distribution_from_os_release(osr: &OsRelease) -> Distribution {
+    let variant = osr.get("VARIANT_ID").map(|s| s.to_ascii_lowercase()).unwrap_or_default();
+    if matches!(variant.as_str(), "auxinuxos" | "virtuaos") {
+        return Distribution::from_str(&variant).unwrap_or(Distribution::Unknown);
+    }
     let id = osr.get("ID").map(|s| s.to_ascii_lowercase()).unwrap_or_default();
     if let Ok(d) = Distribution::from_str(&id) {
         if d.os() == Os::Linux {
@@ -388,7 +418,7 @@ pub fn linux_profile_from_os_release(osr: &OsRelease, arch: Arch, immutable: boo
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     const DEBIAN13: &str = r#"PRETTY_NAME="Debian GNU/Linux 13 (trixie)"
@@ -432,6 +462,65 @@ ID=debian
         assert_eq!(p.channel(), Some(Channel::LinuxAuxinuxos));
         let d = linux_profile_from_os_release(&parse_os_release(AUXINUX_DERIVED), Arch::X86_64, false);
         assert_eq!(d.distribution, Distribution::Auxinuxos);
+    }
+
+    /// `/usr/lib/os-release` réel d'AuxiNux OS 0.3.0 (paquet auxinuxos-release),
+    /// plus `VARIANT_ID=auxinuxos`.
+    pub(crate) const AUXINUXOS_030: &str = r#"# NAME = nom court: c'est CE champ que KDE Discover affiche comme source des
+# paquets DEB (ex: "AuxiNux"). PRETTY_NAME garde le nom produit complet.
+NAME="AuxiNux OS"
+PRETTY_NAME="AuxiNux OS 0.3.0"
+VERSION="0.3.0 (trixie)"
+VERSION_ID="13"
+VERSION_CODENAME=trixie
+# ID reste debian volontairement: les depots, Brave et apt ciblent Debian 13.
+# Seul l'affichage (NAME/PRETTY_NAME) est rebrande AuxiNux pour KDE Discover,
+# qui affiche sinon "From Debian GNU/Linux" comme source des paquets DEB.
+ID=debian
+ID_LIKE=debian
+VARIANT_ID=auxinuxos
+HOME_URL="https://os.auxinux.ca/auxinuxos"
+SUPPORT_URL="https://os.auxinux.ca/auxinuxos"
+BUG_REPORT_URL="https://os.auxinux.ca/auxinuxos"
+LOGO=auxinuxos
+"#;
+
+    #[test]
+    fn detects_real_auxinuxos_by_variant_id() {
+        let p = linux_profile_from_os_release(&parse_os_release(AUXINUXOS_030), Arch::X86_64, false);
+        assert_eq!(p.distribution, Distribution::Auxinuxos);
+        assert_eq!(p.version, "13");
+        assert_eq!(p.raw_id, "debian");
+        assert_eq!(p.pretty_name, "AuxiNux OS 0.3.0");
+        assert!(p.immutable);
+        assert_eq!(p.channel(), Some(Channel::LinuxAuxinuxos));
+        assert_eq!(Channel::fallback_for(p.distribution), Some(Channel::LinuxDeb));
+        // Sans VARIANT_ID (AuxiNux OS ≤ 0.3.0 avant correctif) : pris pour Debian.
+        let old = AUXINUXOS_030.replace("VARIANT_ID=auxinuxos\n", "");
+        let p = linux_profile_from_os_release(&parse_os_release(&old), Arch::X86_64, false);
+        assert_eq!(p.distribution, Distribution::Debian);
+        // Casse et guillemets indifférents.
+        let q = AUXINUXOS_030.replace("VARIANT_ID=auxinuxos", "VARIANT_ID=\"AuxiNuxOS\"");
+        assert_eq!(distribution_from_os_release(&parse_os_release(&q)), Distribution::Auxinuxos);
+        // Une autre variante de Debian reste Debian.
+        let r = AUXINUXOS_030.replace("VARIANT_ID=auxinuxos", "VARIANT_ID=workstation");
+        assert_eq!(distribution_from_os_release(&parse_os_release(&r)), Distribution::Debian);
+    }
+
+    #[test]
+    fn only_auxinuxos_has_a_base_distribution() {
+        assert_eq!(Distribution::Auxinuxos.base(), Some(Distribution::Debian));
+        for d in [
+            Distribution::Debian,
+            Distribution::Ubuntu,
+            Distribution::Virtuaos,
+            Distribution::Windows,
+            Distribution::Macos,
+            Distribution::Unknown,
+        ] {
+            assert_eq!(d.base(), None, "{d}");
+            assert_eq!(Channel::fallback_for(d), None, "{d}");
+        }
     }
 
     #[test]

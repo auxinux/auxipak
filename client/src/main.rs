@@ -2,6 +2,7 @@
 
 mod catalog;
 mod config;
+mod debtoggle;
 mod detect;
 mod download;
 mod engine;
@@ -289,6 +290,10 @@ async fn main() -> ExitCode {
     init_logging(&paths);
     selfupdate::cleanup_old();
     tracing::info!(args = ?std::env::args().collect::<Vec<_>>(), "{}", tr!("démarrage", "start"));
+    // Réglage DEB d'AuxiNux OS laissé activé par une opération interrompue.
+    debtoggle::recover(&paths);
+    // Réglage DEB activé pendant la commande : remis à désactivé à la fin.
+    let _deb = debtoggle::Session;
     match run(cli, paths).await {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
@@ -763,7 +768,9 @@ async fn run(cli: Cli, paths: Paths) -> Result<()> {
                     )
                 );
             }
-            if let Ok(Some(a)) = selfupdate::check(&config).await {
+            if selfupdate::installed_by_system_package() {
+                // Mis à jour avec le système : aucune annonce « auxipak upgrade ».
+            } else if let Ok(Some(a)) = selfupdate::check(&config).await {
                 println!(
                     "{}",
                     tr!(
@@ -782,7 +789,9 @@ async fn run(cli: Cli, paths: Paths) -> Result<()> {
         } => {
             let _lock = StateLock::acquire(&paths)?;
             pending_warning(&paths);
-            if package.is_empty() && !no_self {
+            if package.is_empty() && !no_self && selfupdate::installed_by_system_package() {
+                eprintln!("{}", selfupdate::system_package_hint());
+            } else if package.is_empty() && !no_self {
                 let config = Config::load(&paths)?;
                 let insecure = config
                     .enabled_repos()

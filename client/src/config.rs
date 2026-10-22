@@ -111,17 +111,26 @@ impl Default for Adapters {
     }
 }
 
-/// Valeurs par défaut de l'adaptateur `auxi`, fondées sur la syntaxe
-/// annoncée (`auxi install firefox`). À VALIDER sur AuxiNuxOS réel
-/// (voir docs/CLI_REFERENCE.md, section « Adaptateur auxi »).
-fn default_auxi() -> AdapterConfig {
+/// Valeurs par défaut de l'adaptateur `auxi`, vérifiées contre le script
+/// `auxi` d'AuxiNux OS 0.3.0 (voir docs/CLI_REFERENCE.md, « Adaptateur auxi ») :
+/// - `--yes` (option globale, AVANT la commande) : apt-get -y, debconf non
+///   interactif, conffiles conservés ;
+/// - `--deb` : jamais Flatpak, plusieurs paquets acceptés à l'installation ;
+/// - `uninstall --deb` ne retire que le premier paquet : `{package}`, un appel
+///   par paquet ;
+/// - un `.deb` local passe par `install --deb CHEMIN_ABSOLU` (apt-get) ;
+/// - pas de requête d'état : `query` vide = `dpkg-query -W` direct.
+///
+/// Un paquet NOUVEAU est refusé par auxi tant que le réglage DEB est
+/// désactivé : AuxiPak l'active le temps de l'opération (voir `debtoggle`).
+pub fn default_auxi() -> AdapterConfig {
     AdapterConfig {
         program: "auxi".into(),
-        install: vec!["install".into(), "{packages}".into()],
-        remove: vec!["remove".into(), "{packages}".into()],
+        install: ["--yes", "install", "--deb", "{packages}"].map(String::from).to_vec(),
+        remove: ["--yes", "uninstall", "--deb", "{package}"].map(String::from).to_vec(),
         query: vec![],
-        install_local_deb: vec![],
-        validated: false,
+        install_local_deb: ["--yes", "install", "--deb", "{file}"].map(String::from).to_vec(),
+        validated: true,
     }
 }
 
@@ -338,6 +347,36 @@ mod tests {
         assert!(c.validate().is_err());
         c.repositories[0].allow_insecure_localhost = true;
         assert!(c.validate().is_ok());
+    }
+
+    #[test]
+    fn auxi_adapter_defaults_match_auxi_syntax() {
+        let a = default_auxi();
+        assert!(a.validated);
+        assert_eq!(a.install, ["--yes", "install", "--deb", "{packages}"]);
+        assert_eq!(a.remove, ["--yes", "uninstall", "--deb", "{package}"]);
+        assert_eq!(a.install_local_deb, ["--yes", "install", "--deb", "{file}"]);
+        assert!(a.query.is_empty());
+        Config::default().validate().unwrap();
+    }
+
+    #[test]
+    fn deb_conffile_is_valid_and_matches_defaults() {
+        // /etc/auxipak/config.toml du paquet .deb (packaging/deb).
+        let c: Config = toml::from_str(include_str!("../../packaging/deb/config.toml")).unwrap();
+        c.validate().unwrap();
+        assert_eq!(c.repositories.len(), 1);
+        let r = &c.repositories[0];
+        assert_eq!(r.name, "official");
+        assert_eq!(r.url, OFFICIAL_URL);
+        assert!(r.official && !r.allow_insecure_localhost);
+        let (a, d) = (&c.adapters.auxi, default_auxi());
+        assert_eq!(a.program, d.program);
+        assert_eq!(a.install, d.install);
+        assert_eq!(a.remove, d.remove);
+        assert_eq!(a.query, d.query);
+        assert_eq!(a.install_local_deb, d.install_local_deb);
+        assert!(a.validated);
     }
 
     #[test]

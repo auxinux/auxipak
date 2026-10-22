@@ -284,11 +284,11 @@ priority = 0                    # plus petit = prioritaire à version égale
 
 [adapters.auxi]
 program = "auxi"
-install = ["install", "{packages}"]
-remove = ["remove", "{packages}"]
-query = []
-install_local_deb = []
-validated = false
+install = ["--yes", "install", "--deb", "{packages}"]
+remove = ["--yes", "uninstall", "--deb", "{package}"]
+query = []                      # vide : dpkg-query -W
+install_local_deb = ["--yes", "install", "--deb", "{file}"]
+validated = true
 
 [adapters.virtuaos]
 program = ""                    # non configuré
@@ -310,29 +310,99 @@ max_download_bytes = 34359738368   # 32 Gio
 
 ## Adaptateur auxi (AuxiNuxOS)
 
-Sur AuxiNuxOS, APT est bloqué : AuxiPak n'utilise **jamais** `apt` (le
-manifeste qui le tenterait est refusé : `apt` n'est autorisé que sur Debian et
-Ubuntu). Les installations natives passent par la commande système `auxi`,
-via un **adaptateur configurable**.
+### Détection d'AuxiNux OS
 
-### Valeurs par défaut (supposées)
+AuxiNux OS garde volontairement `ID=debian` dans `/usr/lib/os-release`
+(dépôts et logiciels tiers visent Debian 13) et se signale par
+**`VARIANT_ID=auxinuxos`**. Règle de détection, dans l'ordre :
 
-Les valeurs par défaut reposent sur la syntaxe annoncée (`auxi install
-firefox`). Elles **n'ont pas été validées sur un AuxiNuxOS réel** :
+1. `VARIANT_ID` = `auxinuxos` (ou `virtuaos`), sans égard à la casse ;
+2. `ID` exact (`auxinuxos`, `virtuaos`, `debian`, `ubuntu`) ;
+3. `ID_LIKE` (`auxinuxos`, `virtuaos`, `ubuntu`, `debian`, dans cet ordre).
 
-| Opération | Commande par défaut | État |
+Un AuxiNux OS sans `VARIANT_ID` serait pris pour une Debian : AuxiPak
+appellerait `apt-get`, bloqué par AuxiNux OS. La version retenue est
+`VERSION_ID` (`13` pour AuxiNux OS 0.3.0).
+
+### Variantes Debian sur AuxiNux OS
+
+AuxiNux OS = Debian 13 + gestionnaire `auxi`. À défaut d'une variante
+`distributions: [auxinuxos]`, une variante **`debian`** du catalogue
+s'applique (contrainte `os_version` évaluée sur `VERSION_ID`, donc `>=12` ou
+`>=13` conviennent) ; une variante propre à AuxiNux OS reste toujours
+préférée. Le client lit pour cela le canal `linux/auxinuxos` **et** le canal
+`linux/deb` (versions publiées pour Debian seulement ; une variante Ubuntu ne
+convient pas). À l'exécution :
+
+- `package_manager` avec `manager: apt` → mêmes paquets par `auxi` ;
+- `deb` → `install_local_deb` (voir ci-dessous) ;
+- dépendances natives (`native_dependencies`) → `auxi` ;
+- `files` et `script` : inchangés.
+
+APT n'est **jamais** appelé sur AuxiNux OS ; un manifeste qui viserait
+`auxinuxos` avec `manager: apt` reste refusé.
+
+### Valeurs par défaut (vérifiées)
+
+Vérifiées le 2026-10-22 contre le script `/usr/bin/auxi` d'AuxiNux OS 0.3.0
+(`packages/auxi-cli/auxi` du dépôt AuxinuxOS), exécuté en banc avec un faux
+`apt-get` :
+
+| Opération | Commande par défaut | Ce que fait auxi |
 |---|---|---|
-| installation | `auxi install <paquets>` | supposée |
-| désinstallation | `auxi remove <paquets>` | supposée |
-| détection (`query`) | **vide** : la présence n'est pas vérifiable (résultat « inconnu ») | à définir |
-| installation d'un `.deb` local (`install_local_deb`) | **vide** : les variantes `deb` échouent sur AuxiNuxOS | à définir |
-| `validated` | `false` | |
+| installation | `auxi --yes install --deb <paquets>` | `apt-get -y -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold install -- <paquets>` (plusieurs paquets en un appel) |
+| désinstallation | `auxi --yes uninstall --deb <paquet>`, **un appel par paquet** | `apt-get -y … remove -- <paquet>` : `uninstall --deb` ne retire que le **premier** paquet nommé |
+| détection (`query`) | **vide** → `dpkg-query -W -f='${Status}' <paquet>` | auxi n'a pas de requête d'état ; `dpkg-query` (lecture seule) n'est pas détourné |
+| `.deb` local (`install_local_deb`) | `auxi --yes install --deb <chemin absolu>` | `apt-get … install -- /chemin/x.deb` (apt installe un fichier dont l'argument contient « / ») |
+| `validated` | `true` | |
 
-Tant que `validated = false`, chaque appel est journalisé comme « syntaxe non
-validée » et `auxipak doctor` l'indique sur AuxiNuxOS. Conséquences de la
-détection vide : AuxiPak ne peut pas repérer une application déjà installée
-par `auxi` (pas de refus ni d'adoption), ni confirmer une installation ;
-`list --check` affiche `(?)`.
+- `--yes` est une **option globale, placée avant la commande** : `apt-get -y`,
+  `DEBIAN_FRONTEND=noninteractive`, fichiers de configuration modifiés
+  conservés. Sans elle, apt-get lirait une fin de fichier sur l'entrée
+  standard (fermée par AuxiPak) et abandonnerait.
+- `--deb` : jamais Flatpak (sans option, auxi essaierait d'abord Flathub).
+- **Réglage DEB d'AuxiNux OS** (`/etc/auxinux/apps.conf` ; actif si et
+  seulement s'il contient la ligne exacte `DEB_APPS=1`, même règle que
+  `auxi`) : désactivé, `auxi install --deb` refuse tout paquet nouveau, `.deb`
+  locaux compris. AuxiPak l'**active le temps de l'opération** puis le
+  **remet à désactivé** (décision d'aporler, 2026-10-22), voir ci-dessous.
+  AuxiPak ne pose jamais `AUXI_DEB_SYSTEME=1`.
+- **Privilèges** : les opérations DEB d'auxi exigent root ; AuxiPak déduit
+  `admin` et exige `sudo auxipak …`. Sans terminal, auxi ne se relance pas
+  par sudo.
+- **Codes de retour** : ceux d'`apt-get` (0 succès), 1 (DEB désactivé),
+  64 (usage), 70 (APT réel introuvable). Aucun code « redémarrage » : la
+  modification est immédiate (instantané BTRFS posé par le crochet dpkg
+  d'AuxiNux OS).
+- `program = "auxi"` est cherché dans `/usr/bin` (`/usr/bin/auxi`).
+
+Le paquet `.deb` d'AuxiPak installe ces valeurs explicitement dans
+`/etc/auxipak/config.toml` (voir `packaging/deb/`). Une configuration
+existante qui définit sa propre section `[adapters.auxi]` la garde.
+
+### Activation temporaire du réglage DEB
+
+Pour l'installation (`install`) et l'installation d'un `.deb` local
+(`install_local_deb`) par `auxi` uniquement — jamais pour la
+désinstallation ni la détection :
+
+1. si le réglage est **déjà actif**, AuxiPak n'y touche pas, ni avant ni
+   après ;
+2. sinon, avant la première installation : témoin
+   `<état>/deb-temporaire` (`/var/lib/auxipak/deb-temporaire`), puis
+   `auxi set deb=true` ; message « Installation DEB d'AuxiNux OS activée le
+   temps de l'opération » ;
+3. à la fin de la commande, **succès ou échec** : `auxi set deb=false`,
+   puis suppression du témoin ; message « … remise à désactivée ».
+
+Un seul aller-retour par commande : `auxipak install a b c` (ou `upgrade`)
+active une fois et désactive une fois. La sortie d'`auxi set` est captée,
+pas réaffichée (sauf en cas d'échec). Ctrl-C ou SIGTERM pendant
+l'opération : remise à désactivé, puis sortie (codes 130 / 143). Après un
+plantage ou une coupure de courant, le témoin reste : le lancement suivant
+d'AuxiPak (en root, verrou d'état libre) remet le réglage à désactivé et
+supprime le témoin, avec un message. Si `auxi set deb=false` échoue, le
+témoin est gardé et l'avertissement demande `sudo auxi set deb=false`.
 
 ### Syntaxe des commandes
 
@@ -342,7 +412,7 @@ commandes). Paramètres substitués :
 | Paramètre | Remplacé par |
 |---|---|
 | `{packages}` | la liste des paquets (chacun un argument, noms validés) |
-| `{package}` | le premier paquet |
+| `{package}` | un seul paquet : la commande est lancée **une fois par paquet** |
 | `{file}` | chemin absolu d'un fichier local (`.deb`) |
 
 Tout autre `{…}` est refusé ; les arguments littéraux ne doivent contenir ni
@@ -351,55 +421,22 @@ chemin absolu ou un nom cherché **uniquement** dans `/usr/bin`, `/usr/sbin`,
 `/bin`, `/sbin`, `/usr/local/bin`. Le code de retour est interprété avec
 `success_codes` / `reboot_codes` de la variante ; l'entrée standard est
 fermée (aucune interaction possible) ; délai `timeout_seconds` (3 600 s par
-défaut).
+défaut). Avec `validated = false`, chaque appel est journalisé comme
+« syntaxe non validée » et `auxipak doctor` l'indique sur AuxiNux OS.
 
-### Liste des points à valider sur AuxiNuxOS réel
+### Mise à jour d'AuxiPak installé en paquet
 
-1. **Installation** : `auxi install <p1> <p2>` est-elle la syntaxe exacte ?
-   Accepte-t-elle plusieurs paquets en un appel ? Faut-il une option non
-   interactive (confirmation automatique), sachant que l'entrée standard est
-   fermée ?
-2. **Désinstallation** : sous-commande exacte (`remove`, `uninstall`…) et
-   comportement des dépendances.
-3. **Détection** : existe-t-il une commande dont le code de retour vaut 0 si
-   et seulement si un paquet est installé ? Renseigner
-   `query = ["<sous-commande>", "{package}"]`.
-4. **Paquets `.deb` locaux** : `auxi` permet-il d'installer un fichier
-   `.deb` local ? Si oui, renseigner `install_local_deb = ["…", "{file}"]` ;
-   sinon, les éditeurs doivent utiliser `package_manager` (`auxi`) ou `files`.
-5. **Codes de retour** : succès, « déjà installé », « paquet introuvable »,
-   et surtout « redémarrage nécessaire » (système immuable : la modification
-   peut ne prendre effet qu'au redémarrage → `reboot_codes` / `reboot`).
-6. **Privilèges** : `auxi` exige-t-il root ? (AuxiPak déduit `admin` pour
-   `auxi` et exige `sudo auxipak …`.) Fonctionne-t-il via `sudo` avec
-   l'environnement filtré (`PATH`, `HOME`, `LANG`…) ?
-7. **Emplacement** du programme (`/usr/bin/auxi` ?).
-8. **Noms de paquets** : correspondance avec les noms Debian ; caractères
-   utilisés (doivent respecter `^[A-Za-z0-9][A-Za-z0-9.+_:@/-]{0,127}$`).
-9. **Système immuable** : où AuxiPak peut-il écrire en portée système
-   (`/usr/local/bin`, `/opt/auxipak`, `/var/lib/auxipak`) ? Les marqueurs
-   d'immuabilité (`/run/ostree-booted`, `/etc/auxinuxos-immutable`) sont-ils
-   pertinents ?
-10. **Détection du système** : `ID=auxinuxos` (ou `ID_LIKE` contenant
-    `auxinuxos`) dans `/etc/os-release`.
+Installé par le paquet `.deb` (`/usr/bin/auxipak`), AuxiPak se met à jour
+avec le système (`sudo auxi os upgrade` ; `sudo apt upgrade` ailleurs) :
+`auxipak upgrade` ne remplace pas ce binaire (il mettrait dpkg en
+désaccord) et ne met à jour que les applications.
 
-Une fois validé, déployer la configuration (par exemple dans
-`/etc/auxipak/config.toml`) :
+### Points restant à confirmer sur une installation réelle
 
-```toml
-[adapters.auxi]
-program = "/usr/bin/auxi"
-install = ["install", "{packages}"]
-remove = ["remove", "{packages}"]
-query = ["<sous-commande-validée>", "{package}"]
-install_local_deb = []
-validated = true
-```
-
-Puis vérifier avec `auxipak doctor` et une installation de test (par exemple
-l'application de démonstration). Pour tester la mécanique sans système réel,
-le mode simulation (`AUXIPAK_TEST_TOOLS_DIR`, outil factice `auxi`) est
-utilisé par les tests d'intégration ; il ne vaut pas validation.
+1. Installation de bout en bout en VM AuxiNux OS 0.3.0 (le banc a validé la
+   ligne de commande transmise à `apt-get`, pas une transaction réelle).
+2. Activation temporaire du réglage DEB : validée en banc (faux `auxi`),
+   à confirmer sur AuxiNux OS réel (`auxi set` en root, sans terminal).
 
 ## Adaptateur VirtuaOS
 

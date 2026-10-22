@@ -200,6 +200,10 @@ impl Fixture {
     }
 
     fn run_env(&self, args: &[&str], env: &[(&str, &str)]) -> Output {
+        self.command(args, env).output().unwrap()
+    }
+
+    fn command(&self, args: &[&str], env: &[(&str, &str)]) -> Command {
         let mut c = Command::new(env!("CARGO_BIN_EXE_auxipak"));
         c.args(args)
             .env("AUXIPAK_HOME", self.home())
@@ -212,7 +216,7 @@ impl Fixture {
         for (k, v) in env {
             c.env(k, v);
         }
-        c.output().unwrap()
+        c
     }
 
     fn ok(&self, args: &[&str]) -> String {
@@ -691,6 +695,8 @@ targets:
     let tools = f.p("tools");
     std::fs::create_dir_all(&tools).unwrap();
     let log = f.p("auxi.log");
+    let deb_on = f.p("apps.conf");
+    std::fs::write(&deb_on, "DEB_APPS=1\n").unwrap();
     let fake = tools.join("auxi");
     std::fs::write(
         &fake,
@@ -701,18 +707,277 @@ targets:
     let env = [
         ("AUXIPAK_TEST_TOOLS_DIR", tools.to_str().unwrap()),
         ("AUXIPAK_TEST_LOG", log.to_str().unwrap()),
+        // Réglage DEB déjà actif : pas d'aller-retour « auxi set » ici.
+        ("AUXIPAK_TEST_APPS_CONF", deb_on.to_str().unwrap()),
         ("AUXIPAK_ASSUME_ELEVATED", "1"),
     ];
     let o = f.run_env(&["install", "firefox"], &env);
     let text = format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr));
     assert!(o.status.success(), "{text}");
     assert!(text.contains("MODE SIMULATION"), "{text}");
-    assert_eq!(std::fs::read_to_string(&log).unwrap().trim(), "[install][firefox]");
+    assert_eq!(
+        std::fs::read_to_string(&log).unwrap().trim(),
+        "[--yes][install][--deb][firefox]"
+    );
     let list = f.run_env(&["list"], &env);
     assert!(String::from_utf8_lossy(&list.stdout).contains("installed*"));
     let o = f.run_env(&["remove", "firefox"], &env);
     assert!(o.status.success());
-    assert!(std::fs::read_to_string(&log).unwrap().contains("[remove][firefox]"));
+    assert!(std::fs::read_to_string(&log)
+        .unwrap()
+        .contains("[--yes][uninstall][--deb][firefox]"));
+}
+
+/// AuxiNux OS 0.3.0 (Debian 13) sans variante propre : la variante Debian du
+/// catalogue (canal linux/deb) s'applique, APT remplacé par `auxi`.
+/// SIMULATION (faux `auxi`, comme ci-dessus).
+#[cfg(unix)]
+#[test]
+fn auxinuxos_installs_debian_variant_through_auxi_simulated() {
+    use std::os::unix::fs::PermissionsExt;
+    const AUX13: &str = r#"{"os":"linux","distribution":"auxinuxos","version":"13","arch":"x86_64","raw_id":"debian","pretty_name":"AuxiNux OS 0.3.0","immutable":true}"#;
+    let mut f = Fixture::new();
+    let m = r#"format: 1
+id: vlc
+name: VLC
+version: "3.0.21"
+publisher: VideoLAN
+summary: Lecteur multimédia
+license: GPL-2.0-or-later
+languages: [fr]
+targets:
+  - name: debian
+    platform: linux
+    distributions: [debian]
+    os_version: ">=12"
+    architectures: [x86_64]
+    mode: native
+    install: { method: package_manager, manager: apt, packages: [vlc, vlc-plugin-base] }
+"#;
+    f.add(m, &[], None);
+    f.publish();
+    let tools = f.p("tools");
+    std::fs::create_dir_all(&tools).unwrap();
+    let log = f.p("auxi.log");
+    let deb_on = f.p("apps.conf");
+    std::fs::write(&deb_on, "DEB_APPS=1\n").unwrap();
+    let fake = tools.join("auxi");
+    std::fs::write(
+        &fake,
+        "#!/bin/sh\nfor a in \"$@\"; do printf '[%s]' \"$a\"; done >> \"$AUXIPAK_TEST_LOG\"\necho >> \"$AUXIPAK_TEST_LOG\"\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let env = [
+        ("AUXIPAK_PROFILE_OVERRIDE", AUX13),
+        ("AUXIPAK_TEST_TOOLS_DIR", tools.to_str().unwrap()),
+        ("AUXIPAK_TEST_LOG", log.to_str().unwrap()),
+        // Réglage DEB déjà actif : pas d'aller-retour « auxi set » ici.
+        ("AUXIPAK_TEST_APPS_CONF", deb_on.to_str().unwrap()),
+        ("AUXIPAK_ASSUME_ELEVATED", "1"),
+    ];
+    let o = f.run_env(&["update"], &env);
+    assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
+    let o = f.run_env(&["search", "vlc"], &env);
+    assert!(String::from_utf8_lossy(&o.stdout).contains("vlc"), "{o:?}");
+    let o = f.run_env(&["install", "vlc"], &env);
+    let text = format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr));
+    assert!(o.status.success(), "{text}");
+    assert_eq!(
+        std::fs::read_to_string(&log).unwrap().trim(),
+        "[--yes][install][--deb][vlc][vlc-plugin-base]"
+    );
+    let o = f.run_env(&["remove", "vlc"], &env);
+    assert!(o.status.success(), "{o:?}");
+    // auxi uninstall --deb ne retire que le premier paquet : un appel chacun.
+    let log = std::fs::read_to_string(&log).unwrap();
+    assert!(log.contains("[--yes][uninstall][--deb][vlc]\n"), "{log}");
+    assert!(log.contains("[--yes][uninstall][--deb][vlc-plugin-base]\n"), "{log}");
+}
+
+/// Dépôt avec des applications à variante Debian (apt), profil AuxiNux OS
+/// 0.3.0, faux `auxi` qui journalise ses appels et tient le réglage DEB
+/// (`set deb=true|false`) dans un faux apps.conf. Fichier `tools/fail` : les
+/// installations échouent (l'environnement des sous-processus est filtré).
+#[cfg(unix)]
+struct DebToggleBench {
+    f: Fixture,
+    tools: PathBuf,
+    log: PathBuf,
+    conf: PathBuf,
+}
+
+#[cfg(unix)]
+impl DebToggleBench {
+    fn new(apps: &[&str]) -> DebToggleBench {
+        use std::os::unix::fs::PermissionsExt;
+        let mut f = Fixture::new();
+        for id in apps {
+            let m = format!(
+                "format: 1\nid: {id}\nname: {id}\nversion: \"1.0\"\npublisher: X\nsummary: Essai\nlicense: MIT\nlanguages: [fr]\n\
+                 targets:\n  - name: debian\n    platform: linux\n    distributions: [debian]\n    architectures: [x86_64]\n    \
+                 mode: native\n    install: {{ method: package_manager, manager: apt, packages: [{id}] }}\n"
+            );
+            f.add(&m, &[], None);
+        }
+        f.publish();
+        let tools = f.p("tools");
+        std::fs::create_dir_all(&tools).unwrap();
+        let log = f.p("auxi.log");
+        let conf = f.p("apps.conf");
+        std::fs::write(
+            tools.join("auxi"),
+            "#!/bin/sh\nfor a in \"$@\"; do printf '[%s]' \"$a\"; done >> \"$AUXIPAK_TEST_LOG\"\necho >> \"$AUXIPAK_TEST_LOG\"\n\
+             case \"$1 $2\" in\n  'set deb=true') echo DEB_APPS=1 > \"$AUXIPAK_TEST_APPS_CONF\"; echo bavard ;;\n  \
+             'set deb=false') echo DEB_APPS=0 > \"$AUXIPAK_TEST_APPS_CONF\"; echo bavard ;;\n  \
+             *) [ \"$2\" = install ] && [ -e \"$(dirname \"$0\")/slow\" ] && sleep 20\n     \
+             [ -e \"$(dirname \"$0\")/fail\" ] && [ \"$2\" = install ] && exit 1 ;;\nesac\nexit 0\n",
+        )
+        .unwrap();
+        std::fs::set_permissions(tools.join("auxi"), std::fs::Permissions::from_mode(0o755)).unwrap();
+        DebToggleBench { f, tools, log, conf }
+    }
+
+    fn env(&self) -> [(&'static str, String); 5] {
+        [
+            ("AUXIPAK_PROFILE_OVERRIDE", r#"{"os":"linux","distribution":"auxinuxos","version":"13","arch":"x86_64","raw_id":"debian","pretty_name":"AuxiNux OS 0.3.0","immutable":true}"#.into()),
+            ("AUXIPAK_TEST_TOOLS_DIR", self.tools.to_str().unwrap().into()),
+            ("AUXIPAK_TEST_LOG", self.log.to_str().unwrap().into()),
+            ("AUXIPAK_TEST_APPS_CONF", self.conf.to_str().unwrap().into()),
+            ("AUXIPAK_ASSUME_ELEVATED", "1".into()),
+        ]
+    }
+
+    fn run(&self, args: &[&str], fail: bool) -> (bool, String) {
+        let owned = self.env();
+        let env: Vec<(&str, &str)> = owned.iter().map(|(k, v)| (*k, v.as_str())).collect();
+        let flag = self.tools.join("fail");
+        if fail {
+            std::fs::write(&flag, "").unwrap();
+        } else {
+            let _ = std::fs::remove_file(&flag);
+        }
+        let o = self.f.run_env(args, &env);
+        let text = format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr));
+        (o.status.success(), text)
+    }
+
+    fn calls(&self) -> String {
+        std::fs::read_to_string(&self.log).unwrap_or_default()
+    }
+
+    fn marker(&self) -> PathBuf {
+        self.f.home().join("state/deb-temporaire")
+    }
+}
+
+/// DEB désactivé : activé une seule fois pour tout le lot, puis remis à
+/// désactivé ; rien pour la désinstallation. SIMULATION (faux `auxi`).
+#[cfg(unix)]
+#[test]
+fn auxi_deb_setting_enabled_once_for_a_batch_then_disabled_simulated() {
+    let b = DebToggleBench::new(&["app-a", "app-b"]);
+    assert!(b.run(&["update"], false).0);
+    let (ok, text) = b.run(&["install", "app-a", "app-b"], false);
+    assert!(ok, "{text}");
+    assert_eq!(
+        b.calls(),
+        "[set][deb=true]\n[--yes][install][--deb][app-a]\n[--yes][install][--deb][app-b]\n[set][deb=false]\n"
+    );
+    assert!(text.contains("activée le temps de l'opération"), "{text}");
+    assert!(text.contains("remise à désactivée"), "{text}");
+    assert!(!text.contains("bavard"), "sortie de « auxi set » réaffichée : {text}");
+    assert_eq!(std::fs::read_to_string(&b.conf).unwrap(), "DEB_APPS=0\n");
+    assert!(!b.marker().exists());
+    // Désinstallation : jamais de réglage DEB.
+    std::fs::remove_file(&b.log).unwrap();
+    assert!(b.run(&["remove", "app-a"], false).0);
+    assert_eq!(b.calls(), "[--yes][uninstall][--deb][app-a]\n");
+}
+
+/// DEB déjà actif : aucun `auxi set`, ni avant ni après.
+#[cfg(unix)]
+#[test]
+fn auxi_deb_setting_left_alone_when_already_enabled_simulated() {
+    let b = DebToggleBench::new(&["app-a"]);
+    std::fs::write(&b.conf, "DEB_APPS=1\n").unwrap();
+    assert!(b.run(&["update"], false).0);
+    let (ok, text) = b.run(&["install", "app-a"], false);
+    assert!(ok, "{text}");
+    assert_eq!(b.calls(), "[--yes][install][--deb][app-a]\n");
+    assert_eq!(std::fs::read_to_string(&b.conf).unwrap(), "DEB_APPS=1\n");
+    assert!(!b.marker().exists());
+}
+
+/// Échec de l'installation : le réglage est remis à désactivé quand même.
+#[cfg(unix)]
+#[test]
+fn auxi_deb_setting_disabled_even_when_install_fails_simulated() {
+    let b = DebToggleBench::new(&["app-a"]);
+    assert!(b.run(&["update"], false).0);
+    let (ok, text) = b.run(&["install", "app-a"], true);
+    assert!(!ok, "{text}");
+    assert_eq!(
+        b.calls(),
+        "[set][deb=true]\n[--yes][install][--deb][app-a]\n[set][deb=false]\n"
+    );
+    assert_eq!(std::fs::read_to_string(&b.conf).unwrap(), "DEB_APPS=0\n");
+    assert!(!b.marker().exists());
+}
+
+/// Témoin résiduel (plantage pendant la fenêtre) : remis à désactivé au
+/// lancement suivant, témoin supprimé.
+#[cfg(unix)]
+#[test]
+fn auxi_deb_setting_restored_from_leftover_marker_simulated() {
+    let b = DebToggleBench::new(&["app-a"]);
+    std::fs::write(&b.conf, "DEB_APPS=1\n").unwrap();
+    std::fs::create_dir_all(b.marker().parent().unwrap()).unwrap();
+    std::fs::write(b.marker(), b.tools.join("auxi").to_str().unwrap()).unwrap();
+    let (ok, text) = b.run(&["list"], false);
+    assert!(ok, "{text}");
+    assert!(text.contains("interrompue"), "{text}");
+    assert_eq!(b.calls(), "[set][deb=false]\n");
+    assert_eq!(std::fs::read_to_string(&b.conf).unwrap(), "DEB_APPS=0\n");
+    assert!(!b.marker().exists());
+    // Plus rien au lancement suivant.
+    assert!(b.run(&["list"], false).0);
+    assert_eq!(b.calls(), "[set][deb=false]\n");
+}
+
+/// SIGTERM pendant la fenêtre (installation en cours) : remise à désactivé
+/// avant la sortie, témoin supprimé.
+#[cfg(unix)]
+#[test]
+fn auxi_deb_setting_disabled_on_sigterm_simulated() {
+    let b = DebToggleBench::new(&["app-a"]);
+    assert!(b.run(&["update"], false).0);
+    std::fs::write(b.tools.join("slow"), "").unwrap();
+    let owned = b.env();
+    let env: Vec<(&str, &str)> = owned.iter().map(|(k, v)| (*k, v.as_str())).collect();
+    let mut child =
+        b.f.command(&["install", "app-a"], &env)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .unwrap();
+    let start = std::time::Instant::now();
+    while !b.calls().contains("[install]") {
+        assert!(start.elapsed().as_secs() < 30, "installation jamais lancée : {}", b.calls());
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    assert!(b.marker().exists());
+    let k = Command::new("kill")
+        .args(["-TERM", &child.id().to_string()])
+        .status()
+        .unwrap();
+    assert!(k.success());
+    let st = child.wait().unwrap();
+    assert!(!st.success());
+    assert!(start.elapsed().as_secs() < 15, "la sortie a attendu la fin de l'installation");
+    assert!(b.calls().ends_with("[set][deb=false]\n"), "{}", b.calls());
+    assert_eq!(std::fs::read_to_string(&b.conf).unwrap(), "DEB_APPS=0\n");
+    assert!(!b.marker().exists());
 }
 
 #[test]

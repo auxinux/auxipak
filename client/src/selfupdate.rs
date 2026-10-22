@@ -134,6 +134,25 @@ pub async fn check(config: &Config) -> Result<Option<Available>> {
     }))
 }
 
+/// Binaire installé par un paquet du système (`.deb`, dans `/usr/bin`) : sa
+/// mise à jour appartient au gestionnaire du système (`auxi os upgrade`,
+/// `apt upgrade`), jamais à `auxipak upgrade` — dpkg ne connaîtrait plus le
+/// fichier réellement installé. `install.sh` installe dans `/usr/local/bin`.
+pub fn installed_by_system_package() -> bool {
+    cfg!(target_os = "linux")
+        && std::env::current_exe()
+            .and_then(|e| e.canonicalize())
+            .is_ok_and(|e| e.starts_with("/usr/bin"))
+}
+
+/// Message expliquant comment mettre à jour un AuxiPak installé en paquet.
+pub fn system_package_hint() -> String {
+    tr!(
+        "AuxiPak est installé par le paquet système « auxipak » : il se met à jour avec le système (AuxiNux OS : sudo auxi os upgrade ; Debian/Ubuntu : sudo apt upgrade)",
+        "AuxiPak is installed by the \"auxipak\" system package: it is updated with the system (AuxiNux OS: sudo auxi os upgrade; Debian/Ubuntu: sudo apt upgrade)"
+    )
+}
+
 fn exe_name(name: &str) -> String {
     if cfg!(windows) {
         format!("{name}.exe")
@@ -186,6 +205,9 @@ pub fn cleanup_old() {
 
 /// Installe la version `a` à la place des binaires actuels.
 pub async fn apply(paths: &Paths, a: &Available, allow_insecure_localhost: bool) -> Result<Vec<PathBuf>> {
+    if installed_by_system_package() {
+        bail!(system_package_hint());
+    }
     let exe = std::env::current_exe()?.canonicalize()?;
     let dir = exe
         .parent()

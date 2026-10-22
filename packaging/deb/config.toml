@@ -1,0 +1,24 @@
+# AuxiPak client configuration (installed by the auxipak .deb package).
+# Fichier de configuration du paquet (conffile) : vos modifications sont
+# conservées lors des mises à jour.
+cache_ttl_seconds = 3600
+
+[[repository]]
+name = "official"
+url = "https://auxipak.auxinux.ca/repos/official/"
+root = "trust/official/root.json"
+package_keys = "trust/official/package-keys.json"
+official = true
+
+# AuxiNux OS : APT y est bloqué, les paquets Debian s'installent par auxi.
+# Syntaxe vérifiée contre /usr/bin/auxi d'AuxiNux OS 0.3.0
+# (voir docs/CLI_REFERENCE.md, « Adaptateur auxi »). Sans effet ailleurs.
+# Réglage DEB d'AuxiNux OS désactivé : AuxiPak l'active le temps de l'installation.
+[adapters.auxi]
+program = "auxi"
+install = ["--yes", "install", "--deb", "{packages}"]
+remove = ["--yes", "uninstall", "--deb", "{package}"]
+# Pas de requête d'état dans auxi : vide = dpkg-query -W (lecture seule).
+query = []
+install_local_deb = ["--yes", "install", "--deb", "{file}"]
+validated = true
