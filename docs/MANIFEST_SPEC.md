@@ -51,6 +51,7 @@ isolé n'est valide que si `contents` est déjà renseigné.
 | `homepage` | chaîne (URI) | non | avertissement si elle n'est pas en HTTPS |
 | `languages` | liste | oui | ≥ 1, sans doublon ; BCP 47 simplifié (`fr`, `en`, `fr-CA`, `zh-Hant`) ou `mul` (multilingue) |
 | `categories` | liste | non | ≤ 10 ; `^[a-z0-9-]{1,32}$` |
+| `translations` | objet | non | textes dans d'autres langues (section 2.4) |
 | `privacy` | objet | non | déclaration de l'éditeur (section 2.1) |
 | `dependencies` | liste | non | autres applications AuxiPak (section 2.2) |
 | `contents` | liste | selon cas | fichiers de l'archive (section 2.3) ; calculée par le constructeur |
@@ -107,6 +108,29 @@ ou `scripts/`, avec SHA-256 et taille ; chemins sûrs et uniques. Le
 constructeur la calcule ; elle est vérifiée à l'inspection et à l'extraction
 (voir [AUPAK_FORMAT.md](AUPAK_FORMAT.md)). Un paquet sans fichier (mode
 `native` uniquement) n'a pas de `contents`.
+
+### 2.4 `translations`
+
+```yaml
+summary: "Lecteur multimédia libre"          # langue de base
+translations:
+  en:
+    name: "VLC media player"                 # facultatif
+    summary: "Free multimedia player"        # obligatoire
+    description: |                           # facultatif
+      Plays most multimedia files…
+```
+
+- Clé : code de langue (`en`, `fr`, `fr-CA`… ; pas `mul`) ; au plus 50.
+- `summary` (1–200 caractères) obligatoire ; `name` (≤ 128) et
+  `description` (≤ 20 000) facultatifs, repris de la langue de base s'ils
+  sont absents.
+- Le site, l'API (`Accept-Language`) et le client (`search`, `info`)
+  affichent la traduction correspondant à la langue de l'utilisateur
+  (correspondance exacte, puis langue de base : `fr-CA` → `fr`), sinon les
+  champs de premier niveau. La recherche porte aussi sur les traductions.
+- Champ reconnu à partir d'AuxiPak 1.0.8 : les clients antérieurs refusent
+  un paquet qui le contient (« auxipak upgrade » met d'abord AuxiPak à jour).
 
 ## 3. Variantes (`targets`)
 
@@ -412,11 +436,13 @@ une variante convient si :
 
 1. `platform` correspond ;
 2. sous Linux, la distribution figure dans `distributions` ;
-3. l'architecture figure dans `architectures`, ou la variante est `any` ;
+3. l'architecture figure dans `architectures`, ou la variante est `any`, ou —
+   sous Windows et macOS arm64 uniquement — la variante est `x86_64`
+   (émulation par Windows 11 ou Rosetta 2) ;
 4. la version du système satisfait `os_version` (si présent).
 
-Entre plusieurs variantes compatibles, on préfère : une architecture exacte
-à `any`, puis une variante dont la version est contrainte, puis l'ordre de
+Entre plusieurs variantes compatibles, on préfère : une exécution native à
+l'émulation, puis une architecture exacte à `any`, puis une variante dont la version est contrainte, puis l'ordre de
 déclaration. Sans variante compatible, l'installation est refusée avec la
 raison de chaque rejet. `auxipak-builder test` affiche la variante choisie
 pour 12 profils de référence (Debian 12/13, Ubuntu 22.04/24.04, AuxiNuxOS,

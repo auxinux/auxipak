@@ -81,6 +81,20 @@ impl<'a> Candidate<'a> {
         self.app.map(|a| a.name.as_str()).unwrap_or(&self.release.id)
     }
 
+    /// Nom affiché dans la langue de l'interface (traduction du manifeste).
+    pub fn display_name(&self) -> &str {
+        self.app
+            .map(|a| a.localized(auxipak_core::i18n::current().code()).0)
+            .unwrap_or(&self.release.id)
+    }
+
+    /// Résumé dans la langue de l'interface.
+    pub fn summary(&self) -> &str {
+        self.app
+            .map(|a| a.localized(auxipak_core::i18n::current().code()).1)
+            .unwrap_or("")
+    }
+
     pub fn is_revoked(&self) -> bool {
         self.release.revoked
             || self
@@ -147,11 +161,24 @@ pub fn search<'a>(repos: &'a [RepoData], query: &str, lang: &str) -> Vec<Candida
             q.is_empty()
                 || normalize(&c.release.id).contains(&q)
                 || normalize(c.name()).contains(&q)
-                || c.app.map(|a| normalize(&a.summary).contains(&q)).unwrap_or(false)
+                || c.app
+                    .map(|a| {
+                        normalize(&a.summary).contains(&q)
+                            || a.translations.values().any(|t| {
+                                normalize(&t.summary).contains(&q)
+                                    || t.name.as_deref().map(|n| normalize(n).contains(&q)).unwrap_or(false)
+                            })
+                    })
+                    .unwrap_or(false)
         })
         .collect();
-    // Une ligne par (dépôt, application) : la meilleure version.
-    hits.sort_by(|a, b| better(b, a, lang));
+    // Une ligne par (dépôt, application) : la version dans la langue
+    // préférée, puis la plus récente (comme pour l'installation).
+    hits.sort_by(|a, b| {
+        lang_score(b.release, lang)
+            .cmp(&lang_score(a.release, lang))
+            .then_with(|| better(b, a, lang))
+    });
     let mut seen = std::collections::BTreeSet::new();
     hits.retain(|c| seen.insert((c.repo.config.name.clone(), c.release.id.clone())));
     hits.sort_by(|a, b| {

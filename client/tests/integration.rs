@@ -130,6 +130,7 @@ impl Fixture {
                 status: Status::Verified,
                 status_note: None,
                 evaluated_at: None,
+                translations: manifest.translations.clone(),
             });
         }
         self.packages.push(PublishedPackage {
@@ -823,4 +824,43 @@ fn install_and_remove_several_applications() {
         assert!(!f.installed_bin(id).exists(), "{id}");
     }
     assert!(f.ok(&["list"]).contains("Aucune application"));
+}
+
+#[test]
+fn conflicting_application_names_its_owner() {
+    let mut f = Fixture::new();
+    simple(&mut f, "navigo-esr", "1.0.0");
+    // Même destination (et donc même détection) que navigo-esr.
+    let m = manifest("navigo", "2.0.0", "", "").replace(
+        "        - source: payload/bin/navigo\n          destination: \"{bin}/navigo\"",
+        "        - source: payload/bin/navigo\n          destination: \"{bin}/navigo-esr\"",
+    );
+    f.add(&m, &[("payload/bin/navigo", &script("navigo", "2.0.0"))], None);
+    f.publish();
+    f.ok(&["install", "navigo-esr"]);
+    let out = f.fails(&["install", "navigo"]);
+    assert!(out.contains("auxipak remove navigo-esr"), "{out}");
+}
+
+#[test]
+fn search_shows_texts_in_the_interface_language() {
+    let mut f = Fixture::new();
+    let m = manifest(
+        "hello",
+        "1.0.0",
+        "",
+        "translations:\n  en:\n    name: Hello EN\n    summary: English summary of hello\n",
+    );
+    f.add(&m, &[("payload/bin/hello", &script("hello", "1.0.0"))], None);
+    f.publish();
+    let fr = f.ok(&["search", "hello"]);
+    assert!(
+        fr.contains("Application de test hello") && !fr.contains("English summary"),
+        "{fr}"
+    );
+    let o = f.run_env(&["search", "hello"], &[("AUXIPAK_LANG", "en")]);
+    let en = String::from_utf8_lossy(&o.stdout);
+    assert!(en.contains("English summary of hello") && en.contains("Hello EN"), "{en}");
+    // La recherche porte aussi sur les traductions.
+    assert!(f.ok(&["search", "english"]).contains("hello"));
 }

@@ -200,6 +200,9 @@ pub struct AppListRow {
     /// Systèmes couverts par les versions publiées (`linux`, `macos`, `windows`).
     pub platforms: Vec<String>,
     pub updated_at: DateTime<Utc>,
+    /// Traductions du manifeste ; `name` et `summary` sont déjà dans la langue
+    /// de la requête quand elle est disponible.
+    pub translations: serde_json::Value,
 }
 
 /// Recherche dans les applications publiées.
@@ -213,13 +216,14 @@ pub async fn search_apps(st: &AppState, q: &AppsQuery) -> ApiResult<Vec<AppListR
                 ARRAY(SELECT DISTINCT r.repository FROM releases r WHERE r.app_id = a.id AND r.state = 'published') AS repositories,
                 ARRAY(SELECT DISTINCT t->>'platform' FROM releases r, jsonb_array_elements(r.manifest->'targets') t
                         WHERE r.app_id = a.id AND r.state = 'published' ORDER BY 1) AS platforms,
-                a.updated_at
+                a.updated_at, a.translations
          FROM apps a LEFT JOIN evaluations e ON e.app_id = a.id
          WHERE EXISTS (SELECT 1 FROM releases r WHERE r.app_id = a.id AND r.state = 'published'
                          AND ($2::text IS NULL OR r.repository = $2)
                          AND ($4::text IS NULL OR EXISTS (
                                SELECT 1 FROM jsonb_array_elements(r.manifest->'targets') t WHERE t->>'platform' = $4)))
-           AND (lower(a.id) LIKE $1 OR lower(a.name) LIKE $1 OR lower(a.summary) LIKE $1)
+           AND (lower(a.id) LIKE $1 OR lower(a.name) LIKE $1 OR lower(a.summary) LIKE $1
+                OR lower(a.translations::text) LIKE $1)
            AND ($3::text IS NULL OR COALESCE(e.status, 'unreviewed') = $3)
          ORDER BY a.name LIMIT 500",
     )
@@ -229,6 +233,16 @@ pub async fn search_apps(st: &AppState, q: &AppsQuery) -> ApiResult<Vec<AppListR
     .bind(q.platform.as_deref().filter(|p| matches!(*p, "linux" | "macos" | "windows")))
     .fetch_all(&st.db)
     .await?;
+    let lang = auxipak_core::i18n::current().code();
+    let mut rows = rows;
+    for r in &mut rows {
+        if let Some(t) = translation(&r.translations, lang) {
+            if let Some(n) = t.name {
+                r.name = n;
+            }
+            r.summary = t.summary;
+        }
+    }
     Ok(rows)
 }
 
@@ -249,6 +263,7 @@ pub struct AppDetailRow {
     pub status: String,
     pub status_note: Option<String>,
     pub evaluated_at: Option<DateTime<Utc>>,
+    pub translations: serde_json::Value,
 }
 
 #[derive(sqlx::FromRow, Serialize, Clone)]
@@ -277,7 +292,7 @@ pub struct AppDetail {
 pub async fn load_app(st: &AppState, id: &str) -> ApiResult<AppDetail> {
     let app: AppDetailRow = sqlx::query_as(
         "SELECT a.id, a.name, a.publisher, a.summary, a.description, a.license, a.homepage, a.categories,
-                COALESCE(e.status, 'unreviewed') AS status, e.note AS status_note, e.evaluated_at
+                COALESCE(e.status, 'unreviewed') AS status, e.note AS status_note, e.evaluated_at, a.translations
          FROM apps a LEFT JOIN evaluations e ON e.app_id = a.id WHERE a.id = $1",
     )
     .bind(id)
@@ -295,7 +310,23 @@ pub async fn load_app(st: &AppState, id: &str) -> ApiResult<AppDetail> {
     if releases.is_empty() {
         return Err(ApiError::NotFound);
     }
+    let mut app = app;
+    if let Some(t) = translation(&app.translations, auxipak_core::i18n::current().code()) {
+        if let Some(n) = t.name {
+            app.name = n;
+        }
+        app.summary = t.summary;
+        if t.description.is_some() {
+            app.description = t.description;
+        }
+    }
     Ok(AppDetail { app, releases })
+}
+
+/// Traduction du manifeste pour la langue de la requête, si elle existe.
+fn translation(v: &serde_json::Value, lang: &str) -> Option<auxipak_core::manifest::Translation> {
+    let map: std::collections::BTreeMap<String, auxipak_core::manifest::Translation> = serde_json::from_value(v.clone()).ok()?;
+    auxipak_core::index::pick_translation(&map, lang).cloned()
 }
 
 pub async fn app(State(st): State<AppState>, Path(id): Path<String>) -> ApiResult<Json<AppDetail>> {

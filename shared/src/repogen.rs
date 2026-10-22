@@ -69,6 +69,33 @@ pub fn channel_entries(m: &Manifest) -> Vec<ChannelEntry> {
             }
         }
     }
+    // Windows et macOS arm64 exécutent les applications x86_64 par émulation :
+    // une variante x86_64 est aussi publiée dans le canal arm64, sauf si une
+    // variante arm64 native existe.
+    for t in &m.targets {
+        if !matches!(t.platform, Os::Windows | Os::Macos)
+            || !t.architectures.iter().any(|a| a.emulated_on(Arch::Arm64, t.platform))
+        {
+            continue;
+        }
+        let c = if t.platform == Os::Windows {
+            Channel::Windows
+        } else {
+            Channel::Macos
+        };
+        let d = if t.platform == Os::Windows {
+            Distribution::Windows
+        } else {
+            Distribution::Macos
+        };
+        out.entry((c, Arch::Arm64)).or_insert(ChannelEntry {
+            channel: c,
+            arch: Arch::Arm64,
+            distributions: vec![d],
+            architectures: t.architectures.clone(),
+            target: t.clone(),
+        });
+    }
     out.into_values().collect()
 }
 
@@ -223,5 +250,36 @@ targets:
         assert_eq!(e[0].distributions, vec![Distribution::Debian, Distribution::Ubuntu]);
         assert!(e.iter().any(|x| x.channel == Channel::Windows && x.arch == Arch::Arm64));
         assert!(!e.iter().any(|x| x.channel == Channel::Windows && x.arch == Arch::X86_64));
+    }
+
+    #[test]
+    fn x86_64_only_windows_and_macos_targets_reach_arm64_channels() {
+        let yaml = r#"
+format: 1
+id: demo
+name: Demo
+version: "1.0"
+publisher: X
+summary: s
+license: MIT
+languages: [fr]
+targets:
+  - name: deb
+    platform: linux
+    distributions: [debian]
+    architectures: [x86_64]
+    mode: native
+    install: { method: package_manager, manager: apt, packages: [demo] }
+  - name: win
+    platform: windows
+    architectures: [x86_64]
+    mode: native
+    install: { method: package_manager, manager: winget, packages: [Demo.Demo] }
+"#;
+        let (m, _) = Manifest::parse(yaml.as_bytes()).unwrap();
+        let e = channel_entries(&m);
+        assert!(e.iter().any(|x| x.channel == Channel::Windows && x.arch == Arch::Arm64));
+        // Pas d'émulation sous Linux.
+        assert!(!e.iter().any(|x| x.channel == Channel::LinuxDeb && x.arch == Arch::Arm64));
     }
 }

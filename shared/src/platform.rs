@@ -91,6 +91,13 @@ impl Arch {
     pub fn runs_on(&self, system: Arch) -> bool {
         *self == Arch::Any || *self == system
     }
+
+    /// Cette architecture s'exécute-t-elle par émulation sur `system` ?
+    /// x86_64 sur arm64 : oui sous Windows 11 et sous macOS (Rosetta 2) ;
+    /// jamais sous Linux.
+    pub fn emulated_on(&self, system: Arch, os: Os) -> bool {
+        *self == Arch::X86_64 && system == Arch::Arm64 && matches!(os, Os::Windows | Os::Macos)
+    }
 }
 
 impl fmt::Display for Arch {
@@ -450,6 +457,10 @@ ID=debian
         assert_eq!("aarch64".parse::<Arch>().unwrap(), Arch::Arm64);
         assert!(Arch::Any.runs_on(Arch::Arm64));
         assert!(!Arch::X86_64.runs_on(Arch::Arm64));
+        assert!(Arch::X86_64.emulated_on(Arch::Arm64, Os::Windows));
+        assert!(Arch::X86_64.emulated_on(Arch::Arm64, Os::Macos));
+        assert!(!Arch::X86_64.emulated_on(Arch::Arm64, Os::Linux));
+        assert!(!Arch::Arm64.emulated_on(Arch::X86_64, Os::Windows));
     }
 
     #[test]

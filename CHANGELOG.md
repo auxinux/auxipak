@@ -5,6 +5,25 @@ le projet applique le [versionnage sémantique](https://semver.org/lang/fr/).
 
 ## [Non publié]
 
+## [1.0.8] — 2026-10-22
+
+### Ajouté
+
+- Manifeste : champ facultatif `translations` (nom, résumé et description
+  dans d'autres langues). Le site, l'API (selon `Accept-Language`), l'index
+  et le client (`search`, `info`) affichent les textes dans la langue de
+  l'utilisateur ; la recherche porte aussi sur les traductions. Les clients
+  antérieurs à 1.0.8 refusent les paquets qui utilisent ce champ.
+- Windows et macOS arm64 : une variante `x86_64` est retenue quand aucune
+  variante arm64 n'existe (émulation Windows 11, Rosetta 2) ; le serveur la
+  publie aussi dans le canal arm64. Jamais sous Linux.
+
+### Modifié
+
+- Installation refusée parce qu'une autre application AuxiPak occupe le même
+  emplacement (Firefox et Firefox ESR, tous deux `Firefox.app`) : le message
+  nomme cette application et indique de la désinstaller d'abord.
+
 ## [1.0.7] — 2026-10-22
 
 ### Ajouté

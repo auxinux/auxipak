@@ -551,7 +551,7 @@ async fn run(cli: Cli, paths: Paths) -> Result<()> {
                             "id": c.release.id, "name": c.name(), "version": c.release.version,
                             "languages": c.release.languages, "status": c.status().short(),
                             "platform": c.release.platform, "repository": c.repo.config.name,
-                            "summary": c.app.map(|a| a.summary.clone()).unwrap_or_default(),
+                            "summary": c.summary(),
                         })
                     })
                     .collect();
@@ -573,12 +573,12 @@ async fn run(cli: Cli, paths: Paths) -> Result<()> {
                     println!(
                         "{:<22} {:<20} {:<12} {:<8} {:<12} {:<9} {}{}",
                         c.release.id,
-                        truncate(c.name(), 20),
+                        truncate(c.display_name(), 20),
                         truncate(&c.release.version, 12),
                         truncate(&c.release.languages.join(","), 8),
                         c.status().short(),
                         c.release.platform,
-                        c.app.map(|a| a.summary.as_str()).unwrap_or(""),
+                        c.summary(),
                         if c.repo.config.official {
                             String::new()
                         } else {
@@ -1251,9 +1251,9 @@ fn info(env: &Env, package: &str, json: bool) -> Result<()> {
         );
         return Ok(());
     }
-    println!("{} ({})", c.name(), rel.id);
+    println!("{} ({})", c.display_name(), rel.id);
     if let Some(a) = c.app {
-        println!("  {}", a.summary);
+        println!("  {}", c.summary());
         println!("{}", tr!("Éditeur        : {}", "Publisher      : {}", a.publisher));
         println!("{}", tr!("Licence        : {}", "License        : {}", a.license));
         if let Some(h) = &a.homepage {

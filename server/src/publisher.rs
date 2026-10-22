@@ -157,11 +157,11 @@ pub async fn approve(state: &AppState, actor: &Actor, id: Uuid, note: &str) -> A
 
     let mut tx = state.db.begin().await?;
     sqlx::query(
-        "INSERT INTO apps (id, name, publisher, summary, description, license, homepage, categories)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        "INSERT INTO apps (id, name, publisher, summary, description, license, homepage, categories, translations)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
          ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, publisher = EXCLUDED.publisher, summary = EXCLUDED.summary,
            description = EXCLUDED.description, license = EXCLUDED.license, homepage = EXCLUDED.homepage,
-           categories = EXCLUDED.categories, updated_at = now()",
+           categories = EXCLUDED.categories, translations = EXCLUDED.translations, updated_at = now()",
     )
     .bind(&m.id)
     .bind(&m.name)
@@ -171,6 +171,7 @@ pub async fn approve(state: &AppState, actor: &Actor, id: Uuid, note: &str) -> A
     .bind(&m.license)
     .bind(&m.homepage)
     .bind(&m.categories)
+    .bind(serde_json::to_value(&m.translations).map_err(anyhow::Error::from)?)
     .execute(&mut *tx)
     .await?;
     // Une nouvelle application est toujours « non évaluée » : le manifeste ne
@@ -253,6 +254,7 @@ struct AppRow {
     status: Option<String>,
     note: Option<String>,
     evaluated_at: Option<DateTime<Utc>>,
+    translations: serde_json::Value,
 }
 
 #[derive(sqlx::FromRow)]
@@ -304,7 +306,7 @@ async fn regenerate_locked(state: &AppState, repo: &str) -> Result<u64> {
     .await?;
     let apps: Vec<AppRow> = sqlx::query_as(
         "SELECT a.id, a.name, a.publisher, a.summary, a.description, a.license, a.homepage, a.categories,
-                e.status, e.note, e.evaluated_at
+                e.status, e.note, e.evaluated_at, a.translations
          FROM apps a LEFT JOIN evaluations e ON e.app_id = a.id
          WHERE a.id IN (SELECT app_id FROM releases WHERE repository = $1 AND state = 'published')
          ORDER BY a.id",
@@ -379,6 +381,7 @@ async fn regenerate_locked(state: &AppState, repo: &str) -> Result<u64> {
             },
             status_note: if r.official { a.note.clone() } else { None },
             evaluated_at: if r.official { a.evaluated_at } else { None },
+            translations: serde_json::from_value(a.translations.clone()).unwrap_or_default(),
         })
         .collect();
     let content = RepoContent {

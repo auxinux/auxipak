@@ -17,11 +17,12 @@
 //! en arrière (numéros de version) sont assurées par les métadonnées TUF
 //! (`root`, `timestamp`, `snapshot`, `targets`) qui signent ces fichiers.
 
-use crate::manifest::{Dependency, Mode, Privileges};
+use crate::manifest::{Dependency, Mode, Privileges, Translation};
 use crate::platform::{Arch, Channel, Distribution, Os};
 use crate::tr;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::fmt;
 use std::str::FromStr;
 
@@ -146,6 +147,33 @@ pub struct AppMeta {
     pub status_note: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub evaluated_at: Option<DateTime<Utc>>,
+    /// Nom, résumé et description dans d'autres langues (manifeste).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub translations: BTreeMap<String, Translation>,
+}
+
+impl AppMeta {
+    /// Nom, résumé et description dans la langue `lang` (`fr`, `fr-CA`…),
+    /// sinon dans la langue de base.
+    pub fn localized(&self, lang: &str) -> (&str, &str, Option<&str>) {
+        match pick_translation(&self.translations, lang) {
+            Some(t) => (
+                t.name.as_deref().unwrap_or(&self.name),
+                &t.summary,
+                t.description.as_deref().or(self.description.as_deref()),
+            ),
+            None => (&self.name, &self.summary, self.description.as_deref()),
+        }
+    }
+}
+
+/// Traduction pour `lang` : correspondance exacte, puis langue de base
+/// (`fr-CA` → `fr`, `fr` → `fr-CA`).
+pub fn pick_translation<'a>(t: &'a BTreeMap<String, Translation>, lang: &str) -> Option<&'a Translation> {
+    let base = lang.split('-').next().unwrap_or(lang);
+    t.get(lang)
+        .or_else(|| t.get(base))
+        .or_else(|| t.iter().find(|(k, _)| k.split('-').next() == Some(base)).map(|(_, v)| v))
 }
 
 /// `apps.json`.

@@ -21,6 +21,20 @@
       "items": { "type": "string", "pattern": "^[a-z]{2,3}(-[A-Z]{2}|-[A-Za-z]{4})?$" }
     },
     "categories": { "type": "array", "items": { "type": "string", "pattern": "^[a-z0-9-]{1,32}$" }, "maxItems": 10 },
+    "translations": {
+      "type": "object",
+      "description": "Nom, résumé et description dans d'autres langues (clé : code de langue).",
+      "propertyNames": { "pattern": "^[a-z]{2,3}(-[A-Z]{2}|-[A-Za-z]{4})?$" },
+      "maxProperties": 50,
+      "additionalProperties": {
+        "type": "object", "additionalProperties": false, "required": ["summary"],
+        "properties": {
+          "name": { "type": "string", "minLength": 1, "maxLength": 128 },
+          "summary": { "type": "string", "minLength": 1, "maxLength": 200 },
+          "description": { "type": "string", "maxLength": 20000 }
+        }
+      }
+    },
     "privacy": {
       "type": "object", "additionalProperties": false, "required": ["telemetry"],
       "properties": {

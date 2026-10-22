@@ -309,6 +309,16 @@ fn copy_tree(from: &Path, to: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Application AuxiPak installée dont la détection est identique à celle de
+/// `target` (par exemple Firefox ESR et Firefox, tous deux `Firefox.app`).
+fn detect_owner(env: &Env, registry: &Registry, target: &Target) -> Option<String> {
+    let wanted = target.effective_detect()?;
+    registry.apps.values().find_map(|app| {
+        let (_, t) = stored_target(&env.paths, app).ok()?;
+        (t.platform == target.platform && t.effective_detect().as_ref() == Some(&wanted)).then(|| app.id.clone())
+    })
+}
+
 /// Manifeste et cible enregistrés d'une application installée.
 pub fn stored_target(paths: &Paths, app: &InstalledApp) -> Result<(Manifest, Target)> {
     let p = paths.app_state_dir(&app.id).join(MANIFEST_FILE);
@@ -423,6 +433,15 @@ pub async fn install_one(
             owned_files: &[],
         };
         if methods::detect(&probe).await.unwrap_or(None) == Some(true) {
+            // Même application (bundle, paquet natif, fichiers) qu'une autre
+            // application AuxiPak : le dire, plutôt que « un autre moyen ».
+            if let Some(owner) = detect_owner(env, registry, &target) {
+                bail!(tr!(
+                    "{} occupe déjà le même emplacement que {owner}, installée par AuxiPak (les deux ne peuvent pas coexister) : « auxipak remove {owner} » d'abord",
+                    "{} uses the same location as {owner}, installed by AuxiPak (they cannot coexist): run \"auxipak remove {owner}\" first",
+                    rel.id
+                ));
+            }
             if !opts.adopt {
                 bail!(tr!(
                     "{} semble déjà installé par un autre moyen (gestionnaire natif ou installation manuelle). \

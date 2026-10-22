@@ -30,6 +30,17 @@ pub const FILE_DEST_ROOTS: [&str; 3] = ["{app}", "{bin}", "{data}"];
 /// Racines autorisées pour les chemins de désinstallation `exe` (Windows).
 pub const WINDOWS_PATH_ROOTS: [&str; 4] = ["{program_files}", "{program_files_x86}", "{local_app_data}", "{app}"];
 
+/// Textes d'une application dans une autre langue.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Translation {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    pub summary: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Manifest {
@@ -55,6 +66,10 @@ pub struct Manifest {
     pub languages: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub categories: Vec<String>,
+    /// Textes affichés dans d'autres langues (`en`, `fr`…) : nom, résumé et
+    /// description. Les champs de premier niveau restent la langue de base.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub translations: BTreeMap<String, Translation>,
     /// Déclaration de l'éditeur sur la vie privée. Purement informative : la
     /// classification officielle est attribuée par le serveur AuxiPak.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -574,7 +589,8 @@ impl Target {
             ));
         }
         let arch_exact = self.architectures.contains(&p.arch);
-        if !arch_exact && !self.architectures.contains(&Arch::Any) {
+        let native = arch_exact || self.architectures.contains(&Arch::Any);
+        if !native && !self.architectures.iter().any(|a| a.emulated_on(p.arch, p.os)) {
             return Err(tr!(
                 "architecture {} non prise en charge",
                 "unsupported architecture {}",
@@ -592,6 +608,7 @@ impl Target {
             }
         }
         Ok(MatchQuality {
+            native,
             arch_exact,
             version_constrained: self.os_version.is_some(),
         })
@@ -601,6 +618,8 @@ impl Target {
 /// Qualité d'une correspondance (utilisée pour départager plusieurs variantes).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct MatchQuality {
+    /// Exécution native (et non par émulation x86_64 sur arm64).
+    pub native: bool,
     pub arch_exact: bool,
     pub version_constrained: bool,
 }
@@ -756,6 +775,42 @@ impl Manifest {
                 v.err(
                     format!("languages[{i}]"),
                     tr!("code de langue invalide : {l}", "invalid language code: {l}"),
+                );
+            }
+        }
+        for (l, t) in &self.translations {
+            let base = format!("translations.{l}");
+            if !ids::is_valid_language(l) || l == "mul" {
+                v.err(&base, tr!("code de langue invalide : {l}", "invalid language code: {l}"));
+            }
+            let fields = [
+                ("name", t.name.as_deref(), 128usize),
+                ("summary", Some(t.summary.as_str()), 200),
+            ];
+            for (field, val, max) in fields {
+                let Some(val) = val else { continue };
+                if val.trim().is_empty() {
+                    v.err(
+                        format!("{base}.{field}"),
+                        tr!("champ obligatoire vide", "required field is empty"),
+                    );
+                } else if val.chars().count() > max || val.chars().any(|c| c.is_control()) {
+                    v.err(
+                        format!("{base}.{field}"),
+                        tr!(
+                            "valeur invalide (maximum {max} caractères, sans caractère de contrôle)",
+                            "invalid value (at most {max} characters, no control characters)"
+                        ),
+                    );
+                }
+            }
+            if t.description.as_ref().map(|d| d.chars().count() > 20_000).unwrap_or(false) {
+                v.err(
+                    format!("{base}.description"),
+                    tr!(
+                        "description trop longue (20 000 caractères au plus)",
+                        "description too long (at most 20,000 characters)"
+                    ),
                 );
             }
         }
@@ -1562,6 +1617,94 @@ pub fn is_valid_templated_path(path: &str, roots: &[&str]) -> bool {
 mod tests {
     use super::*;
     use crate::platform::{linux_profile_from_os_release, parse_os_release};
+
+    #[test]
+    fn translations_are_parsed_and_validated() {
+        let yaml = r#"
+format: 1
+id: demo
+name: Démo
+version: "1.0"
+publisher: X
+summary: Résumé en français
+license: MIT
+languages: [mul]
+translations:
+  en:
+    name: Demo
+    summary: English summary
+    description: English description
+  de:
+    summary: Deutsche Zusammenfassung
+targets:
+  - name: win
+    platform: windows
+    architectures: [x86_64]
+    mode: native
+    install: { method: package_manager, manager: winget, packages: [Demo.Demo] }
+"#;
+        let (m, issues) = Manifest::parse(yaml.as_bytes()).unwrap();
+        assert!(issues.iter().all(|i| !i.fatal), "{issues:?}");
+        assert_eq!(m.translations["en"].name.as_deref(), Some("Demo"));
+        assert_eq!(m.translations["de"].summary, "Deutsche Zusammenfassung");
+        // Clé de langue invalide, résumé manquant ou champ inconnu : refusés.
+        for bad in [
+            yaml.replace("  de:\n", "  deutsch:\n"),
+            yaml.replace("    summary: Deutsche Zusammenfassung\n", "    name: X\n"),
+            yaml.replace("    description: English description\n", "    tagline: x\n"),
+        ] {
+            assert!(Manifest::parse(bad.as_bytes()).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn x86_64_target_matches_arm64_windows_and_macos_by_emulation_only() {
+        let yaml = r#"
+format: 1
+id: demo
+name: Demo
+version: "1.0"
+publisher: X
+summary: s
+license: MIT
+languages: [en]
+targets:
+  - name: win
+    platform: windows
+    architectures: [x86_64]
+    mode: native
+    install: { method: package_manager, manager: winget, packages: [Demo.Demo] }
+  - name: deb
+    platform: linux
+    distributions: [debian]
+    architectures: [x86_64]
+    mode: native
+    install: { method: package_manager, manager: apt, packages: [demo] }
+"#;
+        let (m, _) = Manifest::parse(yaml.as_bytes()).unwrap();
+        let win_arm = SystemProfile {
+            os: Os::Windows,
+            distribution: Distribution::Windows,
+            version: "10.0.26100".into(),
+            arch: Arch::Arm64,
+            raw_id: String::new(),
+            pretty_name: String::new(),
+            immutable: false,
+        };
+        let t = m.select_target(&win_arm).unwrap();
+        assert_eq!(t.name, "win");
+        assert!(!t.matches(&win_arm).unwrap().native);
+        let deb_arm = SystemProfile {
+            os: Os::Linux,
+            distribution: Distribution::Debian,
+            version: "13".into(),
+            arch: Arch::Arm64,
+            raw_id: String::new(),
+            pretty_name: String::new(),
+            immutable: false,
+        };
+        assert!(m.select_target(&deb_arm).is_err(), "pas d'émulation sous Linux");
+    }
 
     pub const DEMO: &str = r#"
 format: 1

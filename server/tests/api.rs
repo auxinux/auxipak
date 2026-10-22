@@ -164,13 +164,19 @@ fn demo_aupak(version: &str) -> Vec<u8> {
 }
 
 fn demo_aupak_lang(version: &str, lang: &str) -> Vec<u8> {
+    demo_aupak_with(version, lang, "")
+}
+
+/// Paquet de démonstration ; `extra` est inséré au premier niveau du manifeste.
+fn demo_aupak_with(version: &str, lang: &str, extra: &str) -> Vec<u8> {
     let d = tempfile::tempdir().unwrap();
     std::fs::create_dir_all(d.path().join("payload/bin")).unwrap();
-    std::fs::write(
-        d.path().join("instruction.auxipak"),
-        auxipak_core::project::render_template("demo-app", "Demo App", version, "AuxiNux", lang, "MIT"),
-    )
-    .unwrap();
+    let manifest = auxipak_core::project::render_template("demo-app", "Demo App", version, "AuxiNux", lang, "MIT").replacen(
+        "\ntargets:",
+        &format!("\n{extra}targets:"),
+        1,
+    );
+    std::fs::write(d.path().join("instruction.auxipak"), manifest).unwrap();
     std::fs::write(d.path().join("payload/bin/demo-app"), b"#!/bin/sh\necho demo\n").unwrap();
     let out: PathBuf = d.path().join("x.aupak");
     auxipak_core::project::build(d.path(), &out).unwrap();
@@ -1258,4 +1264,51 @@ async fn same_version_in_several_languages() {
         text.contains("Demo-1.0.0-fr.aupak") && text.contains("Demo-1.0.0-en.aupak"),
         "{text}"
     );
+}
+
+#[tokio::test]
+#[ignore = "requiert PostgreSQL (AUXIPAK_TEST_DATABASE_URL)"]
+async fn app_texts_follow_request_language() {
+    let s = start().await;
+    let admin_pw = s.user("admin", Role::Admin).await;
+    s.user("pub", Role::Publisher).await;
+    s.user("rev", Role::Reviewer).await;
+    let admin = s.login("admin", &admin_pw).await;
+    let pub_token = s.token(&admin, "pub", "human", &["submit", "read"]).await;
+    let rev = s.login("rev", "Mot-de-passe-rev-2026").await;
+    let extra =
+        "translations:\n  en:\n    name: Demo App EN\n    summary: English summary\n    description: English description\n";
+    let sub = s.submit(&pub_token, demo_aupak_with("1.0.0", "fr", extra)).await;
+    let r = s
+        .http
+        .post(s.url(&format!("/api/v1/submissions/{}/approve", sub["id"].as_str().unwrap())))
+        .headers(s.sh(&rev))
+        .json(&json!({"note": "ok"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), StatusCode::OK);
+    let get = |lang: &'static str, path: &'static str| {
+        let req = s.http.get(s.url(path)).header("Accept-Language", lang);
+        async move { req.send().await.unwrap().json::<Value>().await.unwrap() }
+    };
+    let en = get("en", "/api/v1/apps/demo-app").await;
+    assert_eq!(en["app"]["name"], "Demo App EN");
+    assert_eq!(en["app"]["summary"], "English summary");
+    assert_eq!(en["app"]["description"], "English description");
+    let fr = get("fr", "/api/v1/apps/demo-app").await;
+    assert_eq!(fr["app"]["name"], "Demo App");
+    let list = get("en", "/api/v1/apps?q=english").await;
+    assert_eq!(list[0]["summary"], "English summary", "{list}");
+    // Index publié : les traductions accompagnent les métadonnées.
+    let apps: Value = s
+        .http
+        .get(s.url("/repos/official/targets/apps.json"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(apps["apps"][0]["translations"]["en"]["summary"], "English summary");
 }
