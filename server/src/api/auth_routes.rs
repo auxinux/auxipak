@@ -123,6 +123,7 @@ pub async fn me(actor: Actor) -> Json<serde_json::Value> {
         Scope::Submit,
         Scope::Review,
         Scope::Evaluate,
+        Scope::AiEvaluate,
         Scope::Admin,
     ]
     .into_iter()

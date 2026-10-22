@@ -1261,7 +1261,25 @@ fn info(env: &Env, package: &str, json: bool) -> Result<()> {
         }
     }
     println!("{}", tr!("Statut AuxiNux : {}", "AuxiNux status : {}", c.status().label()));
-    if let Some(note) = c.app.and_then(|a| a.status_note.as_ref()) {
+    if let catalog::DisplayStatus::Ai(_) = c.status() {
+        let ai = c.app.and_then(|a| a.ai_evaluation.as_ref());
+        if let Some(note) = ai.and_then(|e| e.note(auxipak_core::i18n::current().code())) {
+            println!(
+                "{}",
+                tr!(
+                    "  Réserves     : {note} (analyse automatique par l'IA)",
+                    "  Caveats      : {note} (automatic AI analysis)"
+                )
+            );
+        }
+        println!(
+            "{}",
+            tr!(
+                "  Attention    : pas encore vérifié par un relecteur humain d'AuxiNux ; peut contenir des erreurs",
+                "  Note         : not yet checked by a human AuxiNux reviewer; may contain mistakes"
+            )
+        );
+    } else if let Some(note) = c.app.and_then(|a| a.status_note.as_ref()) {
         println!("{}", tr!("  Réserves     : {note}", "  Caveats      : {note}"));
     }
     println!(

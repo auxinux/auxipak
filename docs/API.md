@@ -51,8 +51,8 @@ Authorization: Bearer apk_XXXXXXXX…
 | Rôle | Portées accessibles |
 |---|---|
 | `publisher` | `read`, `build`, `submit` |
-| `reviewer` | `read`, `build`, `submit`, `review`, `evaluate` |
-| `admin` | `read`, `build`, `submit`, `review`, `evaluate`, `admin` |
+| `reviewer` | `read`, `build`, `submit`, `review`, `evaluate`, `ai_evaluate` |
+| `admin` | `read`, `build`, `submit`, `review`, `evaluate`, `ai_evaluate`, `admin` |
 
 | Portée | Autorise |
 |---|---|
@@ -61,13 +61,14 @@ Authorization: Bearer apk_XXXXXXXX…
 | `submit` | soumissions (création, lecture des siennes, signature) |
 | `review` | approuver/rejeter, voir toutes les soumissions, dépublier, republier, révoquer |
 | `evaluate` | attribuer le statut AuxiNux (Vérifié, Compatible, Non évalué) |
+| `ai_evaluate` | enregistrer une **pré-évaluation automatique** (IA), indicative et étiquetée comme telle ; jamais le statut officiel |
 | `admin` | comptes, jetons d'autrui, dépôts, régénération, journal d'audit |
 
 | Type de jeton (`kind`) | Usage | Portées possibles |
 |---|---|---|
 | `human` | outil personnel d'une personne | toutes celles de son rôle |
 | `ci` | intégration continue | `read`, `build`, `submit` |
-| `agent` | agent d'automatisation (IA de tout fournisseur) | `read`, `build`, `submit` |
+| `agent` | agent d'automatisation (IA de tout fournisseur) | `read`, `build`, `submit`, `ai_evaluate` |
 
 Règles :
 
@@ -103,6 +104,21 @@ Règles :
 - États d'une version : `published`, `unpublished` (retirée des index),
   `revoked` (inscrite dans `revocations.json`, motif obligatoire, définitive).
 - Toute opération sensible est inscrite au journal d'audit.
+
+### Pré-évaluation automatique (IA)
+
+Un agent muni de la portée `ai_evaluate` (jeton `agent` d'un relecteur ou d'un
+administrateur) peut enregistrer une **pré-évaluation** issue d'une recherche
+automatique : statut proposé, réserves en plusieurs langues, sources.
+
+- Elle est publiée — site, API (`status_source: "ai"`), index (`ai_evaluation`)
+  et client (« AuxiNux Compatible (analyse automatique par l'IA) ») —
+  **seulement tant qu'aucun relecteur humain n'a évalué l'application**.
+- Elle ne modifie jamais l'évaluation humaine (table distincte) ; dans
+  `apps.json`, `status` reste `unreviewed` pour les clients antérieurs à 1.0.9.
+- Les relecteurs la retrouvent dans **Administration → Évaluations IA** :
+  « Confirmer » l'adopte telle quelle comme évaluation humaine, « Réviser »
+  ouvre le formulaire d'évaluation.
 
 ## 3. Routes
 
@@ -179,6 +195,7 @@ portée `build` ; `submit` exige en plus `submit`.
 | GET | `/api/v1/admin/releases` | `read` | paramètres `repository`, `app_id` (1000 au plus) |
 | POST | `/api/v1/admin/releases/{id}/state` | `review` | `{"state":"published"\|"unpublished"\|"revoked","reason"}` (motif obligatoire pour `revoked`) |
 | PUT | `/api/v1/admin/apps/{id}/evaluation` | `evaluate` | `{"status":"verified"\|"compatible"\|"unreviewed","note"?,"criteria"?}` |
+| PUT | `/api/v1/apps/{id}/ai-evaluation` | `ai_evaluate` | pré-évaluation IA : `{"status":"verified"\|"compatible","notes":{"fr":…,"en":…},"sources":["https://…"],"model"?,"criteria"?}` (réserves obligatoires pour `compatible`, 1 à 20 sources HTTPS) |
 | GET | `/api/v1/admin/audit` | `admin` | paramètres `limit` (1–1000, défaut 200), `before_id` (pagination) |
 
 ## 4. Exemples `curl`

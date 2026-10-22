@@ -25,7 +25,7 @@
   {% for a in apps %}
   <article class="card app-card">
     <h3><a href="/apps/{{ a.id }}">{{ a.name }}</a></h3>
-    <div class="row">{{ m.badge(a.status, tr) }}<span class="meta">{{ a.latest_version }} · {{ a.license }}</span></div>
+    <div class="row">{{ m.badge(a.status, tr, a.status_source) }}<span class="meta">{{ a.latest_version }} · {{ a.license }}</span></div>
     <p>{{ a.summary }}</p>
     <div class="row platforms">{% for p in a.platforms %}<span class="badge neutral">{{ tr['platform_' ~ p] or p }}</span>{% endfor %}</div>
     <div class="meta">{{ a.publisher }}{% for r in a.repositories %}{% if r != 'official' %} · <span class="badge neutral">{{ r }}</span>{% endif %}{% endfor %}</div>

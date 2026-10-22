@@ -9,10 +9,12 @@ info:
     de session (interface Web ; les requêtes non sûres exigent alors l'en-tête
     `X-CSRF-Token`).
 
-    **Portées** : `read`, `build`, `submit`, `review`, `evaluate`, `admin`.
+    **Portées** : `read`, `build`, `submit`, `review`, `evaluate`, `ai_evaluate`, `admin`.
     Les portées `review`, `evaluate` et `admin` sont réservées aux humains : un
     jeton `agent` (automatisation, IA) ou `ci` ne peut jamais approuver une
-    publication, classer une application ou administrer le serveur.
+    publication, classer une application ou administrer le serveur. La portée
+    `ai_evaluate` (rôles reviewer et admin, jetons agent permis) n'enregistre
+    qu'une pré-évaluation indicative, toujours étiquetée « IA ».
 
     **Publication** : une soumission crée toujours une *demande*. Seule
     l'approbation par un relecteur humain (distinct de l'auteur par défaut)
@@ -78,7 +80,7 @@ components:
       properties:
         name: { type: string }
         kind: { type: string, enum: [human, ci, agent] }
-        scopes: { type: array, items: { type: string, enum: [read, build, submit, review, evaluate, admin] } }
+        scopes: { type: array, items: { type: string, enum: [read, build, submit, review, evaluate, ai_evaluate, admin] } }
         provider: { type: string, description: "Fournisseur de l'agent (ex. mon-agent) — informatif" }
         expires_days: { type: integer, minimum: 1, maximum: 366 }
         user_id: { type: string, format: uuid, description: "Administration : propriétaire du jeton" }
@@ -519,6 +521,30 @@ paths:
                 status: { $ref: "#/components/schemas/Status" }
                 note: { type: string, description: "Obligatoire pour « compatible » (réserves)" }
                 criteria: { type: object }
+      responses:
+        "200": { description: OK }
+  /api/v1/apps/{id}/ai-evaluation:
+    put:
+      tags: [admin]
+      summary: Pré-évaluation automatique par une IA (portée ai_evaluate, jetons agent permis)
+      description: |
+        Indicative : publiée (étiquetée « IA ») seulement tant qu'aucun relecteur
+        humain n'a évalué l'application ; ne modifie jamais l'évaluation humaine.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status, sources]
+              properties:
+                status: { type: string, enum: [verified, compatible] }
+                notes: { type: object, additionalProperties: { type: string }, description: "Réserves par langue ; obligatoires pour « compatible »" }
+                sources: { type: array, items: { type: string, format: uri }, minItems: 1, maxItems: 20 }
+                criteria: { type: object }
+                model: { type: string }
       responses:
         "200": { description: OK }
   /api/v1/admin/audit:

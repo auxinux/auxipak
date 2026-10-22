@@ -10,7 +10,7 @@
   <thead><tr><th>{{ tr.application }}</th><th>{{ tr.license }}</th><th>{{ tr.status }}</th><th>{{ tr.evaluated_by }}</th>{% if user.can_review %}<th>{{ tr.evaluate }}</th>{% endif %}</tr></thead>
   <tbody>
   {% for a in apps %}
-    <tr>
+    <tr id="app-{{ a.id }}">
       <td><a href="/apps/{{ a.id }}">{{ a.name }}</a><div class="meta">{{ a.publisher }}</div></td>
       <td>{{ a.license }}</td>
       <td>{{ m.badge(a.status, tr) }}{% if a.note %}<div class="meta">{{ a.note }}</div>{% endif %}</td>

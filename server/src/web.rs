@@ -110,6 +110,8 @@ pub fn router() -> Router<AppState> {
         .route("/admin/releases/{id}/state", post(release_state))
         .route("/admin/apps", get(apps_page))
         .route("/admin/apps/{id}/evaluation", post(app_evaluation))
+        .route("/admin/ai-evaluations", get(ai_evaluations_page))
+        .route("/admin/ai-evaluations/{id}/confirm", post(ai_evaluation_confirm))
         .route("/admin/repositories", get(repos_page).post(repo_create))
         .route("/admin/repositories/{name}/regenerate", post(repo_regenerate))
         .route("/admin/users", get(users_page).post(user_create))
@@ -780,6 +782,95 @@ async fn app_evaluation(
     }
 }
 
+#[derive(Deserialize, Default)]
+struct AiEvalQuery {
+    msg: Option<String>,
+    all: Option<String>,
+}
+
+/// Pré-évaluations IA, à revoir par les relecteurs.
+async fn ai_evaluations_page(State(st): State<AppState>, jar: CookieJar, Query(q): Query<AiEvalQuery>) -> Response {
+    let a = session!(st, jar);
+    #[derive(sqlx::FromRow, serde::Serialize)]
+    struct Row {
+        app_id: String,
+        name: Option<String>,
+        status: String,
+        notes: serde_json::Value,
+        sources: Vec<String>,
+        model: Option<String>,
+        submitted_by: Option<String>,
+        evaluated_at: chrono::DateTime<chrono::Utc>,
+        human_status: Option<String>,
+        human_by: Option<String>,
+        published: bool,
+    }
+    let rows: Vec<Row> = tryp!(
+        st,
+        jar,
+        sqlx::query_as(
+            "SELECT ai.app_id, a.name, ai.status, ai.notes, ai.sources, ai.model, u.username AS submitted_by, ai.evaluated_at,
+                    e.status AS human_status, hu.username AS human_by,
+                    EXISTS (SELECT 1 FROM releases r WHERE r.app_id = ai.app_id AND r.state = 'published') AS published
+             FROM ai_evaluations ai
+             LEFT JOIN apps a ON a.id = ai.app_id
+             LEFT JOIN users u ON u.id = ai.submitted_by
+             LEFT JOIN evaluations e ON e.app_id = ai.app_id
+             LEFT JOIN users hu ON hu.id = e.evaluated_by
+             ORDER BY (e.status IS NULL) DESC, ai.evaluated_at DESC"
+        )
+        .fetch_all(&st.db)
+        .await
+        .map_err(ApiError::from)
+    );
+    let all = q.all.is_some();
+    let total = rows.len();
+    let to_review = rows.iter().filter(|r| r.human_status.is_none()).count();
+    let list: Vec<&Row> = rows.iter().filter(|r| all || r.human_status.is_none()).collect();
+    page(
+        &st,
+        &jar,
+        "admin/ai_evaluations.html",
+        context! { user => to_web_user(&a), list => list, all => all, total => total, to_review => to_review, msg => q.msg },
+    )
+}
+
+/// Adopte la pré-évaluation IA telle quelle comme évaluation humaine.
+async fn ai_evaluation_confirm(
+    State(st): State<AppState>,
+    peer: crate::auth::Peer,
+    headers: HeaderMap,
+    jar: CookieJar,
+    Path(id): Path<String>,
+    Form(f): Form<CsrfForm>,
+) -> Response {
+    let a = with_ip(session!(st, jar), peer.0, &st, &headers);
+    tryp!(st, jar, check_csrf(&a, &f.csrf));
+    let row: Option<(String, serde_json::Value)> = tryp!(
+        st,
+        jar,
+        sqlx::query_as("SELECT status, notes FROM ai_evaluations WHERE app_id = $1")
+            .bind(&id)
+            .fetch_optional(&st.db)
+            .await
+            .map_err(ApiError::from)
+    );
+    let Some((status, notes)) = row else {
+        return back("/admin/ai-evaluations", &ApiError::NotFound.to_string());
+    };
+    let notes: std::collections::BTreeMap<String, String> = serde_json::from_value(notes).unwrap_or_default();
+    let note = notes.get("fr").or_else(|| notes.values().next()).cloned();
+    let req = admin::EvaluationReq {
+        status,
+        note,
+        criteria: serde_json::json!({"confirmed_from": "ai"}),
+    };
+    match admin::apply_evaluation(&st, &a, &id, &req).await {
+        Ok(()) => back("/admin/ai-evaluations", "ok"),
+        Err(e) => back("/admin/ai-evaluations", &e.to_string()),
+    }
+}
+
 async fn repos_page(State(st): State<AppState>, jar: CookieJar, Query(q): Query<MsgQuery>) -> Response {
     let a = session!(st, jar);
     let repos = tryp!(st, jar, admin::repositories(&st).await);
@@ -948,6 +1039,8 @@ struct TokenForm {
     #[serde(default)]
     scope_evaluate: Option<String>,
     #[serde(default)]
+    scope_ai_evaluate: Option<String>,
+    #[serde(default)]
     scope_admin: Option<String>,
     #[serde(default)]
     expires_days: Option<i64>,
@@ -965,6 +1058,7 @@ async fn token_create(State(st): State<AppState>, jar: CookieJar, Form(f): Form<
         (&f.scope_submit, "submit"),
         (&f.scope_review, "review"),
         (&f.scope_evaluate, "evaluate"),
+        (&f.scope_ai_evaluate, "ai_evaluate"),
         (&f.scope_admin, "admin"),
     ] {
         if on.is_some() {

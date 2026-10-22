@@ -12,18 +12,22 @@ use std::cmp::Ordering;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DisplayStatus {
     Official(Status),
+    /// Pré-évaluation automatique par une IA (aucune évaluation humaine).
+    Ai(Status),
     /// Dépôt externe : aucune certification AuxiNux possible.
     External,
 }
 
 impl DisplayStatus {
-    pub fn label(&self) -> &'static str {
+    pub fn label(&self) -> String {
         let fr = auxipak_core::i18n::is_fr();
         match self {
-            DisplayStatus::Official(s) if fr => s.label_fr(),
-            DisplayStatus::Official(s) => s.label_en(),
-            DisplayStatus::External if fr => "Externe (non évalué par AuxiNux)",
-            DisplayStatus::External => "External (not reviewed by AuxiNux)",
+            DisplayStatus::Official(s) if fr => s.label_fr().into(),
+            DisplayStatus::Official(s) => s.label_en().into(),
+            DisplayStatus::Ai(s) if fr => format!("{} (analyse automatique par l'IA)", s.label_fr()),
+            DisplayStatus::Ai(s) => format!("{} (automatic AI analysis)", s.label_en()),
+            DisplayStatus::External if fr => "Externe (non évalué par AuxiNux)".into(),
+            DisplayStatus::External => "External (not reviewed by AuxiNux)".into(),
         }
     }
 
@@ -38,6 +42,20 @@ impl DisplayStatus {
                 }
             }
             DisplayStatus::Official(Status::Compatible) => "compatible",
+            DisplayStatus::Ai(Status::Verified) => {
+                if fr {
+                    "vérifié (IA)"
+                } else {
+                    "verified (AI)"
+                }
+            }
+            DisplayStatus::Ai(_) => {
+                if fr {
+                    "compat. (IA)"
+                } else {
+                    "compat. (AI)"
+                }
+            }
             DisplayStatus::Official(Status::Unreviewed) => {
                 if fr {
                     "non évalué"
@@ -58,7 +76,12 @@ impl DisplayStatus {
 
 pub fn display_status(repo: &RepoData, app: Option<&AppMeta>) -> DisplayStatus {
     if repo.config.official {
-        DisplayStatus::Official(app.map(|a| a.status).unwrap_or_default())
+        match app {
+            Some(a) if a.status == Status::Unreviewed && a.ai_evaluation.is_some() => {
+                DisplayStatus::Ai(a.ai_evaluation.as_ref().map(|e| e.status).unwrap_or_default())
+            }
+            _ => DisplayStatus::Official(app.map(|a| a.status).unwrap_or_default()),
+        }
     } else {
         DisplayStatus::External
     }

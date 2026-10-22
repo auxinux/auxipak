@@ -70,3 +70,6 @@ dl.kv dd { margin: 0; overflow-wrap: anywhere; }
 .check-ko { color: var(--danger); }
 .hidden { display: none; }
 @media (max-width: 640px) { dl.kv { grid-template-columns: 1fr; } nav.main { gap: .6rem; } }
+/* Pré-évaluation IA : contour pointillé, pour la distinguer d'une évaluation humaine. */
+.badge.ai { outline: 1px dashed currentColor; outline-offset: 1px; }
+.strong { font-weight: 600; }

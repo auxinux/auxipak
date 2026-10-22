@@ -203,6 +203,9 @@ pub struct AppListRow {
     /// Traductions du manifeste ; `name` et `summary` sont déjà dans la langue
     /// de la requête quand elle est disponible.
     pub translations: serde_json::Value,
+    /// Origine du statut : `human` (relecteur), `ai` (pré-évaluation
+    /// automatique, indicative) ou absente (non évalué).
+    pub status_source: Option<String>,
 }
 
 /// Recherche dans les applications publiées.
@@ -210,21 +213,22 @@ pub async fn search_apps(st: &AppState, q: &AppsQuery) -> ApiResult<Vec<AppListR
     let pattern = format!("%{}%", q.q.clone().unwrap_or_default().to_lowercase().replace(['%', '_'], ""));
     let rows: Vec<AppListRow> = sqlx::query_as(
         "SELECT a.id, a.name, a.publisher, a.summary, a.license,
-                COALESCE(e.status, 'unreviewed') AS status,
+                COALESCE(e.status, ai.status, 'unreviewed') AS status,
+                CASE WHEN e.status IS NOT NULL THEN 'human' WHEN ai.status IS NOT NULL THEN 'ai' END AS status_source,
                 (SELECT r.version FROM releases r WHERE r.app_id = a.id AND r.state = 'published'
                    ORDER BY r.published_at DESC LIMIT 1) AS latest_version,
                 ARRAY(SELECT DISTINCT r.repository FROM releases r WHERE r.app_id = a.id AND r.state = 'published') AS repositories,
                 ARRAY(SELECT DISTINCT t->>'platform' FROM releases r, jsonb_array_elements(r.manifest->'targets') t
                         WHERE r.app_id = a.id AND r.state = 'published' ORDER BY 1) AS platforms,
                 a.updated_at, a.translations
-         FROM apps a LEFT JOIN evaluations e ON e.app_id = a.id
+         FROM apps a LEFT JOIN evaluations e ON e.app_id = a.id LEFT JOIN ai_evaluations ai ON ai.app_id = a.id
          WHERE EXISTS (SELECT 1 FROM releases r WHERE r.app_id = a.id AND r.state = 'published'
                          AND ($2::text IS NULL OR r.repository = $2)
                          AND ($4::text IS NULL OR EXISTS (
                                SELECT 1 FROM jsonb_array_elements(r.manifest->'targets') t WHERE t->>'platform' = $4)))
            AND (lower(a.id) LIKE $1 OR lower(a.name) LIKE $1 OR lower(a.summary) LIKE $1
                 OR lower(a.translations::text) LIKE $1)
-           AND ($3::text IS NULL OR COALESCE(e.status, 'unreviewed') = $3)
+           AND ($3::text IS NULL OR COALESCE(e.status, ai.status, 'unreviewed') = $3)
          ORDER BY a.name LIMIT 500",
     )
     .bind(pattern)
@@ -264,6 +268,12 @@ pub struct AppDetailRow {
     pub status_note: Option<String>,
     pub evaluated_at: Option<DateTime<Utc>>,
     pub translations: serde_json::Value,
+    /// `human`, `ai` (pré-évaluation automatique) ou absent.
+    pub status_source: Option<String>,
+    #[serde(skip)]
+    pub ai_notes: Option<serde_json::Value>,
+    /// Sources de la pré-évaluation IA.
+    pub ai_sources: Option<Vec<String>>,
 }
 
 #[derive(sqlx::FromRow, Serialize, Clone)]
@@ -292,8 +302,13 @@ pub struct AppDetail {
 pub async fn load_app(st: &AppState, id: &str) -> ApiResult<AppDetail> {
     let app: AppDetailRow = sqlx::query_as(
         "SELECT a.id, a.name, a.publisher, a.summary, a.description, a.license, a.homepage, a.categories,
-                COALESCE(e.status, 'unreviewed') AS status, e.note AS status_note, e.evaluated_at, a.translations
-         FROM apps a LEFT JOIN evaluations e ON e.app_id = a.id WHERE a.id = $1",
+                COALESCE(e.status, ai.status, 'unreviewed') AS status, e.note AS status_note,
+                COALESCE(e.evaluated_at, ai.evaluated_at) AS evaluated_at, a.translations,
+                CASE WHEN e.status IS NOT NULL THEN 'human' WHEN ai.status IS NOT NULL THEN 'ai' END AS status_source,
+                CASE WHEN e.status IS NULL THEN ai.notes END AS ai_notes,
+                CASE WHEN e.status IS NULL THEN ai.sources END AS ai_sources
+         FROM apps a LEFT JOIN evaluations e ON e.app_id = a.id LEFT JOIN ai_evaluations ai ON ai.app_id = a.id
+         WHERE a.id = $1",
     )
     .bind(id)
     .fetch_optional(&st.db)
@@ -311,6 +326,20 @@ pub async fn load_app(st: &AppState, id: &str) -> ApiResult<AppDetail> {
         return Err(ApiError::NotFound);
     }
     let mut app = app;
+    // Pré-évaluation IA : ses réserves, dans la langue de la requête.
+    if app.status_source.as_deref() == Some("ai") {
+        let notes: std::collections::BTreeMap<String, String> = app
+            .ai_notes
+            .clone()
+            .and_then(|v| serde_json::from_value(v).ok())
+            .unwrap_or_default();
+        let lang = auxipak_core::i18n::current().code();
+        app.status_note = notes
+            .get(lang)
+            .or_else(|| notes.get("fr"))
+            .or_else(|| notes.values().next())
+            .cloned();
+    }
     if let Some(t) = translation(&app.translations, auxipak_core::i18n::current().code()) {
         if let Some(n) = t.name {
             app.name = n;

@@ -505,6 +505,126 @@ pub async fn set_evaluation(
     Ok(Json(serde_json::json!({"ok": true})))
 }
 
+/// Pré-évaluation automatique (IA).
+#[derive(Deserialize)]
+pub struct AiEvaluationReq {
+    /// `verified` ou `compatible`.
+    pub status: String,
+    /// Réserves par langue (`{"fr": "…", "en": "…"}`).
+    #[serde(default)]
+    pub notes: std::collections::BTreeMap<String, String>,
+    /// Sources consultées (URL HTTPS) : au moins une.
+    #[serde(default)]
+    pub sources: Vec<String>,
+    #[serde(default)]
+    pub criteria: serde_json::Value,
+    /// Modèle ou outil ayant produit l'analyse.
+    #[serde(default)]
+    pub model: Option<String>,
+}
+
+/// Enregistre une pré-évaluation IA. Ne modifie jamais l'évaluation humaine :
+/// si elle existe, la pré-évaluation est conservée mais n'est pas publiée.
+pub async fn apply_ai_evaluation(st: &AppState, actor: &Actor, app_id: &str, req: &AiEvaluationReq) -> ApiResult<()> {
+    actor.require(Scope::AiEvaluate)?;
+    if !auxipak_core::ids::is_valid_app_id(app_id) {
+        return Err(bad(tr!(
+            "identifiant d'application invalide",
+            "invalid application identifier"
+        )));
+    }
+    let status: auxipak_core::index::Status = req.status.parse().map_err(bad)?;
+    if status == auxipak_core::index::Status::Unreviewed {
+        return Err(bad(tr!(
+            "statut attendu : verified ou compatible",
+            "expected status: verified or compatible"
+        )));
+    }
+    let notes: std::collections::BTreeMap<String, String> = req
+        .notes
+        .iter()
+        .map(|(k, v)| (k.clone(), v.trim().to_string()))
+        .filter(|(_, v)| !v.is_empty())
+        .collect();
+    for (l, n) in &notes {
+        if !auxipak_core::ids::is_valid_language(l) || n.chars().count() > 2000 || n.chars().any(|c| c.is_control() && c != '\n')
+        {
+            return Err(bad(tr!(
+                "réserves invalides pour « {l} » (code de langue, 2 000 caractères au plus)",
+                "invalid caveats for '{l}' (language code, at most 2,000 characters)"
+            )));
+        }
+    }
+    if status == auxipak_core::index::Status::Compatible && notes.is_empty() {
+        return Err(bad(tr!(
+            "le statut « compatible » exige des réserves",
+            "the 'compatible' status requires caveats"
+        )));
+    }
+    if req.sources.is_empty() || req.sources.len() > 20 {
+        return Err(bad(tr!(
+            "entre 1 et 20 sources (URL HTTPS) sont requises",
+            "between 1 and 20 sources (HTTPS URLs) are required"
+        )));
+    }
+    for u in &req.sources {
+        if !u.starts_with("https://") || u.len() > 500 || u.chars().any(|c| c.is_whitespace() || c.is_control()) {
+            return Err(bad(tr!("source invalide : {u}", "invalid source: {u}")));
+        }
+    }
+    let model = req.model.as_deref().map(str::trim).filter(|m| !m.is_empty());
+    if model.map(|m| m.chars().count() > 100).unwrap_or(false) {
+        return Err(bad(tr!("nom de modèle trop long", "model name too long")));
+    }
+    let criteria = if req.criteria.is_object() {
+        req.criteria.clone()
+    } else {
+        serde_json::json!({})
+    };
+    sqlx::query(
+        "INSERT INTO ai_evaluations (app_id, status, notes, criteria, sources, model, submitted_by, evaluated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, now())
+         ON CONFLICT (app_id) DO UPDATE SET status = EXCLUDED.status, notes = EXCLUDED.notes, criteria = EXCLUDED.criteria,
+            sources = EXCLUDED.sources, model = EXCLUDED.model, submitted_by = EXCLUDED.submitted_by, evaluated_at = now()",
+    )
+    .bind(app_id)
+    .bind(status.as_str())
+    .bind(serde_json::to_value(&notes).map_err(anyhow::Error::from)?)
+    .bind(&criteria)
+    .bind(&req.sources)
+    .bind(model)
+    .bind(actor.user_id)
+    .execute(&st.db)
+    .await?;
+    audit::log(
+        &st.db,
+        Some(actor),
+        "app.ai_evaluate",
+        app_id,
+        serde_json::json!({"status": status.as_str(), "notes": notes, "sources": req.sources, "model": model}),
+    )
+    .await;
+    let repos: Vec<(String,)> =
+        sqlx::query_as("SELECT DISTINCT repository FROM releases WHERE app_id = $1 AND state = 'published'")
+            .bind(app_id)
+            .fetch_all(&st.db)
+            .await?;
+    for (r,) in repos {
+        crate::publisher::regenerate(st, &r, Some(actor)).await?;
+    }
+    Ok(())
+}
+
+pub async fn set_ai_evaluation(
+    State(st): State<AppState>,
+    actor: Actor,
+    Path(id): Path<String>,
+    Json(req): Json<AiEvaluationReq>,
+) -> ApiResult<Json<serde_json::Value>> {
+    apply_ai_evaluation(&st, &actor, &id, &req).await?;
+    Ok(Json(serde_json::json!({"ok": true})))
+}
+
 #[derive(Deserialize)]
 pub struct AuditQuery {
     pub limit: Option<i64>,

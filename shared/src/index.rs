@@ -150,6 +150,37 @@ pub struct AppMeta {
     /// Nom, résumé et description dans d'autres langues (manifeste).
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub translations: BTreeMap<String, Translation>,
+    /// Pré-évaluation automatique par une IA, publiée seulement tant
+    /// qu'aucun relecteur humain n'a évalué l'application (`status` reste
+    /// alors `unreviewed` pour les clients qui ignorent ce champ).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ai_evaluation: Option<AiEvaluation>,
+}
+
+/// Pré-évaluation automatique (IA) : indicative, peut contenir des erreurs.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AiEvaluation {
+    pub status: Status,
+    /// Réserves par langue (`fr`, `en`…).
+    #[serde(default)]
+    pub notes: BTreeMap<String, String>,
+    /// Sources consultées (URL).
+    #[serde(default)]
+    pub sources: Vec<String>,
+    pub evaluated_at: DateTime<Utc>,
+}
+
+impl AiEvaluation {
+    /// Réserves dans la langue `lang`, sinon en français, sinon la première.
+    pub fn note(&self, lang: &str) -> Option<&str> {
+        let base = lang.split('-').next().unwrap_or(lang);
+        self.notes
+            .get(lang)
+            .or_else(|| self.notes.get(base))
+            .or_else(|| self.notes.get("fr"))
+            .or_else(|| self.notes.values().next())
+            .map(String::as_str)
+    }
 }
 
 impl AppMeta {

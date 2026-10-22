@@ -5,6 +5,20 @@ le projet applique le [versionnage sémantique](https://semver.org/lang/fr/).
 
 ## [Non publié]
 
+## [1.0.9] — 2026-10-22
+
+### Ajouté
+
+- Pré-évaluation automatique par une IA : portée `ai_evaluate` (jetons
+  `agent` des relecteurs et administrateurs), route
+  `PUT /api/v1/apps/{id}/ai-evaluation` (statut, réserves FR/EN, sources,
+  modèle). Affichée — étiquetée « analyse automatique par l'IA » — sur le
+  site, dans l'API, l'index et le client tant qu'aucun relecteur humain n'a
+  évalué l'application ; ne remplace jamais une évaluation humaine.
+- Administration : page « Évaluations IA » (à revoir / toutes, sources,
+  modèle) avec « Confirmer » (adoption comme évaluation humaine) et
+  « Réviser ».
+
 ## [1.0.8] — 2026-10-22
 
 ### Ajouté

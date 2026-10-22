@@ -58,13 +58,21 @@ impl Role {
     pub fn allowed_scopes(&self) -> &'static [Scope] {
         match self {
             Role::Publisher => &[Scope::Read, Scope::Build, Scope::Submit],
-            Role::Reviewer => &[Scope::Read, Scope::Build, Scope::Submit, Scope::Review, Scope::Evaluate],
+            Role::Reviewer => &[
+                Scope::Read,
+                Scope::Build,
+                Scope::Submit,
+                Scope::Review,
+                Scope::Evaluate,
+                Scope::AiEvaluate,
+            ],
             Role::Admin => &[
                 Scope::Read,
                 Scope::Build,
                 Scope::Submit,
                 Scope::Review,
                 Scope::Evaluate,
+                Scope::AiEvaluate,
                 Scope::Admin,
             ],
         }
@@ -79,6 +87,9 @@ pub enum Scope {
     Submit,
     Review,
     Evaluate,
+    /// Pré-évaluation automatique (IA) : permise aux jetons agent, jamais
+    /// une évaluation officielle.
+    AiEvaluate,
     Admin,
 }
 
@@ -90,6 +101,7 @@ impl Scope {
             "submit" => Some(Scope::Submit),
             "review" => Some(Scope::Review),
             "evaluate" => Some(Scope::Evaluate),
+            "ai_evaluate" => Some(Scope::AiEvaluate),
             "admin" => Some(Scope::Admin),
             _ => None,
         }
@@ -101,6 +113,7 @@ impl Scope {
             Scope::Submit => "submit",
             Scope::Review => "review",
             Scope::Evaluate => "evaluate",
+            Scope::AiEvaluate => "ai_evaluate",
             Scope::Admin => "admin",
         }
     }

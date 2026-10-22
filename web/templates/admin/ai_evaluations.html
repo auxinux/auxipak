@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% import "macros.html" as m %}
+{% block title %}{{ tr.ai_evaluations }}{% endblock %}
+{% block content %}
+{% include "admin/nav.html" %}
+<h1>{{ tr.ai_evaluations }}</h1>
+{{ m.flash(msg, tr) }}
+<p class="meta">{{ tr.ai_eval_help }}</p>
+<p class="row">
+  <a href="/admin/ai-evaluations" class="{{ '' if all else 'strong' }}">{{ tr.ai_to_review }} ({{ to_review }})</a> ·
+  <a href="/admin/ai-evaluations?all=1" class="{{ 'strong' if all else '' }}">{{ tr.ai_all }} ({{ total }})</a>
+</p>
+<div class="table-wrap"><table>
+  <thead><tr><th>{{ tr.application }}</th><th>{{ tr.ai_short }}</th><th>{{ tr.reservations }}</th><th>{{ tr.ai_sources }}</th><th>{{ tr.human_status }}</th>{% if user.can_review %}<th></th>{% endif %}</tr></thead>
+  <tbody>
+  {% for e in list %}
+    <tr>
+      <td><a href="/apps/{{ e.app_id }}">{{ e.name or e.app_id }}</a><div class="meta mono">{{ e.app_id }}</div><div class="meta">{{ e.evaluated_at|date }}{% if e.model %} · {{ e.model }}{% endif %}{% if e.submitted_by %} · {{ e.submitted_by }}{% endif %}</div></td>
+      <td>{{ m.badge(e.status, tr, 'ai') }}</td>
+      <td>{% for l, n in e.notes|items %}<div><span class="badge neutral">{{ l }}</span> {{ n }}</div>{% else %}—{% endfor %}</td>
+      <td><ul class="meta">{% for u in e.sources %}<li><a href="{{ u }}" rel="noopener nofollow">{{ u }}</a></li>{% endfor %}</ul></td>
+      <td>{% if e.human_status %}{{ m.badge(e.human_status, tr) }}{% if e.human_by %}<div class="meta">{{ e.human_by }}</div>{% endif %}{% else %}—{% endif %}</td>
+      {% if user.can_review %}<td class="stack">
+        {% if not e.human_status and e.published %}
+        <form method="post" action="/admin/ai-evaluations/{{ e.app_id }}/confirm"><input type="hidden" name="csrf" value="{{ user.csrf }}"><button class="small" type="submit">✓ {{ tr.ai_confirm }}</button></form>
+        {% endif %}
+        {% if e.published %}<a href="/admin/apps#app-{{ e.app_id }}">✎ {{ tr.ai_revise }}</a>{% endif %}
+      </td>{% endif %}
+    </tr>
+  {% else %}<tr><td colspan="6">—</td></tr>{% endfor %}
+  </tbody>
+</table></div>
+{% endblock %}

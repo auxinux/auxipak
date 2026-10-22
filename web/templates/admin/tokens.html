@@ -31,7 +31,7 @@
     {% if users %}<select name="user_id">{% for u in users %}<option value="{{ u.id }}" {% if u.username == user.username %}selected{% endif %}>{{ u.username }} ({{ u.role }})</option>{% endfor %}</select>{% endif %}
   </div>
   <div class="row">{{ tr.scopes }} :
-    {% for s in ['read', 'build', 'submit', 'review', 'evaluate', 'admin'] %}<label><input type="checkbox" name="scope_{{ s }}" value="1"> {{ s }}</label>{% endfor %}
+    {% for s in ['read', 'build', 'submit', 'review', 'evaluate', 'ai_evaluate', 'admin'] %}<label><input type="checkbox" name="scope_{{ s }}" value="1"> {{ s }}</label>{% endfor %}
   </div>
   <p class="meta">{{ tr.token_kind_help }}</p>
   <button type="submit">{{ tr.create }}</button>

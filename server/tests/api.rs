@@ -1373,3 +1373,147 @@ async fn bulk_approval_from_the_web_interface() {
     assert_eq!(status(ids[1].clone()).await, "published");
     assert_eq!(status(ids[2].clone()).await, "pending");
 }
+
+#[tokio::test]
+#[ignore = "requiert PostgreSQL (AUXIPAK_TEST_DATABASE_URL)"]
+async fn ai_pre_assessment_until_human_review() {
+    let s = start().await;
+    let admin_pw = s.user("admin", Role::Admin).await;
+    s.user("pub", Role::Publisher).await;
+    s.user("rev", Role::Reviewer).await;
+    let admin = s.login("admin", &admin_pw).await;
+    let pub_token = s.token(&admin, "pub", "human", &["submit", "read"]).await;
+    let rev = s.login("rev", "Mot-de-passe-rev-2026").await;
+    // Portée ai_evaluate : jeton agent d'un relecteur, jamais d'un simple publieur.
+    let ai = s.token(&admin, "rev", "agent", &["ai_evaluate"]).await;
+    let users: Value = s
+        .http
+        .get(s.url("/api/v1/admin/users"))
+        .headers(s.sh(&admin))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let pub_id = users.as_array().unwrap().iter().find(|u| u["username"] == "pub").unwrap()["id"].clone();
+    let r = s
+        .http
+        .post(s.url("/api/v1/admin/tokens"))
+        .headers(s.sh(&admin))
+        .json(&json!({"name": "x", "kind": "agent", "scopes": ["ai_evaluate"], "user_id": pub_id}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), StatusCode::BAD_REQUEST);
+
+    let sub = s.submit(&pub_token, demo_aupak("1.0.0")).await;
+    let r = s
+        .http
+        .post(s.url(&format!("/api/v1/submissions/{}/approve", sub["id"].as_str().unwrap())))
+        .headers(s.sh(&rev))
+        .json(&json!({"note": "ok"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), StatusCode::OK);
+
+    let put = |body: Value| {
+        let req = s
+            .http
+            .put(s.url("/api/v1/apps/demo-app/ai-evaluation"))
+            .bearer_auth(&ai)
+            .json(&body);
+        async move { req.send().await.unwrap().status() }
+    };
+    // Sources obligatoires ; réserves obligatoires pour « compatible ».
+    assert_eq!(
+        put(json!({"status": "compatible", "notes": {"fr": "x"}})).await,
+        StatusCode::BAD_REQUEST
+    );
+    assert_eq!(
+        put(json!({"status": "compatible", "sources": ["https://example.org"]})).await,
+        StatusCode::BAD_REQUEST
+    );
+    assert_eq!(
+        put(json!({"status": "unreviewed", "notes": {"fr": "x"}, "sources": ["https://example.org"]})).await,
+        StatusCode::BAD_REQUEST
+    );
+    assert_eq!(
+        put(
+            json!({"status": "compatible", "notes": {"fr": "Télémétrie activée par défaut", "en": "Telemetry on by default"},
+                   "sources": ["https://example.org/privacy"], "model": "test-model"})
+        )
+        .await,
+        StatusCode::OK
+    );
+    // L'agent ne peut pas poser d'évaluation humaine.
+    let r = s
+        .http
+        .put(s.url("/api/v1/admin/apps/demo-app/evaluation"))
+        .bearer_auth(&ai)
+        .json(&json!({"status": "verified"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), StatusCode::FORBIDDEN);
+
+    let get = |lang: &'static str| {
+        let req = s.http.get(s.url("/api/v1/apps/demo-app")).header("Accept-Language", lang);
+        async move { req.send().await.unwrap().json::<Value>().await.unwrap() }
+    };
+    let fr = get("fr").await;
+    assert_eq!(fr["app"]["status"], "compatible");
+    assert_eq!(fr["app"]["status_source"], "ai");
+    assert_eq!(fr["app"]["status_note"], "Télémétrie activée par défaut");
+    assert_eq!(get("en").await["app"]["status_note"], "Telemetry on by default");
+    let apps_json = || {
+        let req = s.http.get(s.url("/repos/official/targets/apps.json"));
+        async move { req.send().await.unwrap().json::<Value>().await.unwrap() }
+    };
+    let idx = apps_json().await;
+    assert_eq!(idx["apps"][0]["status"], "unreviewed");
+    assert_eq!(idx["apps"][0]["ai_evaluation"]["status"], "compatible");
+    let html = s
+        .http
+        .get(s.url("/apps/demo-app"))
+        .header(COOKIE, "lang=fr")
+        .send()
+        .await
+        .unwrap()
+        .text()
+        .await
+        .unwrap();
+    assert!(
+        html.contains("analyse automatique par l'IA") || html.contains("analyse automatique par l&#x27;IA"),
+        "{html}"
+    );
+
+    // Section d'administration, puis confirmation par un relecteur.
+    let page = s
+        .http
+        .get(s.url("/admin/ai-evaluations"))
+        .header(COOKIE, &rev.cookie)
+        .send()
+        .await
+        .unwrap()
+        .text()
+        .await
+        .unwrap();
+    assert!(page.contains("demo-app") && page.contains("test-model"), "{page}");
+    let r = s
+        .http
+        .post(s.url("/admin/ai-evaluations/demo-app/confirm"))
+        .header(COOKIE, &rev.cookie)
+        .form(&[("csrf", rev.csrf.as_str())])
+        .send()
+        .await
+        .unwrap();
+    assert!(r.status().is_redirection());
+    let fr = get("fr").await;
+    assert_eq!(fr["app"]["status_source"], "human");
+    assert_eq!(fr["app"]["status"], "compatible");
+    let idx = apps_json().await;
+    assert_eq!(idx["apps"][0]["status"], "compatible");
+    assert!(idx["apps"][0].get("ai_evaluation").is_none());
+}

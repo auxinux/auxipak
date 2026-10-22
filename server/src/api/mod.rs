@@ -75,6 +75,7 @@ pub fn router() -> Router<AppState> {
         .route("/api/v1/admin/releases", get(admin::list_releases))
         .route("/api/v1/admin/releases/{id}/state", post(admin::set_release_state))
         .route("/api/v1/admin/apps/{id}/evaluation", put(admin::set_evaluation))
+        .route("/api/v1/apps/{id}/ai-evaluation", put(admin::set_ai_evaluation))
         .route("/api/v1/admin/audit", get(admin::audit))
 }
 
@@ -126,6 +127,7 @@ pub const DOCUMENTED_ROUTES: &[(&str, &str)] = &[
     ("get", "/api/v1/admin/releases"),
     ("post", "/api/v1/admin/releases/{id}/state"),
     ("put", "/api/v1/admin/apps/{id}/evaluation"),
+    ("put", "/api/v1/apps/{id}/ai-evaluation"),
     ("get", "/api/v1/admin/audit"),
 ];
 

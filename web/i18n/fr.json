@@ -196,5 +196,17 @@
   "sub_approved": "approuvée",
   "sub_published": "publiée",
   "sub_rejected": "rejetée",
-  "sub_failed": "en échec"
+  "sub_failed": "en échec",
+  "ai_short": "IA",
+  "ai_status_desc": "Pré-évaluation automatique par une IA, pas encore vérifiée par un relecteur humain : elle peut contenir des erreurs.",
+  "ai_notice": "Ce statut provient d'une analyse automatique par l'IA (recherche sur Internet). Il n'a pas encore été vérifié par un relecteur humain d'AuxiNux et peut contenir des erreurs.",
+  "ai_analysis": "analyse automatique par l'IA",
+  "ai_sources": "Sources consultées",
+  "ai_evaluations": "Évaluations IA",
+  "ai_eval_help": "Pré-évaluations produites par l'IA. Elles s'affichent publiquement (étiquetées « IA ») tant qu'aucun relecteur n'a évalué l'application. « Confirmer » les adopte telles quelles comme évaluation humaine ; « Réviser » ouvre le formulaire d'évaluation. Une évaluation humaine remplace toujours la pré-évaluation.",
+  "ai_to_review": "À revoir",
+  "ai_all": "Toutes",
+  "ai_confirm": "Confirmer",
+  "ai_revise": "Réviser",
+  "human_status": "Évaluation humaine"
 }

@@ -9,9 +9,15 @@
 <div class="grid">
   <section class="card">
     <h2>{{ tr.status }}</h2>
-    <p>{{ m.badge(app.status, tr) }}</p>
+    <p>{{ m.badge(app.status, tr, app.status_source) }}</p>
+    {% if app.status_source == 'ai' %}
+    <p class="warning" role="note">{{ tr.ai_notice }}</p>
+    {% if app.status_note %}<p><strong>{{ tr.reservations }} :</strong> {{ app.status_note }} <em class="meta">({{ tr.ai_analysis }})</em></p>{% endif %}
+    {% if app.ai_sources %}<details><summary class="meta">{{ tr.ai_sources }}</summary><ul class="meta">{% for u in app.ai_sources %}<li><a href="{{ u }}" rel="noopener nofollow">{{ u }}</a></li>{% endfor %}</ul></details>{% endif %}
+    {% else %}
     <p class="meta">{{ tr['status_' ~ app.status ~ '_desc'] }}</p>
     {% if app.status_note %}<p><strong>{{ tr.reservations }} :</strong> {{ app.status_note }}</p>{% endif %}
+    {% endif %}
     {% if app.evaluated_at and app.status != 'unreviewed' %}<p class="meta">{{ tr.evaluated_on }} {{ app.evaluated_at|date }}</p>{% endif %}
     <p class="meta"><a href="/values">{{ tr.nav_values }}</a></p>
   </section>

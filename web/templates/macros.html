@@ -1,5 +1,5 @@
-{% macro badge(status, tr) -%}
-<span class="badge {{ status }}" title="{{ tr['status_' ~ status ~ '_desc'] }}">{{ tr['status_' ~ status] }}</span>
+{% macro badge(status, tr, source=none) -%}
+{% if source == 'ai' %}<span class="badge {{ status }} ai" title="{{ tr.ai_status_desc }}">{{ tr['status_' ~ status] }} · {{ tr.ai_short }}</span>{% else %}<span class="badge {{ status }}" title="{{ tr['status_' ~ status ~ '_desc'] }}">{{ tr['status_' ~ status] }}</span>{% endif %}
 {%- endmacro %}
 {% macro flash(msg, tr) -%}
 {% if msg %}

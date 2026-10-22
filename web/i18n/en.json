@@ -196,5 +196,17 @@
   "sub_approved": "approved",
   "sub_published": "published",
   "sub_rejected": "rejected",
-  "sub_failed": "failed"
+  "sub_failed": "failed",
+  "ai_short": "AI",
+  "ai_status_desc": "Automatic pre-assessment by an AI, not yet checked by a human reviewer: it may contain mistakes.",
+  "ai_notice": "This status comes from an automatic AI analysis (web research). It has not yet been checked by a human AuxiNux reviewer and may contain mistakes.",
+  "ai_analysis": "automatic AI analysis",
+  "ai_sources": "Sources consulted",
+  "ai_evaluations": "AI assessments",
+  "ai_eval_help": "Pre-assessments produced by the AI. They are shown publicly (labelled “AI”) until a reviewer assesses the application. “Confirm” adopts one as is as a human assessment; “Revise” opens the assessment form. A human assessment always replaces the pre-assessment.",
+  "ai_to_review": "To review",
+  "ai_all": "All",
+  "ai_confirm": "Confirm",
+  "ai_revise": "Revise",
+  "human_status": "Human assessment"
 }

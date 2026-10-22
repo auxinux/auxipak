@@ -131,6 +131,7 @@ impl Fixture {
                 status_note: None,
                 evaluated_at: None,
                 translations: manifest.translations.clone(),
+                ai_evaluation: None,
             });
         }
         self.packages.push(PublishedPackage {
@@ -863,4 +864,42 @@ fn search_shows_texts_in_the_interface_language() {
     assert!(en.contains("English summary of hello") && en.contains("Hello EN"), "{en}");
     // La recherche porte aussi sur les traductions.
     assert!(f.ok(&["search", "english"]).contains("hello"));
+}
+
+#[test]
+fn ai_pre_assessment_is_labelled_until_a_human_reviews() {
+    let mut f = Fixture::new();
+    simple(&mut f, "hello", "1.0.0");
+    let app = f.apps.iter_mut().find(|a| a.id == "hello").unwrap();
+    app.status = Status::Unreviewed;
+    app.ai_evaluation = Some(auxipak_core::index::AiEvaluation {
+        status: Status::Compatible,
+        notes: [
+            ("fr".to_string(), "Télémétrie activée par défaut".to_string()),
+            ("en".to_string(), "Telemetry enabled by default".to_string()),
+        ]
+        .into(),
+        sources: vec!["https://example.org/privacy".into()],
+        evaluated_at: Utc::now(),
+    });
+    f.publish();
+    let s = f.ok(&["search", "hello"]);
+    assert!(s.contains("compat. (IA)"), "{s}");
+    let i = f.ok(&["info", "hello"]);
+    assert!(
+        i.contains("AuxiNux Compatible (analyse automatique par l'IA)")
+            && i.contains("Télémétrie activée par défaut (analyse automatique par l'IA)")
+            && i.contains("pas encore vérifié par un relecteur humain"),
+        "{i}"
+    );
+    let o = f.run_env(&["info", "hello"], &[("AUXIPAK_LANG", "en")]);
+    let en = String::from_utf8_lossy(&o.stdout);
+    assert!(en.contains("Telemetry enabled by default (automatic AI analysis)"), "{en}");
+    // Une évaluation humaine l'emporte : plus de mention IA.
+    let app = f.apps.iter_mut().find(|a| a.id == "hello").unwrap();
+    app.status = Status::Verified;
+    f.publish();
+    f.ok(&["update"]);
+    let i = f.ok(&["info", "hello"]);
+    assert!(i.contains("AuxiNux Vérifié") && !i.contains("IA"), "{i}");
 }

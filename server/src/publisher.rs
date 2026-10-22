@@ -6,7 +6,7 @@ use crate::auth::{Actor, Scope};
 use crate::error::{bad, forbidden, ApiError, ApiResult};
 use crate::state::AppState;
 use anyhow::{anyhow, Context, Result};
-use auxipak_core::index::{AppMeta, RepositoryInfo, Revocation, Status};
+use auxipak_core::index::{AiEvaluation, AppMeta, RepositoryInfo, Revocation, Status};
 use auxipak_core::manifest::Manifest;
 use auxipak_core::repogen::{PublishedPackage, RepoContent};
 use auxipak_core::signature::{PackageRef, PackageSignature};
@@ -284,6 +284,10 @@ struct AppRow {
     note: Option<String>,
     evaluated_at: Option<DateTime<Utc>>,
     translations: serde_json::Value,
+    ai_status: Option<String>,
+    ai_notes: Option<serde_json::Value>,
+    ai_sources: Option<Vec<String>>,
+    ai_evaluated_at: Option<DateTime<Utc>>,
 }
 
 #[derive(sqlx::FromRow)]
@@ -335,8 +339,9 @@ async fn regenerate_locked(state: &AppState, repo: &str) -> Result<u64> {
     .await?;
     let apps: Vec<AppRow> = sqlx::query_as(
         "SELECT a.id, a.name, a.publisher, a.summary, a.description, a.license, a.homepage, a.categories,
-                e.status, e.note, e.evaluated_at, a.translations
-         FROM apps a LEFT JOIN evaluations e ON e.app_id = a.id
+                e.status, e.note, e.evaluated_at, a.translations,
+                ai.status AS ai_status, ai.notes AS ai_notes, ai.sources AS ai_sources, ai.evaluated_at AS ai_evaluated_at
+         FROM apps a LEFT JOIN evaluations e ON e.app_id = a.id LEFT JOIN ai_evaluations ai ON ai.app_id = a.id
          WHERE a.id IN (SELECT app_id FROM releases WHERE repository = $1 AND state = 'published')
          ORDER BY a.id",
     )
@@ -411,6 +416,20 @@ async fn regenerate_locked(state: &AppState, repo: &str) -> Result<u64> {
             status_note: if r.official { a.note.clone() } else { None },
             evaluated_at: if r.official { a.evaluated_at } else { None },
             translations: serde_json::from_value(a.translations.clone()).unwrap_or_default(),
+            // Pré-évaluation IA : dépôt officiel, et seulement sans évaluation humaine.
+            ai_evaluation: match (&a.ai_status, a.ai_evaluated_at) {
+                (Some(s), Some(at)) if r.official && a.status.is_none() => s.parse().ok().map(|status| AiEvaluation {
+                    status,
+                    notes: a
+                        .ai_notes
+                        .clone()
+                        .and_then(|v| serde_json::from_value(v).ok())
+                        .unwrap_or_default(),
+                    sources: a.ai_sources.clone().unwrap_or_default(),
+                    evaluated_at: at,
+                }),
+                _ => None,
+            },
         })
         .collect();
     let content = RepoContent {
