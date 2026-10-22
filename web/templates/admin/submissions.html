@@ -12,11 +12,20 @@
   </select>
   <button class="secondary" type="submit">{{ tr.filter }}</button>
 </form>
+{% set bulk = user.can_review and list|selectattr('status', 'equalto', 'pending')|list %}
+{% if bulk %}
+<form id="bulk" method="post" action="/admin/submissions/approve" data-confirm="{{ tr.approve_selected_confirm }}">
+  <input type="hidden" name="csrf" value="{{ user.csrf }}">
+  <button type="submit">✓ {{ tr.approve_selected }}</button>
+  <span class="meta">{{ tr.approve_selected_help }}</span>
+</form>
+{% endif %}
 <div class="table-wrap"><table>
-  <thead><tr><th>{{ tr.file }}</th><th>{{ tr.version }}</th><th>{{ tr.repository }}</th><th>{{ tr.submitted_by }}</th><th>{{ tr.state }}</th><th>{{ tr.created }}</th><th></th></tr></thead>
+  <thead><tr>{% if bulk %}<th><input type="checkbox" data-select-all="ids" title="{{ tr.select_all }}"></th>{% endif %}<th>{{ tr.file }}</th><th>{{ tr.version }}</th><th>{{ tr.repository }}</th><th>{{ tr.submitted_by }}</th><th>{{ tr.state }}</th><th>{{ tr.created }}</th><th></th></tr></thead>
   <tbody>
   {% for s in list %}
     <tr>
+      {% if bulk %}<td>{% if s.status == 'pending' %}<input type="checkbox" name="ids" value="{{ s.id }}" form="bulk">{% endif %}</td>{% endif %}
       <td>{{ s.file_name }}<div class="meta mono">{{ s.sha256|short }}</div></td>
       <td>{{ s.app_id or '?' }} {{ s.version or '' }}</td>
       <td>{{ s.repository }}</td>
@@ -26,7 +35,7 @@
       <td class="row"><a href="/admin/submissions/{{ s.id }}">{{ tr.view }}</a>
         {% if user.can_review and s.status in ['invalid', 'rejected', 'failed', 'published'] %}<form method="post" action="/admin/submissions/{{ s.id }}/delete"><input type="hidden" name="csrf" value="{{ user.csrf }}"><button class="secondary small" type="submit" title="{{ tr.delete }}">🗑</button></form>{% endif %}</td>
     </tr>
-  {% else %}<tr><td colspan="7">—</td></tr>{% endfor %}
+  {% else %}<tr><td colspan="8">—</td></tr>{% endfor %}
   </tbody>
 </table></div>
 {% if user.can_review and list|selectattr('status', 'in', ['invalid', 'rejected', 'failed', 'published'])|list %}

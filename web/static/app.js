@@ -9,3 +9,8 @@ document.addEventListener('click', function (ev) {
   var el = document.getElementById(t.getAttribute('data-copy'));
   if (el && navigator.clipboard) { navigator.clipboard.writeText(el.textContent.trim()); t.textContent = '✓'; }
 });
+document.addEventListener('change', function (ev) {
+  var name = ev.target.getAttribute('data-select-all');
+  if (!name) return;
+  document.querySelectorAll('input[type=checkbox][name="' + name + '"]').forEach(function (c) { c.checked = ev.target.checked; });
+});

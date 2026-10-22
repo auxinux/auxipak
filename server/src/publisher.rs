@@ -45,6 +45,36 @@ pub fn submission_file(state: &AppState, id: Uuid) -> PathBuf {
 
 /// Approuve une demande et publie le paquet.
 pub async fn approve(state: &AppState, actor: &Actor, id: Uuid, note: &str) -> ApiResult<Vec<Uuid>> {
+    let (rel_id, repo) = approve_one(state, actor, id, note).await?;
+    regenerate(state, &repo, Some(actor)).await?;
+    Ok(vec![rel_id])
+}
+
+/// Approuve plusieurs demandes (mêmes contrôles que pour une seule) puis
+/// régénère chaque dépôt concerné une seule fois. Retourne le nombre de
+/// publications et les échecs (demande, message).
+pub async fn approve_many(state: &AppState, actor: &Actor, ids: &[Uuid], note: &str) -> ApiResult<(usize, Vec<(Uuid, String)>)> {
+    actor.require(Scope::Review)?;
+    let mut repos = std::collections::BTreeSet::new();
+    let mut ok = 0;
+    let mut failed = Vec::new();
+    for id in ids {
+        match approve_one(state, actor, *id, note).await {
+            Ok((_, repo)) => {
+                ok += 1;
+                repos.insert(repo);
+            }
+            Err(e) => failed.push((*id, e.to_string())),
+        }
+    }
+    for repo in repos {
+        regenerate(state, &repo, Some(actor)).await?;
+    }
+    Ok((ok, failed))
+}
+
+/// Approuve une demande sans régénérer le dépôt : (version créée, dépôt).
+async fn approve_one(state: &AppState, actor: &Actor, id: Uuid, note: &str) -> ApiResult<(Uuid, String)> {
     actor.require(Scope::Review)?;
     let sub: SubmissionRow = sqlx::query_as(
         "SELECT id, repository, file_name, size, sha256, app_id, version, signature, status, submitted_by, note FROM submissions WHERE id = $1",
@@ -220,8 +250,7 @@ pub async fn approve(state: &AppState, actor: &Actor, id: Uuid, note: &str) -> A
         serde_json::json!({"submission": id, "release": rel_id, "repository": sub.repository, "signature_key": signature.payload.key_id}),
     )
     .await;
-    regenerate(state, &sub.repository, Some(actor)).await?;
-    Ok(vec![rel_id])
+    Ok((rel_id, sub.repository.clone()))
 }
 
 #[derive(sqlx::FromRow)]

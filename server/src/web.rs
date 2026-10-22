@@ -99,6 +99,7 @@ pub fn router() -> Router<AppState> {
         .route("/admin", get(dashboard))
         .route("/admin/submissions", get(submissions_page))
         .route("/admin/submissions/{id}", get(submission_page))
+        .route("/admin/submissions/approve", post(submissions_approve_selected))
         .route("/admin/submissions/{id}/approve", post(submission_approve))
         .route("/admin/submissions/{id}/reject", post(submission_reject))
         .route(
@@ -504,6 +505,56 @@ async fn submission_approve(
     match crate::publisher::approve(&st, &a, id, &f.note).await {
         Ok(_) => back(&format!("/admin/submissions/{id}"), "approved"),
         Err(e) => back(&format!("/admin/submissions/{id}"), &e.to_string()),
+    }
+}
+
+/// Approbation groupée depuis la liste (cases « ids » cochées).
+async fn submissions_approve_selected(
+    State(st): State<AppState>,
+    peer: crate::auth::Peer,
+    headers: HeaderMap,
+    jar: CookieJar,
+    body: String,
+) -> Response {
+    let a = with_ip(session!(st, jar), peer.0, &st, &headers);
+    let mut csrf = String::new();
+    let mut ids = Vec::new();
+    for (k, v) in url::form_urlencoded::parse(body.as_bytes()) {
+        match k.as_ref() {
+            "csrf" => csrf = v.into_owned(),
+            "ids" => {
+                if let Ok(id) = v.parse::<Uuid>() {
+                    ids.push(id);
+                }
+            }
+            _ => {}
+        }
+    }
+    tryp!(st, jar, check_csrf(&a, &csrf));
+    if ids.is_empty() {
+        return back(
+            "/admin/submissions",
+            &tr!("aucune demande sélectionnée", "no request selected"),
+        );
+    }
+    match crate::publisher::approve_many(&st, &a, &ids, "").await {
+        Ok((ok, failed)) => {
+            let mut msg = tr!("{ok} demande(s) approuvée(s)", "{ok} request(s) approved");
+            if !failed.is_empty() {
+                let detail: Vec<String> = failed
+                    .iter()
+                    .map(|(id, e)| format!("{} : {e}", &id.to_string()[..8]))
+                    .collect();
+                msg.push_str(&tr!(
+                    " ; {} en échec : {}",
+                    "; {} failed: {}",
+                    failed.len(),
+                    detail.join(" · ")
+                ));
+            }
+            back("/admin/submissions", &msg)
+        }
+        Err(e) => back("/admin/submissions", &e.to_string()),
     }
 }
 

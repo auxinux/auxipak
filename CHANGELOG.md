@@ -18,6 +18,11 @@ le projet applique le [versionnage sémantique](https://semver.org/lang/fr/).
   variante arm64 n'existe (émulation Windows 11, Rosetta 2) ; le serveur la
   publie aussi dans le canal arm64. Jamais sous Linux.
 
+- Administration : « Approuver la sélection » dans la liste des demandes
+  (cases à cocher, case d'en-tête pour tout cocher). Mêmes contrôles qu'une
+  approbation unique (portée review, approbateur distinct) ; le dépôt est
+  régénéré une seule fois.
+
 ### Modifié
 
 - Installation refusée parce qu'une autre application AuxiPak occupe le même

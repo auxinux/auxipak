@@ -1312,3 +1312,64 @@ async fn app_texts_follow_request_language() {
         .unwrap();
     assert_eq!(apps["apps"][0]["translations"]["en"]["summary"], "English summary");
 }
+
+#[tokio::test]
+#[ignore = "requiert PostgreSQL (AUXIPAK_TEST_DATABASE_URL)"]
+async fn bulk_approval_from_the_web_interface() {
+    let s = start().await;
+    let admin_pw = s.user("admin", Role::Admin).await;
+    s.user("pub", Role::Publisher).await;
+    s.user("rev", Role::Reviewer).await;
+    let admin = s.login("admin", &admin_pw).await;
+    let pub_token = s.token(&admin, "pub", "human", &["submit", "read"]).await;
+    let rev = s.login("rev", "Mot-de-passe-rev-2026").await;
+    let fr = s
+        .submit_named(&pub_token, demo_aupak_lang("1.0.0", "fr"), "Demo-1.0.0-fr.aupak")
+        .await;
+    let en = s
+        .submit_named(&pub_token, demo_aupak_lang("1.0.0", "en"), "Demo-1.0.0-en.aupak")
+        .await;
+    // En conflit avec la première (même langue, même version).
+    let dup = s
+        .submit_named(&pub_token, demo_aupak_lang("1.0.0", "fr"), "DemoApp-1.0.0-fr.aupak")
+        .await;
+    let ids: Vec<String> = [&fr, &en, &dup]
+        .iter()
+        .map(|v| v["id"].as_str().unwrap().to_string())
+        .collect();
+    let mut form: Vec<(&str, &str)> = vec![("csrf", rev.csrf.as_str())];
+    for id in &ids {
+        form.push(("ids", id.as_str()));
+    }
+    // Sans jeton CSRF : refusé.
+    let r = s
+        .http
+        .post(s.url("/admin/submissions/approve"))
+        .header(COOKIE, &rev.cookie)
+        .form(&[("ids", ids[0].as_str())])
+        .send()
+        .await
+        .unwrap();
+    assert!(!r.status().is_success() || r.headers().get("location").is_some());
+    let r = s
+        .http
+        .post(s.url("/admin/submissions/approve"))
+        .header(COOKIE, &rev.cookie)
+        .form(&form)
+        .send()
+        .await
+        .unwrap();
+    assert!(r.status().is_redirection());
+    let loc = r.headers().get("location").unwrap().to_str().unwrap().to_string();
+    assert!(loc.contains("2"), "{loc}");
+    let status = |id: String| {
+        let req = s
+            .http
+            .get(s.url(&format!("/api/v1/submissions/{id}")))
+            .bearer_auth(&pub_token);
+        async move { req.send().await.unwrap().json::<Value>().await.unwrap()["status"].clone() }
+    };
+    assert_eq!(status(ids[0].clone()).await, "published");
+    assert_eq!(status(ids[1].clone()).await, "published");
+    assert_eq!(status(ids[2].clone()).await, "pending");
+}
