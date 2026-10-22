@@ -5,6 +5,39 @@ le projet applique le [versionnage sémantique](https://semver.org/lang/fr/).
 
 ## [Non publié]
 
+## [1.0.10] — 2026-10-22
+
+### Ajouté
+
+- Paquet Debian du client : `packaging/deb/build-deb.sh VERSION
+  [--from-dir DIR]` (dpkg-deb) produit `auxipak_VERSION_amd64.deb` —
+  `/usr/bin/auxipak`, `/etc/auxipak/config.toml` (conffile : dépôt officiel
+  et adaptateur `auxi` explicite) et les ancres de confiance publiques du
+  dépôt officiel. `Depends` calculé sur le binaire (glibc minimale). Construit
+  par la CI (artefact `auxipak-deb`) et installé par `apt-get`.
+- AuxiNux OS = Debian 13 + `auxi` : faute de variante `auxinuxos`, la
+  variante `debian` d'une application s'applique (contrainte `os_version`
+  évaluée sur `VERSION_ID`) ; le client lit en plus les versions Debian du
+  canal `linux/deb`. `manager: apt` et les dépendances natives passent alors
+  par `auxi`, jamais par APT. Une variante propre à AuxiNux OS reste
+  préférée.
+
+### Modifié
+
+- Détection d'AuxiNux OS par `VARIANT_ID=auxinuxos` : son `os-release` garde
+  `ID=debian` (dépôts tiers), ce qui le faisait prendre pour une Debian et
+  appeler `apt-get`, bloqué.
+- Adaptateur `auxi` aligné sur le vrai script d'AuxiNux OS 0.3.0 et marqué
+  validé : `auxi --yes install --deb <paquets>`, `auxi --yes uninstall --deb
+  <paquet>` (un appel par paquet : auxi ne retire que le premier), `.deb`
+  local par `auxi --yes install --deb <chemin absolu>`, état par
+  `dpkg-query`. Le réglage DEB d'AuxiNux OS (`auxi set deb=true`) est
+  respecté.
+- Adaptateurs : une commande qui prend `{package}` (et non `{packages}`) est
+  lancée une fois par paquet.
+- `auxipak upgrade` ne remplace plus un client installé par le paquet
+  système (`/usr/bin/auxipak`) : il se met à jour avec le système.
+
 ## [1.0.9] — 2026-10-22
 
 ### Ajouté

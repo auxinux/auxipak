@@ -1,0 +1,13 @@
+{
+  "format": "auxipak-trusted-keys/1",
+  "keys": [
+    {
+      "key_id": "8b7ffc4a25207ebd5ab2a4222abcac0f",
+      "algorithm": "ed25519",
+      "public_key": "9DGEM0lKni2mZRC1couMXulqpTv+utQVKVDrtmDy308=",
+      "purpose": "package-signing",
+      "owner": "AuxiNux",
+      "revoked": false
+    }
+  ]
+}

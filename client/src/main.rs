@@ -763,7 +763,9 @@ async fn run(cli: Cli, paths: Paths) -> Result<()> {
                     )
                 );
             }
-            if let Ok(Some(a)) = selfupdate::check(&config).await {
+            if selfupdate::installed_by_system_package() {
+                // Mis à jour avec le système : aucune annonce « auxipak upgrade ».
+            } else if let Ok(Some(a)) = selfupdate::check(&config).await {
                 println!(
                     "{}",
                     tr!(
@@ -782,7 +784,9 @@ async fn run(cli: Cli, paths: Paths) -> Result<()> {
         } => {
             let _lock = StateLock::acquire(&paths)?;
             pending_warning(&paths);
-            if package.is_empty() && !no_self {
+            if package.is_empty() && !no_self && selfupdate::installed_by_system_package() {
+                eprintln!("{}", selfupdate::system_package_hint());
+            } else if package.is_empty() && !no_self {
                 let config = Config::load(&paths)?;
                 let insecure = config
                     .enabled_repos()

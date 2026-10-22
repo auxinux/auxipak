@@ -135,6 +135,29 @@ async fn read_target(repo: &tough::Repository, name: &str) -> Result<Option<Vec<
     Ok(Some(out))
 }
 
+/// Lit et vérifie le sous-index d'un canal pour une architecture, s'il est publié.
+async fn read_channel(
+    repo: &tough::Repository,
+    index: &RepoIndex,
+    ch: Channel,
+    arch: Arch,
+) -> Result<Option<(Vec<u8>, ChannelIndex)>> {
+    let Some(cref) = index.channels.iter().find(|c| c.channel == ch && c.arch == arch) else {
+        return Ok(None);
+    };
+    let b = read_target(repo, &cref.target)
+        .await?
+        .context(tr!("sous-index absent", "sub-index missing"))?;
+    let ci: ChannelIndex = serde_json::from_slice(&b).context(tr!("sous-index invalide", "invalid sub-index"))?;
+    if ci.channel != ch || ci.arch != arch {
+        bail!(tr!(
+            "sous-index incohérent (canal ou architecture)",
+            "inconsistent sub-index (channel or architecture)"
+        ));
+    }
+    Ok(Some((b, ci)))
+}
+
 /// Synchronise un dépôt (vérification TUF complète).
 /// Nombre d'étapes signalées par [`sync_with`].
 pub const SYNC_STEPS: usize = 5;
@@ -213,19 +236,29 @@ pub async fn sync_with(
     let mut channel_bytes = None;
     let mut channel_index = None;
     if let Some(ch) = channel {
-        if let Some(cref) = index.channels.iter().find(|c| c.channel == ch && c.arch == profile.arch) {
-            let b = read_target(&repo, &cref.target)
-                .await?
-                .context(tr!("sous-index absent", "sub-index missing"))?;
-            let ci: ChannelIndex = serde_json::from_slice(&b).context(tr!("sous-index invalide", "invalid sub-index"))?;
-            if ci.channel != ch || ci.arch != profile.arch {
-                bail!(tr!(
-                    "sous-index incohérent (canal ou architecture)",
-                    "inconsistent sub-index (channel or architecture)"
-                ));
-            }
+        if let Some((b, ci)) = read_channel(&repo, &index, ch, profile.arch).await? {
             channel_bytes = Some(b);
             channel_index = Some(ci);
+        }
+        // AuxiNux OS : les versions publiées pour Debian (canal linux/deb)
+        // s'y installent aussi, par auxi. Elles complètent le canal propre,
+        // fusionnées dans le même sous-index en cache.
+        if let (Some(fb), Some(base)) = (Channel::fallback_for(profile.distribution), profile.distribution.base()) {
+            if let Some((_, bi)) = read_channel(&repo, &index, fb, profile.arch).await? {
+                let merged = channel_index.get_or_insert_with(|| ChannelIndex {
+                    meta_version: bi.meta_version,
+                    channel: ch,
+                    arch: profile.arch,
+                    generated_at: bi.generated_at,
+                    releases: Vec::new(),
+                });
+                for rel in bi.releases {
+                    if rel.distributions.contains(&base) && !merged.releases.iter().any(|r| r.target == rel.target) {
+                        merged.releases.push(rel);
+                    }
+                }
+                channel_bytes = Some(serde_json::to_vec(&*merged)?);
+            }
         }
     }
 

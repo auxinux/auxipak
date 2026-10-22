@@ -25,9 +25,9 @@
   méthodes (winget, MSI, EXE, PowerShell, pkg, dmg, Homebrew, `auxi`) sont
   implémentées et leurs tests automatisés s'exécutent, mais aucune
   installation réelle d'application n'a été validée sur ces systèmes.
-- **Adaptateur `auxi`** : syntaxe supposée (`auxi install|remove
-  <paquets>`), détection et installation de `.deb` locaux non configurées
-  (`validated = false`). Voir la liste des points à valider dans
+- **Adaptateur `auxi`** : syntaxe vérifiée contre le script `auxi`
+  d'AuxiNux OS 0.3.0 (1.0.10) ; installation réelle de bout en bout en VM
+  restant à consigner. Voir
   [CLI_REFERENCE.md](CLI_REFERENCE.md#adaptateur-auxi-auxinuxos).
 - **VirtuaOS** : adaptateur non configuré ; seules les variantes `files` (et
   `script`, si autorisées) fonctionnent.

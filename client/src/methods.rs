@@ -235,8 +235,48 @@ async fn run_adapter(
     executor::run(&prog, &adapter_args(cmd, packages, file)?, &ctx.opts()).await
 }
 
+/// Gestionnaire effectivement utilisé : sur AuxiNux OS, une variante Debian
+/// (voir `Distribution::base`) demande APT, qui y est bloqué ; les mêmes
+/// paquets Debian passent alors par `auxi`.
+fn system_manager(ctx: &Ctx<'_>, m: Manager) -> Manager {
+    match (m, ctx.profile.distribution) {
+        (Manager::Apt, Distribution::Auxinuxos) => Manager::Auxi,
+        _ => m,
+    }
+}
+
+/// Exécute une commande d'adaptateur : une seule fois si elle prend la liste
+/// `{packages}`, une fois par paquet si elle n'en prend qu'un (`{package}` ;
+/// `auxi uninstall --deb` ne retire que le premier paquet nommé).
+async fn run_adapter_each(
+    ctx: &Ctx<'_>,
+    a: &AdapterConfig,
+    m: Manager,
+    cmd: &[String],
+    packages: &[String],
+    (what, label): (&str, String),
+) -> Result<bool> {
+    let per_package = cmd.iter().any(|c| c == "{package}") && !cmd.iter().any(|c| c == "{packages}");
+    let batches: Vec<&[String]> = if per_package && !packages.is_empty() {
+        packages.chunks(1).collect()
+    } else {
+        vec![packages]
+    };
+    let mut reboot = false;
+    for batch in batches {
+        let out = crate::progress::step(
+            format!("{label} {}", batch.join(" ")),
+            run_adapter(ctx, a, m.as_str(), cmd, batch, None),
+        )
+        .await?;
+        reboot |= ctx.check(&format!("{m} {what}"), &out, &[])?;
+    }
+    Ok(reboot)
+}
+
 /// Installe des paquets avec le gestionnaire natif autorisé.
 async fn manager_install(ctx: &Ctx<'_>, m: Manager, packages: &[String]) -> Result<bool> {
+    let m = system_manager(ctx, m);
     check_manager_allowed(ctx, m)?;
     for p in packages {
         if !ids::is_valid_native_package(p) {
@@ -258,17 +298,8 @@ async fn manager_install(ctx: &Ctx<'_>, m: Manager, packages: &[String]) -> Resu
         }
         Manager::Auxi | Manager::Virtuaos => {
             let a = adapter_for(ctx.config, m).context(tr!("adaptateur absent", "adapter missing"))?;
-            let out = crate::progress::step(
-                tr!(
-                    "installation par {} : {}",
-                    "installing with {}: {}",
-                    m.as_str(),
-                    packages.join(" ")
-                ),
-                run_adapter(ctx, a, m.as_str(), &a.install, packages, None),
-            )
-            .await?;
-            ctx.check(&format!("{m} install"), &out, &[])
+            let label = tr!("installation par {} :", "installing with {}:", m.as_str());
+            run_adapter_each(ctx, a, m, &a.install, packages, ("install", label)).await
         }
         Manager::Winget => {
             let mut reboot = false;
@@ -336,6 +367,7 @@ fn check_manager_allowed(ctx: &Ctx<'_>, m: Manager) -> Result<()> {
 }
 
 async fn manager_remove(ctx: &Ctx<'_>, m: Manager, packages: &[String]) -> Result<bool> {
+    let m = system_manager(ctx, m);
     check_manager_allowed(ctx, m)?;
     match m {
         Manager::Apt => {
@@ -357,12 +389,13 @@ async fn manager_remove(ctx: &Ctx<'_>, m: Manager, packages: &[String]) -> Resul
         }
         Manager::Auxi | Manager::Virtuaos => {
             let a = adapter_for(ctx.config, m).context(tr!("adaptateur absent", "adapter missing"))?;
-            let out = crate::progress::step(
-                tr!("désinstallation par {}", "removing with {}", m.as_str()),
-                run_adapter(ctx, a, m.as_str(), &a.remove, packages, None),
-            )
-            .await?;
-            ctx.check(&format!("{m} remove"), &out, &[])
+            for p in packages {
+                if !ids::is_valid_native_package(p) {
+                    bail!(tr!("paquet natif invalide : {p}", "invalid native package: {p}"));
+                }
+            }
+            let label = tr!("désinstallation par {} :", "removing with {}:", m.as_str());
+            run_adapter_each(ctx, a, m, &a.remove, packages, ("remove", label)).await
         }
         Manager::Winget => {
             let mut reboot = false;
@@ -507,13 +540,16 @@ pub async fn install(ctx: &Ctx<'_>, txn: &mut Transaction) -> Result<Outcome> {
                 let m = native_manager(ctx.profile.distribution).unwrap();
                 let a = adapter_for(ctx.config, m).context(tr!("adaptateur absent", "adapter missing"))?;
                 outcome.manager = m.as_str().into();
+                // Chemin absolu : apt-get (derrière auxi) ne prend un argument
+                // pour un fichier que s'il contient « / ».
+                let abs = file.canonicalize()?;
                 let out = crate::progress::step(
                     tr!(
                         "installation du paquet .deb par {}",
                         "installing the .deb package with {}",
                         m.as_str()
                     ),
-                    run_adapter(ctx, a, m.as_str(), &a.install_local_deb, &[], Some(&file)),
+                    run_adapter(ctx, a, m.as_str(), &a.install_local_deb, &[], Some(&abs)),
                 )
                 .await?;
                 outcome.reboot |= ctx.check(&tr!("installation du paquet .deb", ".deb package installation"), &out, &[])?;
@@ -877,6 +913,12 @@ pub async fn detect(ctx: &Ctx<'_>) -> Result<Option<bool>> {
             let manager = match (manager, native_manager(ctx.profile.distribution)) {
                 (Manager::Apt, Some(m @ (Manager::Auxi | Manager::Virtuaos))) => m,
                 (m, _) => m,
+            };
+            // auxi n'a pas de requête d'état ; il installe des paquets Debian,
+            // que dpkg-query (lecture seule, jamais bloqué) sait interroger.
+            let manager = match manager {
+                Manager::Auxi if adapter_for(ctx.config, manager).is_none_or(|a| a.query.is_empty()) => Manager::Apt,
+                m => m,
             };
             match manager {
                 Manager::Apt => {

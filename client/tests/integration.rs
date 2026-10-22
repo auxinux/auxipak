@@ -707,12 +707,80 @@ targets:
     let text = format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr));
     assert!(o.status.success(), "{text}");
     assert!(text.contains("MODE SIMULATION"), "{text}");
-    assert_eq!(std::fs::read_to_string(&log).unwrap().trim(), "[install][firefox]");
+    assert_eq!(
+        std::fs::read_to_string(&log).unwrap().trim(),
+        "[--yes][install][--deb][firefox]"
+    );
     let list = f.run_env(&["list"], &env);
     assert!(String::from_utf8_lossy(&list.stdout).contains("installed*"));
     let o = f.run_env(&["remove", "firefox"], &env);
     assert!(o.status.success());
-    assert!(std::fs::read_to_string(&log).unwrap().contains("[remove][firefox]"));
+    assert!(std::fs::read_to_string(&log)
+        .unwrap()
+        .contains("[--yes][uninstall][--deb][firefox]"));
+}
+
+/// AuxiNux OS 0.3.0 (Debian 13) sans variante propre : la variante Debian du
+/// catalogue (canal linux/deb) s'applique, APT remplacé par `auxi`.
+/// SIMULATION (faux `auxi`, comme ci-dessus).
+#[cfg(unix)]
+#[test]
+fn auxinuxos_installs_debian_variant_through_auxi_simulated() {
+    use std::os::unix::fs::PermissionsExt;
+    const AUX13: &str = r#"{"os":"linux","distribution":"auxinuxos","version":"13","arch":"x86_64","raw_id":"debian","pretty_name":"AuxiNux OS 0.3.0","immutable":true}"#;
+    let mut f = Fixture::new();
+    let m = r#"format: 1
+id: vlc
+name: VLC
+version: "3.0.21"
+publisher: VideoLAN
+summary: Lecteur multimédia
+license: GPL-2.0-or-later
+languages: [fr]
+targets:
+  - name: debian
+    platform: linux
+    distributions: [debian]
+    os_version: ">=12"
+    architectures: [x86_64]
+    mode: native
+    install: { method: package_manager, manager: apt, packages: [vlc, vlc-plugin-base] }
+"#;
+    f.add(m, &[], None);
+    f.publish();
+    let tools = f.p("tools");
+    std::fs::create_dir_all(&tools).unwrap();
+    let log = f.p("auxi.log");
+    let fake = tools.join("auxi");
+    std::fs::write(
+        &fake,
+        "#!/bin/sh\nfor a in \"$@\"; do printf '[%s]' \"$a\"; done >> \"$AUXIPAK_TEST_LOG\"\necho >> \"$AUXIPAK_TEST_LOG\"\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let env = [
+        ("AUXIPAK_PROFILE_OVERRIDE", AUX13),
+        ("AUXIPAK_TEST_TOOLS_DIR", tools.to_str().unwrap()),
+        ("AUXIPAK_TEST_LOG", log.to_str().unwrap()),
+        ("AUXIPAK_ASSUME_ELEVATED", "1"),
+    ];
+    let o = f.run_env(&["update"], &env);
+    assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
+    let o = f.run_env(&["search", "vlc"], &env);
+    assert!(String::from_utf8_lossy(&o.stdout).contains("vlc"), "{o:?}");
+    let o = f.run_env(&["install", "vlc"], &env);
+    let text = format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr));
+    assert!(o.status.success(), "{text}");
+    assert_eq!(
+        std::fs::read_to_string(&log).unwrap().trim(),
+        "[--yes][install][--deb][vlc][vlc-plugin-base]"
+    );
+    let o = f.run_env(&["remove", "vlc"], &env);
+    assert!(o.status.success(), "{o:?}");
+    // auxi uninstall --deb ne retire que le premier paquet : un appel chacun.
+    let log = std::fs::read_to_string(&log).unwrap();
+    assert!(log.contains("[--yes][uninstall][--deb][vlc]\n"), "{log}");
+    assert!(log.contains("[--yes][uninstall][--deb][vlc-plugin-base]\n"), "{log}");
 }
 
 #[test]

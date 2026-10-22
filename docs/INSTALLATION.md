@@ -12,7 +12,7 @@ correspondant (voir [ARCHITECTURE.md](ARCHITECTURE.md#canaux)) :
 |---|---|---|---|---|
 | Debian (12, 13) | `/etc/os-release` (`ID=debian`) | `linux/deb` | APT (`apt-get`), paquets `.deb`, `files`, scripts | démonstration `tests/e2e` prévue pour Debian/Ubuntu ; validation sur Debian réel à consigner |
 | Ubuntu (22.04, 24.04) et dérivées (`ID_LIKE=ubuntu`) | `os-release` | `linux/deb` | idem Debian | démonstration de bout en bout (installation `.deb` réelle) intégrée à la CI sur Ubuntu 24.04 |
-| AuxiNuxOS | `ID=auxinuxos` ou `ID_LIKE` contenant `auxinuxos` | `linux/auxinuxos` | commande `auxi` (APT n'est **jamais** utilisé), `files`, scripts | **validation restante** (adaptateur `auxi` non validé) |
+| AuxiNux OS (Debian 13) | `VARIANT_ID=auxinuxos` (son `ID` reste `debian`), sinon `ID=auxinuxos` ou `ID_LIKE` contenant `auxinuxos` | `linux/auxinuxos`, complété par les versions Debian de `linux/deb` | commande `auxi` (APT n'est **jamais** utilisé ; variantes Debian par `auxi --deb`), `files`, scripts | syntaxe `auxi` vérifiée contre le script réel ; installation réelle en VM à consigner |
 | VirtuaOS | `ID=virtuaos` ou `ID_LIKE` contenant `virtuaos` | `linux/virtuaos` | adaptateur configurable (non configuré par défaut), `files`, scripts | **validation restante** |
 | Windows 10/11 (x86_64, ARM64) | API système (`os_info`) | `windows` | winget, MSI (`msiexec`), EXE, `files`, PowerShell | **validation restante** |
 | macOS 13+ (Intel, Apple Silicon) | `os_info`, Rosetta détectée | `macos` | `pkg` (`installer`), `dmg`, Homebrew, `files`, scripts | **validation restante** |
@@ -101,10 +101,25 @@ Les sections suivantes décrivent l'installation manuelle.
 $ auxipak --version
 ```
 
-Sur AuxiNuxOS (système immuable), placez le binaire dans un emplacement
-inscriptible et présent dans le `PATH` (par exemple `/usr/local/bin` s'il est
-inscriptible, ou `~/.local/bin`) ; puis configurez l'adaptateur `auxi`
+Sur AuxiNux OS, le client est fourni en paquet `.deb` (ci-dessous) ;
+l'adaptateur `auxi` est configuré par défaut
 ([CLI_REFERENCE.md](CLI_REFERENCE.md#adaptateur-auxi-auxinuxos)).
+
+#### Paquet Debian (`auxipak_VERSION_amd64.deb`)
+
+```console
+$ packaging/deb/build-deb.sh 1.0.10                       # binaire publié sur le serveur (SHA256SUMS vérifié)
+$ packaging/deb/build-deb.sh 1.0.10 --from-dir target/release --out dist
+```
+
+Contenu : `/usr/bin/auxipak` (le client seul), `/etc/auxipak/config.toml`
+(conffile : dépôt officiel et section `[adapters.auxi]` explicite) et
+`/etc/auxipak/trust/official/{root.json,package-keys.json}` (ancres
+publiques ; l'empreinte de `root.json` est vérifiée par le script).
+`Depends` est calculé sur le binaire (`libc6 (>= <glibc minimale>)`,
+`libgcc-s1`) ; `Recommends: auxi | apt`. Installé ainsi, AuxiPak se met à
+jour avec le système, pas par `auxipak upgrade`. La CI construit le paquet
+(artefact `auxipak-deb`) et l'installe avec `apt-get`.
 
 ### 3.2 Windows (validation restante)
 

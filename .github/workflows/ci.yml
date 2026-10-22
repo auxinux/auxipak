@@ -38,7 +38,7 @@ jobs:
         run: python3 -c "import json; json.load(open('schemas/instruction.auxipak.schema.json'))"
       - name: Scripts shell (syntaxe)
         run: |
-          for f in deploy/scripts/*.sh tests/e2e/*.sh examples/*/*.sh scripts/*.sh; do bash -n "$f"; done
+          for f in deploy/scripts/*.sh tests/e2e/*.sh examples/*/*.sh scripts/*.sh packaging/deb/*.sh; do bash -n "$f"; done
           for f in server/install/*.sh; do sh -n "$f"; done
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -156,6 +156,71 @@ jobs:
         with:
           name: auxipak-${{ matrix.name }}
           path: dist/
+          retention-days: 14
+
+  deb:
+    name: Paquet Debian du client (amd64)
+    needs: [build]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: auxipak-linux-x86_64
+          path: artifact
+      - name: Construction (build-deb.sh --from-dir)
+        run: |
+          version=$(sed -n '/^\[workspace.package\]/,/^\[/s/^version = "\(.*\)"/\1/p' Cargo.toml)
+          chmod +x artifact/auxipak-linux-x86_64/auxipak
+          packaging/deb/build-deb.sh "$version" --from-dir artifact/auxipak-linux-x86_64 --out dist-deb
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+          echo "DEB=$PWD/dist-deb/auxipak_${version}_amd64.deb" >> "$GITHUB_ENV"
+      - name: En-tête et contenu
+        run: |
+          dpkg-deb -I "$DEB"
+          dpkg-deb -c "$DEB"
+          dpkg-deb -c "$DEB" | grep -q ' ./usr/bin/auxipak$'
+          dpkg-deb -c "$DEB" | grep -q ' ./etc/auxipak/trust/official/root.json$'
+          dpkg-deb -f "$DEB" Depends | grep -q '^libc6 (>= '
+          test "$(dpkg-deb -f "$DEB" Recommends)" = "auxi | apt"
+          dpkg-deb --ctrl-tarfile "$DEB" | tar -xO ./conffiles | grep -qx /etc/auxipak/config.toml
+      - name: Installation par apt-get (chemin absolu, comme « auxi install --deb »)
+        run: |
+          sudo apt-get install -y -- "$DEB"
+          test "$(command -v auxipak)" = /usr/bin/auxipak
+          test "$(auxipak --version)" = "auxipak $VERSION"
+          dpkg -s auxipak | grep -q '^Status: install ok installed'
+          grep -q '^install = \["--yes", "install", "--deb", "{packages}"\]' /etc/auxipak/config.toml
+      - name: Détection d'AuxiNux OS 0.3.0 (os-release réel + VARIANT_ID)
+        run: |
+          cat > "$RUNNER_TEMP/os-release" <<'EOF'
+          NAME="AuxiNux OS"
+          PRETTY_NAME="AuxiNux OS 0.3.0"
+          VERSION="0.3.0 (trixie)"
+          VERSION_ID="13"
+          VERSION_CODENAME=trixie
+          ID=debian
+          ID_LIKE=debian
+          VARIANT_ID=auxinuxos
+          EOF
+          sudo mount --bind "$RUNNER_TEMP/os-release" "$(readlink -f /etc/os-release)"
+          out=$(AUXIPAK_LANG=fr auxipak doctor 2>&1 || true)
+          sudo umount "$(readlink -f /etc/os-release)"
+          echo "$out"
+          echo "$out" | grep -q 'auxinuxos 13, x86_64'
+          echo "$out" | grep -q 'Canal        : linux/auxinuxos'
+          if echo "$out" | grep -q 'NON VALIDÉE'; then echo 'adaptateur auxi non validé'; exit 1; fi
+      - name: Désinstallation (conffiles conservés, puis purge)
+        run: |
+          sudo apt-get remove -y auxipak
+          test ! -e /usr/bin/auxipak
+          test -f /etc/auxipak/config.toml
+          sudo apt-get purge -y auxipak
+          test ! -e /etc/auxipak/config.toml
+      - uses: actions/upload-artifact@v4
+        with:
+          name: auxipak-deb
+          path: dist-deb/*.deb
           retention-days: 14
 
   install-scripts:
