@@ -418,16 +418,18 @@ async fn regenerate_locked(state: &AppState, repo: &str) -> Result<u64> {
             translations: serde_json::from_value(a.translations.clone()).unwrap_or_default(),
             // Pré-évaluation IA : dépôt officiel, et seulement sans évaluation humaine.
             ai_evaluation: match (&a.ai_status, a.ai_evaluated_at) {
-                (Some(s), Some(at)) if r.official && a.status.is_none() => s.parse().ok().map(|status| AiEvaluation {
-                    status,
-                    notes: a
-                        .ai_notes
-                        .clone()
-                        .and_then(|v| serde_json::from_value(v).ok())
-                        .unwrap_or_default(),
-                    sources: a.ai_sources.clone().unwrap_or_default(),
-                    evaluated_at: at,
-                }),
+                (Some(s), Some(at)) if r.official && a.status.as_deref().unwrap_or("unreviewed") == "unreviewed" => {
+                    s.parse().ok().map(|status| AiEvaluation {
+                        status,
+                        notes: a
+                            .ai_notes
+                            .clone()
+                            .and_then(|v| serde_json::from_value(v).ok())
+                            .unwrap_or_default(),
+                        sources: a.ai_sources.clone().unwrap_or_default(),
+                        evaluated_at: at,
+                    })
+                }
                 _ => None,
             },
         })

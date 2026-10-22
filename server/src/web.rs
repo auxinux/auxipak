@@ -810,14 +810,14 @@ async fn ai_evaluations_page(State(st): State<AppState>, jar: CookieJar, Query(q
         jar,
         sqlx::query_as(
             "SELECT ai.app_id, a.name, ai.status, ai.notes, ai.sources, ai.model, u.username AS submitted_by, ai.evaluated_at,
-                    e.status AS human_status, hu.username AS human_by,
+                    NULLIF(e.status, 'unreviewed') AS human_status, CASE WHEN NULLIF(e.status, 'unreviewed') IS NOT NULL THEN hu.username END AS human_by,
                     EXISTS (SELECT 1 FROM releases r WHERE r.app_id = ai.app_id AND r.state = 'published') AS published
              FROM ai_evaluations ai
              LEFT JOIN apps a ON a.id = ai.app_id
              LEFT JOIN users u ON u.id = ai.submitted_by
              LEFT JOIN evaluations e ON e.app_id = ai.app_id
              LEFT JOIN users hu ON hu.id = e.evaluated_by
-             ORDER BY (e.status IS NULL) DESC, ai.evaluated_at DESC"
+             ORDER BY (NULLIF(e.status, 'unreviewed') IS NULL) DESC, ai.evaluated_at DESC"
         )
         .fetch_all(&st.db)
         .await

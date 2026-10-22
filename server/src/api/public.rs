@@ -213,8 +213,8 @@ pub async fn search_apps(st: &AppState, q: &AppsQuery) -> ApiResult<Vec<AppListR
     let pattern = format!("%{}%", q.q.clone().unwrap_or_default().to_lowercase().replace(['%', '_'], ""));
     let rows: Vec<AppListRow> = sqlx::query_as(
         "SELECT a.id, a.name, a.publisher, a.summary, a.license,
-                COALESCE(e.status, ai.status, 'unreviewed') AS status,
-                CASE WHEN e.status IS NOT NULL THEN 'human' WHEN ai.status IS NOT NULL THEN 'ai' END AS status_source,
+                COALESCE(NULLIF(e.status, 'unreviewed'), ai.status, 'unreviewed') AS status,
+                CASE WHEN NULLIF(e.status, 'unreviewed') IS NOT NULL THEN 'human' WHEN ai.status IS NOT NULL THEN 'ai' END AS status_source,
                 (SELECT r.version FROM releases r WHERE r.app_id = a.id AND r.state = 'published'
                    ORDER BY r.published_at DESC LIMIT 1) AS latest_version,
                 ARRAY(SELECT DISTINCT r.repository FROM releases r WHERE r.app_id = a.id AND r.state = 'published') AS repositories,
@@ -228,7 +228,7 @@ pub async fn search_apps(st: &AppState, q: &AppsQuery) -> ApiResult<Vec<AppListR
                                SELECT 1 FROM jsonb_array_elements(r.manifest->'targets') t WHERE t->>'platform' = $4)))
            AND (lower(a.id) LIKE $1 OR lower(a.name) LIKE $1 OR lower(a.summary) LIKE $1
                 OR lower(a.translations::text) LIKE $1)
-           AND ($3::text IS NULL OR COALESCE(e.status, ai.status, 'unreviewed') = $3)
+           AND ($3::text IS NULL OR COALESCE(NULLIF(e.status, 'unreviewed'), ai.status, 'unreviewed') = $3)
          ORDER BY a.name LIMIT 500",
     )
     .bind(pattern)
@@ -302,11 +302,11 @@ pub struct AppDetail {
 pub async fn load_app(st: &AppState, id: &str) -> ApiResult<AppDetail> {
     let app: AppDetailRow = sqlx::query_as(
         "SELECT a.id, a.name, a.publisher, a.summary, a.description, a.license, a.homepage, a.categories,
-                COALESCE(e.status, ai.status, 'unreviewed') AS status, e.note AS status_note,
-                COALESCE(e.evaluated_at, ai.evaluated_at) AS evaluated_at, a.translations,
-                CASE WHEN e.status IS NOT NULL THEN 'human' WHEN ai.status IS NOT NULL THEN 'ai' END AS status_source,
-                CASE WHEN e.status IS NULL THEN ai.notes END AS ai_notes,
-                CASE WHEN e.status IS NULL THEN ai.sources END AS ai_sources
+                COALESCE(NULLIF(e.status, 'unreviewed'), ai.status, 'unreviewed') AS status, e.note AS status_note,
+                CASE WHEN NULLIF(e.status, 'unreviewed') IS NOT NULL THEN e.evaluated_at ELSE ai.evaluated_at END AS evaluated_at, a.translations,
+                CASE WHEN NULLIF(e.status, 'unreviewed') IS NOT NULL THEN 'human' WHEN ai.status IS NOT NULL THEN 'ai' END AS status_source,
+                CASE WHEN NULLIF(e.status, 'unreviewed') IS NULL THEN ai.notes END AS ai_notes,
+                CASE WHEN NULLIF(e.status, 'unreviewed') IS NULL THEN ai.sources END AS ai_sources
          FROM apps a LEFT JOIN evaluations e ON e.app_id = a.id LEFT JOIN ai_evaluations ai ON ai.app_id = a.id
          WHERE a.id = $1",
     )
