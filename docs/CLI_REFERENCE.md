@@ -49,13 +49,19 @@ Installe une application et ses dépendances AuxiPak.
 
 | Option | Effet |
 |---|---|
-| `PACKAGE` | identifiant (`firefox`), nom de fichier sans extension (`Firefox-150.1-fr`) ou nom affiché |
+| `PACKAGE` | identifiant (`firefox`), identifiant suivi d'une langue publiée (`firefox-fr`, `firefox-en` : langue imposée), nom de fichier sans extension (`Firefox-150.1-fr`) ou nom affiché |
 | `--version <CONTRAINTE>` | contrainte de version (`=150.1`, `>=150, <151`) |
 | `--lang <LANGUE>` | langue exigée (`fr`, `fr-CA`, `en`…) ; les paquets `mul` conviennent |
 | `--repo <NOM>` | limiter la résolution à un dépôt |
 | `--allow-scripts` | autoriser explicitement les scripts personnalisés du paquet |
 | `--adopt` | faire suivre par AuxiPak une application déjà installée par un autre moyen, sans la réinstaller (état `adopted`) |
 | `--reinstall` | réinstaller la même version |
+
+Langue : sans `--lang` ni suffixe, la version dans la langue d'AuxiPak
+(`auxipak set lang`, sinon langue du système) est préférée, même si une autre
+langue a une version plus récente ; à défaut, un paquet multilingue (`mul`),
+puis une autre langue. Sous `sudo`, la langue réglée par l'utilisateur qui a
+lancé la commande est reprise.
 
 Déroulement : index frais exigés → résolution (révoqués refusés) →
 dépendances → téléchargement avec reprise → vérification de l'empreinte

@@ -5,6 +5,21 @@ le projet applique le [versionnage sémantique](https://semver.org/lang/fr/).
 
 ## [Non publié]
 
+## [1.0.6] — 2026-10-22
+
+### Ajouté
+
+- `auxipak install firefox-fr` / `firefox-en` : un identifiant suivi d'une
+  langue publiée pour lui impose cette langue.
+
+### Modifié
+
+- `auxipak install firefox` choisit d'abord la langue d'AuxiPak, puis la
+  version la plus récente (auparavant, une version plus récente dans une autre
+  langue l'emportait).
+- Sous `sudo`, le client reprend la langue réglée par l'utilisateur qui a
+  lancé la commande (`~/.config/auxipak/language`).
+
 ### Corrigé
 
 - Serveur : une même version peut être publiée en plusieurs langues (un

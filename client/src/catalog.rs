@@ -178,12 +178,19 @@ pub struct Selector {
 
 /// Résout une demande (`firefox`, `Firefox-150.1-fr`, `Firefox`) vers un candidat.
 pub fn resolve<'a>(repos: &'a [RepoData], spec: &str, sel: &Selector, default_lang: &str) -> Result<Candidate<'a>> {
-    let lang = sel.language.as_deref().unwrap_or(default_lang);
     let spec_l = spec.trim().trim_end_matches(".aupak").to_lowercase();
     let all: Vec<Candidate> = all_candidates(repos)
         .into_iter()
         .filter(|c| sel.repo.as_ref().map(|r| &c.repo.config.name == r).unwrap_or(true))
         .collect();
+    // `firefox-fr` : identifiant suivi d'une langue publiée pour lui (et qui
+    // n'est pas lui-même un identifiant ou un nom) : langue imposée.
+    if let Some((id, l)) = split_lang_suffix(&all, &spec_l) {
+        let mut forced = sel.clone();
+        forced.language = Some(l);
+        return resolve(repos, &id, &forced, default_lang);
+    }
+    let lang = sel.language.as_deref().unwrap_or(default_lang);
     // 1. Nom de fichier exact (`Firefox-150.1-fr`).
     let by_file: Vec<&Candidate> = all
         .iter()
@@ -252,8 +259,38 @@ pub fn resolve<'a>(repos: &'a [RepoData], spec: &str, sel: &Selector, default_la
             "\"{spec}\": no version matches the requested criteria"
         ));
     }
-    ok.sort_by(|a, b| better(b, a, lang));
+    // La langue configurée l'emporte sur le numéro de version : `install
+    // firefox` installe la version française pour un client réglé en français,
+    // même si la version anglaise est plus récente.
+    ok.sort_by(|a, b| {
+        lang_score(b.release, lang)
+            .cmp(&lang_score(a.release, lang))
+            .then_with(|| better(b, a, lang))
+    });
     Ok(*ok[0])
+}
+
+/// `firefox-fr` → (`firefox`, `fr`) si `firefox-fr` n'est ni un identifiant ni
+/// un nom de fichier ou d'application, et si `firefox` a une version publiée
+/// dans cette langue (`fr`, `fr-CA`…).
+fn split_lang_suffix(all: &[Candidate], spec: &str) -> Option<(String, String)> {
+    let known = |c: &Candidate| {
+        c.release.id == spec
+            || c.name().to_lowercase() == spec
+            || c.release.file_name.trim_end_matches(".aupak").to_lowercase() == spec
+    };
+    if all.iter().any(known) {
+        return None;
+    }
+    let (id, l) = spec.rsplit_once('-')?;
+    let published = all.iter().any(|c| {
+        c.release.id == id
+            && c.release
+                .languages
+                .iter()
+                .any(|x| x.to_lowercase() == l || x.to_lowercase().split('-').next() == Some(l))
+    });
+    published.then(|| (id.to_string(), l.to_string()))
 }
 
 /// Versions révoquées (liste de révocation authentifiée) correspondant à la demande.

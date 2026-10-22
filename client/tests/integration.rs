@@ -757,3 +757,36 @@ fn interface_language() {
     let mut c = Command::new(env!("CARGO_BIN_EXE_auxipak"));
     assert!(run(&mut c, &["list"]).contains("No application"));
 }
+
+#[test]
+fn language_choice_and_forced_language_suffix() {
+    let mut f = Fixture::new();
+    // Même application en deux langues ; l'anglaise est plus récente.
+    let fr = manifest("hello", "1.0.0", "", "");
+    f.add(&fr, &[("payload/bin/hello", &script("hello", "fr 1.0.0"))], None);
+    let en = manifest("hello", "1.0.1", "", "").replace("languages: [fr]", "languages: [en]");
+    f.add(&en, &[("payload/bin/hello", &script("hello", "en 1.0.1"))], None);
+    f.publish();
+    let bin = || std::fs::read(f.installed_bin("hello")).unwrap();
+
+    // Client en français : la version française, malgré une anglaise plus récente.
+    f.ok(&["install", "hello"]);
+    assert_eq!(bin(), script("hello", "fr 1.0.0"));
+    f.ok(&["remove", "hello"]);
+
+    // Client en anglais : la version anglaise.
+    let o = f.run_env(&["install", "hello"], &[("AUXIPAK_LANG", "en")]);
+    assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
+    assert_eq!(bin(), script("hello", "en 1.0.1"));
+    f.ok(&["remove", "hello"]);
+
+    // « hello-en » impose la langue, quelle que soit celle du client.
+    f.ok(&["install", "hello-en"]);
+    assert_eq!(bin(), script("hello", "en 1.0.1"));
+    f.ok(&["remove", "hello"]);
+    f.ok(&["install", "hello-fr"]);
+    assert_eq!(bin(), script("hello", "fr 1.0.0"));
+
+    // Langue non publiée : pas d'alias, application inconnue.
+    assert!(f.fails(&["install", "hello-de"]).contains("aucune application"));
+}

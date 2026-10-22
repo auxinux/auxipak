@@ -202,13 +202,15 @@ fn init_logging(paths: &Paths) {
 }
 
 /// Langue de l'interface : `AUXIPAK_LANG`, puis « auxipak set lang »
-/// (utilisateur, puis système), puis langue du système, puis anglais.
+/// (utilisateur — celui qui a lancé `sudo` le cas échéant —, puis système),
+/// puis langue du système, puis anglais.
 fn apply_language(paths: &Paths) {
     use auxipak_core::i18n::{self, Lang};
     if std::env::var("AUXIPAK_LANG").ok().and_then(|v| Lang::parse(&v)).is_some() {
         return;
     }
     let files = [
+        sudo_user_config_dir().map(|d| d.join("language")),
         Some(paths.config_dir.join("language")),
         paths.system_config_dir.as_ref().map(|d| d.join("language")),
     ];
@@ -218,6 +220,33 @@ fn apply_language(paths: &Paths) {
             return;
         }
     }
+}
+
+/// Sous `sudo` : répertoire de configuration de l'utilisateur qui a lancé la
+/// commande (`~/.config/auxipak`), pour reprendre sa langue.
+#[cfg(unix)]
+fn sudo_user_config_dir() -> Option<PathBuf> {
+    // SAFETY: geteuid n'a pas de précondition.
+    if unsafe { libc::geteuid() } != 0 {
+        return None;
+    }
+    let user = std::env::var("SUDO_USER").ok().filter(|u| !u.is_empty() && u != "root")?;
+    let name = std::ffi::CString::new(user).ok()?;
+    // SAFETY: `name` est une chaîne C valide ; le résultat de getpwnam est lu
+    // immédiatement, avant tout autre appel qui pourrait le réutiliser.
+    let home = unsafe {
+        let pw = libc::getpwnam(name.as_ptr());
+        if pw.is_null() || (*pw).pw_dir.is_null() {
+            return None;
+        }
+        std::ffi::CStr::from_ptr((*pw).pw_dir).to_string_lossy().into_owned()
+    };
+    Some(PathBuf::from(home).join(".config").join("auxipak"))
+}
+
+#[cfg(not(unix))]
+fn sudo_user_config_dir() -> Option<PathBuf> {
+    None
 }
 
 #[tokio::main]
