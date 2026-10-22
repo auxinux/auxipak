@@ -298,6 +298,9 @@ async fn manager_install(ctx: &Ctx<'_>, m: Manager, packages: &[String]) -> Resu
         }
         Manager::Auxi | Manager::Virtuaos => {
             let a = adapter_for(ctx.config, m).context(tr!("adaptateur absent", "adapter missing"))?;
+            if m == Manager::Auxi && !a.install.is_empty() {
+                crate::debtoggle::ensure_enabled(ctx.paths, &executor::resolve_program(&a.program)?)?;
+            }
             let label = tr!("installation par {} :", "installing with {}:", m.as_str());
             run_adapter_each(ctx, a, m, &a.install, packages, ("install", label)).await
         }
@@ -540,6 +543,9 @@ pub async fn install(ctx: &Ctx<'_>, txn: &mut Transaction) -> Result<Outcome> {
                 let m = native_manager(ctx.profile.distribution).unwrap();
                 let a = adapter_for(ctx.config, m).context(tr!("adaptateur absent", "adapter missing"))?;
                 outcome.manager = m.as_str().into();
+                if m == Manager::Auxi && !a.install_local_deb.is_empty() {
+                    crate::debtoggle::ensure_enabled(ctx.paths, &executor::resolve_program(&a.program)?)?;
+                }
                 // Chemin absolu : apt-get (derrière auxi) ne prend un argument
                 // pour un fichier que s'il contient « / ».
                 let abs = file.canonicalize()?;

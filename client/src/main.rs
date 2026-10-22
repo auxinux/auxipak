@@ -2,6 +2,7 @@
 
 mod catalog;
 mod config;
+mod debtoggle;
 mod detect;
 mod download;
 mod engine;
@@ -289,6 +290,10 @@ async fn main() -> ExitCode {
     init_logging(&paths);
     selfupdate::cleanup_old();
     tracing::info!(args = ?std::env::args().collect::<Vec<_>>(), "{}", tr!("démarrage", "start"));
+    // Réglage DEB d'AuxiNux OS laissé activé par une opération interrompue.
+    debtoggle::recover(&paths);
+    // Réglage DEB activé pendant la commande : remis à désactivé à la fin.
+    let _deb = debtoggle::Session;
     match run(cli, paths).await {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {

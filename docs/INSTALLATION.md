@@ -103,7 +103,12 @@ $ auxipak --version
 
 Sur AuxiNux OS, le client est fourni en paquet `.deb` (ci-dessous) ;
 l'adaptateur `auxi` est configuré par défaut
-([CLI_REFERENCE.md](CLI_REFERENCE.md#adaptateur-auxi-auxinuxos)).
+([CLI_REFERENCE.md](CLI_REFERENCE.md#adaptateur-auxi-auxinuxos)). Le
+réglage DEB d'AuxiNux OS n'a pas à être activé à la main : AuxiPak l'active
+le temps d'une installation puis le remet à désactivé (s'il était déjà
+actif, il le laisse ainsi). Après une interruption brutale, le lancement
+suivant de `sudo auxipak` le remet à désactivé
+(témoin `/var/lib/auxipak/deb-temporaire`).
 
 #### Paquet Debian (`auxipak_VERSION_amd64.deb`)
 

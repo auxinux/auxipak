@@ -121,8 +121,8 @@ impl Default for Adapters {
 /// - un `.deb` local passe par `install --deb CHEMIN_ABSOLU` (apt-get) ;
 /// - pas de requête d'état : `query` vide = `dpkg-query -W` direct.
 ///
-/// Un paquet NOUVEAU est refusé par auxi tant que `auxi set deb=true` n'a pas
-/// été fait (réglage d'AuxiNux OS, respecté tel quel).
+/// Un paquet NOUVEAU est refusé par auxi tant que le réglage DEB est
+/// désactivé : AuxiPak l'active le temps de l'opération (voir `debtoggle`).
 pub fn default_auxi() -> AdapterConfig {
     AdapterConfig {
         program: "auxi".into(),

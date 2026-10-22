@@ -13,7 +13,7 @@ official = true
 # AuxiNux OS : APT y est bloqué, les paquets Debian s'installent par auxi.
 # Syntaxe vérifiée contre /usr/bin/auxi d'AuxiNux OS 0.3.0
 # (voir docs/CLI_REFERENCE.md, « Adaptateur auxi »). Sans effet ailleurs.
-# Un paquet nouveau exige « sudo auxi set deb=true » (réglage d'AuxiNux OS).
+# Réglage DEB d'AuxiNux OS désactivé : AuxiPak l'active le temps de l'installation.
 [adapters.auxi]
 program = "auxi"
 install = ["--yes", "install", "--deb", "{packages}"]

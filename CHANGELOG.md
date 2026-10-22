@@ -31,8 +31,13 @@ le projet applique le [versionnage sémantique](https://semver.org/lang/fr/).
   validé : `auxi --yes install --deb <paquets>`, `auxi --yes uninstall --deb
   <paquet>` (un appel par paquet : auxi ne retire que le premier), `.deb`
   local par `auxi --yes install --deb <chemin absolu>`, état par
-  `dpkg-query`. Le réglage DEB d'AuxiNux OS (`auxi set deb=true`) est
-  respecté.
+  `dpkg-query`.
+- Réglage DEB d'AuxiNux OS : s'il est désactivé, AuxiPak l'active le temps
+  d'une installation par `auxi` (`auxi set deb=true`) puis le remet à
+  désactivé, succès ou échec, une seule fois par commande ; déjà actif, il
+  n'y touche pas. Ctrl-C/SIGTERM : remise à désactivé avant la sortie.
+  Témoin `/var/lib/auxipak/deb-temporaire` : après un plantage, le
+  lancement suivant remet le réglage à désactivé.
 - Adaptateurs : une commande qui prend `{package}` (et non `{packages}`) est
   lancée une fois par paquet.
 - `auxipak upgrade` ne remplace plus un client installé par le paquet

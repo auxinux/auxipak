@@ -361,13 +361,12 @@ Vérifiées le 2026-10-22 contre le script `/usr/bin/auxi` d'AuxiNux OS 0.3.0
   conservés. Sans elle, apt-get lirait une fin de fichier sur l'entrée
   standard (fermée par AuxiPak) et abandonnerait.
 - `--deb` : jamais Flatpak (sans option, auxi essaierait d'abord Flathub).
-- **Réglage DEB d'AuxiNux OS** (`/etc/auxinux/apps.conf`, `DEB_APPS=1` après
-  `sudo auxi set deb=true`) : désactivé, `auxi install --deb` **refuse tout
-  paquet nouveau** (code 1, « Paquet DEB non installé : … L'installation DEB
-  est désactivée ») ; un paquet déjà installé passe (mise à jour). Les
-  `.deb` locaux sont aussi refusés. AuxiPak respecte ce réglage et ne pose
-  **pas** `AUXI_DEB_SYSTEME=1` (réservé à l'assistant de premier démarrage
-  d'AuxiNux OS). L'erreur d'auxi est affichée telle quelle.
+- **Réglage DEB d'AuxiNux OS** (`/etc/auxinux/apps.conf` ; actif si et
+  seulement s'il contient la ligne exacte `DEB_APPS=1`, même règle que
+  `auxi`) : désactivé, `auxi install --deb` refuse tout paquet nouveau, `.deb`
+  locaux compris. AuxiPak l'**active le temps de l'opération** puis le
+  **remet à désactivé** (décision d'aporler, 2026-10-22), voir ci-dessous.
+  AuxiPak ne pose jamais `AUXI_DEB_SYSTEME=1`.
 - **Privilèges** : les opérations DEB d'auxi exigent root ; AuxiPak déduit
   `admin` et exige `sudo auxipak …`. Sans terminal, auxi ne se relance pas
   par sudo.
@@ -380,6 +379,30 @@ Vérifiées le 2026-10-22 contre le script `/usr/bin/auxi` d'AuxiNux OS 0.3.0
 Le paquet `.deb` d'AuxiPak installe ces valeurs explicitement dans
 `/etc/auxipak/config.toml` (voir `packaging/deb/`). Une configuration
 existante qui définit sa propre section `[adapters.auxi]` la garde.
+
+### Activation temporaire du réglage DEB
+
+Pour l'installation (`install`) et l'installation d'un `.deb` local
+(`install_local_deb`) par `auxi` uniquement — jamais pour la
+désinstallation ni la détection :
+
+1. si le réglage est **déjà actif**, AuxiPak n'y touche pas, ni avant ni
+   après ;
+2. sinon, avant la première installation : témoin
+   `<état>/deb-temporaire` (`/var/lib/auxipak/deb-temporaire`), puis
+   `auxi set deb=true` ; message « Installation DEB d'AuxiNux OS activée le
+   temps de l'opération » ;
+3. à la fin de la commande, **succès ou échec** : `auxi set deb=false`,
+   puis suppression du témoin ; message « … remise à désactivée ».
+
+Un seul aller-retour par commande : `auxipak install a b c` (ou `upgrade`)
+active une fois et désactive une fois. La sortie d'`auxi set` est captée,
+pas réaffichée (sauf en cas d'échec). Ctrl-C ou SIGTERM pendant
+l'opération : remise à désactivé, puis sortie (codes 130 / 143). Après un
+plantage ou une coupure de courant, le témoin reste : le lancement suivant
+d'AuxiPak (en root, verrou d'état libre) remet le réglage à désactivé et
+supprime le témoin, avec un message. Si `auxi set deb=false` échoue, le
+témoin est gardé et l'avertissement demande `sudo auxi set deb=false`.
 
 ### Syntaxe des commandes
 
@@ -412,9 +435,8 @@ désaccord) et ne met à jour que les applications.
 
 1. Installation de bout en bout en VM AuxiNux OS 0.3.0 (le banc a validé la
    ligne de commande transmise à `apt-get`, pas une transaction réelle).
-2. Faut-il activer le réglage DEB (`auxi set deb=true`) pour les utilisateurs
-   d'AuxiPak, ou réserver AuxiPak aux variantes `files` tant qu'il est
-   désactivé ? (décision AuxiNux OS)
+2. Activation temporaire du réglage DEB : validée en banc (faux `auxi`),
+   à confirmer sur AuxiNux OS réel (`auxi set` en root, sans terminal).
 
 ## Adaptateur VirtuaOS
 
