@@ -142,9 +142,13 @@ impl Srv {
     }
 
     async fn submit(&self, token: &str, bytes: Vec<u8>) -> Value {
+        self.submit_named(token, bytes, "Demo-1.0.0-fr.aupak").await
+    }
+
+    async fn submit_named(&self, token: &str, bytes: Vec<u8>, file_name: &str) -> Value {
         let r = self
             .http
-            .post(self.url("/api/v1/submissions?repository=official&file_name=Demo-1.0.0-fr.aupak"))
+            .post(self.url(&format!("/api/v1/submissions?repository=official&file_name={file_name}")))
             .bearer_auth(token)
             .body(bytes)
             .send()
@@ -156,11 +160,15 @@ impl Srv {
 }
 
 fn demo_aupak(version: &str) -> Vec<u8> {
+    demo_aupak_lang(version, "fr")
+}
+
+fn demo_aupak_lang(version: &str, lang: &str) -> Vec<u8> {
     let d = tempfile::tempdir().unwrap();
     std::fs::create_dir_all(d.path().join("payload/bin")).unwrap();
     std::fs::write(
         d.path().join("instruction.auxipak"),
-        auxipak_core::project::render_template("demo-app", "Demo App", version, "AuxiNux", "fr", "MIT"),
+        auxipak_core::project::render_template("demo-app", "Demo App", version, "AuxiNux", lang, "MIT"),
     )
     .unwrap();
     std::fs::write(d.path().join("payload/bin/demo-app"), b"#!/bin/sh\necho demo\n").unwrap();
@@ -1200,4 +1208,54 @@ async fn api_messages_follow_request_language() {
         .await
         .unwrap();
     assert!(html.contains("Se connecter") || html.contains("Connexion"), "{html}");
+}
+
+#[tokio::test]
+#[ignore = "requiert PostgreSQL (AUXIPAK_TEST_DATABASE_URL)"]
+async fn same_version_in_several_languages() {
+    let s = start().await;
+    let admin_pw = s.user("admin", Role::Admin).await;
+    s.user("pub", Role::Publisher).await;
+    s.user("rev", Role::Reviewer).await;
+    let admin = s.login("admin", &admin_pw).await;
+    let pub_token = s.token(&admin, "pub", "human", &["submit", "read"]).await;
+    let rev_pw = "Mot-de-passe-rev-2026";
+    let rev = s.login("rev", rev_pw).await;
+    let approve = |id: String| {
+        let req = s
+            .http
+            .post(s.url(&format!("/api/v1/submissions/{id}/approve")))
+            .headers(s.sh(&rev))
+            .json(&json!({"note": "ok"}));
+        async move { req.send().await.unwrap().status() }
+    };
+    let fr = s
+        .submit_named(&pub_token, demo_aupak_lang("1.0.0", "fr"), "Demo-1.0.0-fr.aupak")
+        .await;
+    assert_eq!(approve(fr["id"].as_str().unwrap().to_string()).await, StatusCode::OK);
+    // Même version, autre langue (autre fichier) : publiée à côté de la première.
+    let en = s
+        .submit_named(&pub_token, demo_aupak_lang("1.0.0", "en"), "Demo-1.0.0-en.aupak")
+        .await;
+    assert_eq!(approve(en["id"].as_str().unwrap().to_string()).await, StatusCode::OK);
+    // Langue déjà publiée pour cette version, même sous un autre nom : conflit.
+    let fr2 = s
+        .submit_named(&pub_token, demo_aupak_lang("1.0.0", "fr"), "DemoApp-1.0.0-fr.aupak")
+        .await;
+    assert_eq!(approve(fr2["id"].as_str().unwrap().to_string()).await, StatusCode::CONFLICT);
+
+    let apps: Value = s
+        .http
+        .get(s.url("/api/v1/apps/demo-app"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let text = apps.to_string();
+    assert!(
+        text.contains("Demo-1.0.0-fr.aupak") && text.contains("Demo-1.0.0-en.aupak"),
+        "{text}"
+    );
 }

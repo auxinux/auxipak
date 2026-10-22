@@ -5,6 +5,13 @@ le projet applique le [versionnage sémantique](https://semver.org/lang/fr/).
 
 ## [Non publié]
 
+### Corrigé
+
+- Serveur : une même version peut être publiée en plusieurs langues (un
+  paquet par langue, par exemple `Firefox-158.0.1-fr.aupak` et
+  `Firefox-158.0.1-en.aupak`). L'approbation n'est refusée que pour le même
+  fichier ou une langue déjà publiée pour cette version.
+
 ## [1.0.5] — 2026-10-21
 
 ### Sécurité

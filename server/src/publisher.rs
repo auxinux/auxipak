@@ -82,20 +82,27 @@ pub async fn approve(state: &AppState, actor: &Actor, id: Uuid, note: &str) -> A
         ))));
     }
     let m = insp.manifest.clone();
+    // Une même version peut exister en plusieurs langues (un paquet par
+    // langue, choisi par le client) : seuls le même fichier ou une langue
+    // déjà publiée pour cette version sont en conflit.
     let exists: Option<(Uuid,)> = sqlx::query_as(
-        "SELECT id FROM releases WHERE repository = $1 AND app_id = $2 AND version = $3 AND state <> 'unpublished'",
+        "SELECT id FROM releases WHERE repository = $1 AND app_id = $2 AND version = $3 AND state <> 'unpublished'
+            AND (file_name = $4 OR languages && $5)",
     )
     .bind(&sub.repository)
     .bind(&m.id)
     .bind(&m.version)
+    .bind(&sub.file_name)
+    .bind(&m.languages)
     .fetch_optional(&state.db)
     .await?;
     if exists.is_some() {
         return Err(ApiError::Conflict(tr!(
-            "{} {} est déjà publié dans {}",
-            "{} {} is already published in {}",
+            "{} {} ({}) est déjà publié dans {}",
+            "{} {} ({}) is already published in {}",
             m.id,
             m.version,
+            m.languages.join(", "),
             sub.repository
         )));
     }
