@@ -725,7 +725,7 @@ fn interface_language() {
     let o = f.run_env(&["--help"], en);
     let help = String::from_utf8_lossy(&o.stdout);
     assert!(
-        help.contains("Install an application") && help.contains("native mechanisms"),
+        help.contains("Install one or more applications") && help.contains("native mechanisms"),
         "{help}"
     );
     let o = f.run_env(&["install", "--help"], en);
@@ -789,4 +789,38 @@ fn language_choice_and_forced_language_suffix() {
 
     // Langue non publiée : pas d'alias, application inconnue.
     assert!(f.fails(&["install", "hello-de"]).contains("aucune application"));
+}
+
+#[test]
+fn install_and_remove_several_applications() {
+    let mut f = Fixture::new();
+    simple(&mut f, "alpha", "1.0.0");
+    simple(&mut f, "beta", "1.0.0");
+    let m = manifest("gamma", "1.0.0", "", "dependencies:\n  - id: alpha\n");
+    f.add(&m, &[("payload/bin/gamma", &script("gamma", "1.0.0"))], None);
+    f.publish();
+
+    // Plusieurs applications en une commande.
+    f.ok(&["install", "alpha", "beta"]);
+    assert!(f.installed_bin("alpha").exists() && f.installed_bin("beta").exists());
+
+    // Une application inconnue n'empêche pas les autres ; le code de sortie le signale.
+    let out = f.fails(&["install", "inconnue", "gamma"]);
+    assert!(
+        out.contains("inconnue") && out.contains("1 application(s) sur 2 en échec"),
+        "{out}"
+    );
+    assert!(f.installed_bin("gamma").exists());
+
+    // --version n'a de sens que pour une seule application.
+    assert!(f
+        .fails(&["install", "alpha", "beta", "--version", "1.0.0"])
+        .contains("une seule application"));
+
+    // Désinstallation groupée : alpha, requise par gamma, est retirée après elle.
+    f.ok(&["remove", "alpha", "gamma", "beta"]);
+    for id in ["alpha", "beta", "gamma"] {
+        assert!(!f.installed_bin(id).exists(), "{id}");
+    }
+    assert!(f.ok(&["list"]).contains("Aucune application"));
 }

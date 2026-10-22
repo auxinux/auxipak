@@ -43,9 +43,12 @@ terme, liste tout.
 - JSON : `id`, `name`, `version`, `languages`, `status`, `platform`,
   `repository`, `summary`.
 
-### `install PACKAGE [options]`
+### `install PACKAGE... [options]`
 
-Installe une application et ses dépendances AuxiPak.
+Installe une ou plusieurs applications et leurs dépendances AuxiPak
+(`auxipak install firefox vlc gimp`). Les applications sont traitées l'une
+après l'autre : un échec n'empêche pas les suivantes, et le code de sortie
+vaut 1 si au moins une a échoué. `--version` n'accepte qu'une application.
 
 | Option | Effet |
 |---|---|
@@ -73,10 +76,13 @@ Une application détectée comme déjà présente (installée hors AuxiPak) n'es
 jamais revendiquée implicitement : l'installation est refusée sans
 `--adopt`.
 
-### `remove PACKAGE [options]`
+### `remove PACKAGE... [options]`
 
-Désinstalle une application **gérée par AuxiPak** (présente dans le
-registre), selon la procédure du manifeste conservé à l'installation.
+Désinstalle une ou plusieurs applications **gérées par AuxiPak** (présentes
+dans le registre), selon la procédure du manifeste conservé à
+l'installation. Avec plusieurs applications, celle qui est requise par une
+autre de la liste est retirée après elle ; un échec n'empêche pas les
+suivantes.
 
 | Option | Effet |
 |---|---|
@@ -101,7 +107,7 @@ disponibles. `--verbose` affiche en plus, par dépôt, la génération, le
 nombre de versions pour le canal du système et la date d'expiration des
 métadonnées. Code de sortie 1 si au moins un dépôt échoue.
 
-### `upgrade [PACKAGE] [--allow-scripts] [--no-self]`
+### `upgrade [PACKAGE...] [--allow-scripts] [--no-self]`
 
 Sans `PACKAGE`, met d'abord à jour **AuxiPak lui-même** : le client lit
 `/downloads/SHA256SUMS` sur le serveur du dépôt officiel, télécharge

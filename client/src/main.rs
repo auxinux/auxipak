@@ -54,10 +54,11 @@ enum Cmd {
         #[arg(long)]
         offline: bool,
     },
-    /// Installer une application (ex. « firefox » ou « Firefox-150.1-fr »).
+    /// Installer une ou plusieurs applications (ex. « firefox vlc » ou « Firefox-150.1-fr »).
     Install {
-        /// Identifiant, nom ou nom de fichier du paquet.
-        package: String,
+        /// Identifiants, noms ou noms de fichier des paquets (un ou plusieurs).
+        #[arg(required = true, num_args = 1..)]
+        package: Vec<String>,
         /// Version ou contrainte de version (ex. 150.1 ou « >=150 »).
         #[arg(long)]
         version: Option<String>,
@@ -77,10 +78,11 @@ enum Cmd {
         #[arg(long)]
         reinstall: bool,
     },
-    /// Désinstaller une application gérée par AuxiPak.
+    /// Désinstaller une ou plusieurs applications gérées par AuxiPak.
     Remove {
-        /// Identifiant de l'application installée.
-        package: String,
+        /// Identifiants des applications installées (un ou plusieurs).
+        #[arg(required = true, num_args = 1..)]
+        package: Vec<String>,
         /// Supprimer même si d'autres applications en dépendent.
         #[arg(long)]
         force: bool,
@@ -104,10 +106,10 @@ enum Cmd {
         /// Valeur (fr, en) ; absente : affiche la valeur actuelle.
         value: Option<String>,
     },
-    /// Mettre à niveau AuxiPak lui-même puis toutes les applications gérées, ou celle indiquée.
+    /// Mettre à niveau AuxiPak lui-même puis toutes les applications gérées, ou celles indiquées.
     Upgrade {
-        /// Identifiant de l'application à mettre à niveau (par défaut : toutes).
-        package: Option<String>,
+        /// Applications à mettre à niveau (par défaut : toutes).
+        package: Vec<String>,
         /// Autoriser explicitement les scripts personnalisés des paquets.
         #[arg(long)]
         allow_scripts: bool,
@@ -222,6 +224,20 @@ fn apply_language(paths: &Paths) {
     }
 }
 
+/// Bilan d'une commande portant sur plusieurs applications : erreur si au
+/// moins une a échoué (les autres ont été traitées).
+fn batch_result(failed: &[String], total: usize) -> Result<()> {
+    if failed.is_empty() {
+        return Ok(());
+    }
+    bail!(tr!(
+        "{} application(s) sur {total} en échec : {}",
+        "{} of {total} application(s) failed: {}",
+        failed.len(),
+        failed.join(", ")
+    ))
+}
+
 /// Sous `sudo` : répertoire de configuration de l'utilisateur qui a lancé la
 /// commande (`~/.config/auxipak`), pour reprendre sa langue.
 #[cfg(unix)]
@@ -299,9 +315,13 @@ const HELP_EN: &[(&str, &str, &str)] = &[
     (
         "install",
         "",
-        "Install an application (e.g. \"firefox\" or \"Firefox-150.1-fr\").",
+        "Install one or more applications (e.g. \"firefox vlc\" or \"Firefox-150.1-fr\").",
     ),
-    ("install", "package", "Application identifier, name or package file name."),
+    (
+        "install",
+        "package",
+        "Identifiers, names or package file names (one or more).",
+    ),
     (
         "install",
         "version",
@@ -316,8 +336,12 @@ const HELP_EN: &[(&str, &str, &str)] = &[
         "Track an application already installed natively with AuxiPak, without reinstalling it.",
     ),
     ("install", "reinstall", "Reinstall even if this version is already installed."),
-    ("remove", "", "Remove an application managed by AuxiPak."),
-    ("remove", "package", "Identifier of the installed application."),
+    ("remove", "", "Remove one or more applications managed by AuxiPak."),
+    (
+        "remove",
+        "package",
+        "Identifiers of the installed applications (one or more).",
+    ),
     ("remove", "force", "Remove even if other applications depend on it."),
     (
         "remove",
@@ -345,13 +369,9 @@ const HELP_EN: &[(&str, &str, &str)] = &[
     (
         "upgrade",
         "",
-        "Upgrade AuxiPak itself, then all managed applications, or the one given.",
+        "Upgrade AuxiPak itself, then all managed applications, or the ones given.",
     ),
-    (
-        "upgrade",
-        "package",
-        "Identifier of the application to upgrade (default: all).",
-    ),
+    ("upgrade", "package", "Applications to upgrade (default: all)."),
     ("upgrade", "allow_scripts", "Explicitly allow the packages' custom scripts."),
     ("upgrade", "no_self", "Do not update AuxiPak itself."),
     ("list", "", "List the applications installed and tracked by AuxiPak."),
@@ -586,10 +606,25 @@ async fn run(cli: Cli, paths: Paths) -> Result<()> {
                 reinstall,
                 selector: engine::selector(version.as_deref(), lang.as_deref(), repo.as_deref())?,
             };
-            let mut reg = Registry::load(&env.paths)?;
-            for m in engine::install(&env, &package, &opts, &mut reg).await? {
-                println!("{m}");
+            if package.len() > 1 && version.is_some() {
+                bail!(tr!(
+                    "--version ne s'applique qu'à une seule application",
+                    "--version applies to a single application only"
+                ));
             }
+            let mut reg = Registry::load(&env.paths)?;
+            let mut failed = Vec::new();
+            for p in &package {
+                match engine::install(&env, p, &opts, &mut reg).await {
+                    Ok(msgs) => msgs.iter().for_each(|m| println!("{m}")),
+                    Err(e) if package.len() > 1 => {
+                        eprintln!("{}", tr!("erreur : {p} : {e:#}", "error: {p}: {e:#}"));
+                        failed.push(p.clone());
+                    }
+                    Err(e) => return Err(e),
+                }
+            }
+            batch_result(&failed, package.len())?;
         }
         Cmd::Remove {
             package,
@@ -609,9 +644,37 @@ async fn run(cli: Cli, paths: Paths) -> Result<()> {
                 warnings: vec![],
             };
             let mut reg = Registry::load(&env.paths)?;
-            for m in engine::remove(&env, &package, force, autoremove, allow_scripts, &mut reg).await? {
-                println!("{m}");
+            // Plusieurs passes : une application requise par une autre de la
+            // liste est retirée après elle.
+            let mut todo: Vec<String> = package.clone();
+            let mut errors: Vec<(String, anyhow::Error)> = Vec::new();
+            loop {
+                errors.clear();
+                let before = todo.len();
+                let mut next = Vec::new();
+                for p in todo {
+                    match engine::remove(&env, &p, force, autoremove, allow_scripts, &mut reg).await {
+                        Ok(msgs) => msgs.iter().for_each(|m| println!("{m}")),
+                        Err(e) => {
+                            next.push(p.clone());
+                            errors.push((p, e));
+                        }
+                    }
+                }
+                todo = next;
+                if todo.is_empty() || todo.len() == before {
+                    break;
+                }
             }
+            if package.len() == 1 {
+                if let Some((_, e)) = errors.pop() {
+                    return Err(e);
+                }
+            }
+            for (p, e) in &errors {
+                eprintln!("{}", tr!("erreur : {p} : {e:#}", "error: {p}: {e:#}"));
+            }
+            batch_result(&todo, package.len())?;
         }
         Cmd::Set { key, value } => {
             use auxipak_core::i18n::{self, Lang};
@@ -719,7 +782,7 @@ async fn run(cli: Cli, paths: Paths) -> Result<()> {
         } => {
             let _lock = StateLock::acquire(&paths)?;
             pending_warning(&paths);
-            if package.is_none() && !no_self {
+            if package.is_empty() && !no_self {
                 let config = Config::load(&paths)?;
                 let insecure = config
                     .enabled_repos()
@@ -777,8 +840,23 @@ async fn run(cli: Cli, paths: Paths) -> Result<()> {
                 allow_scripts,
                 ..Default::default()
             };
-            let msgs = engine::upgrade(&env, package.as_deref(), &opts, &mut reg).await?;
-            if msgs.is_empty() {
+            let mut msgs = Vec::new();
+            let mut failed = Vec::new();
+            if package.is_empty() {
+                msgs = engine::upgrade(&env, None, &opts, &mut reg).await?;
+            } else {
+                for p in &package {
+                    match engine::upgrade(&env, Some(p), &opts, &mut reg).await {
+                        Ok(m) => msgs.extend(m),
+                        Err(e) if package.len() > 1 => {
+                            eprintln!("{}", tr!("erreur : {p} : {e:#}", "error: {p}: {e:#}"));
+                            failed.push(p.clone());
+                        }
+                        Err(e) => return Err(e),
+                    }
+                }
+            }
+            if msgs.is_empty() && failed.is_empty() {
                 println!(
                     "{}",
                     tr!(
@@ -790,6 +868,7 @@ async fn run(cli: Cli, paths: Paths) -> Result<()> {
             for m in msgs {
                 println!("{m}");
             }
+            batch_result(&failed, package.len())?;
         }
         Cmd::List { check } => {
             pending_warning(&paths);

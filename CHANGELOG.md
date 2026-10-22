@@ -5,6 +5,16 @@ le projet applique le [versionnage sémantique](https://semver.org/lang/fr/).
 
 ## [Non publié]
 
+## [1.0.7] — 2026-10-22
+
+### Ajouté
+
+- `auxipak install`, `remove` et `upgrade` acceptent plusieurs applications
+  (`auxipak install firefox vlc`). Un échec n'interrompt pas les suivantes ; un
+  bilan final indique les applications en échec (code de sortie 1). À la
+  désinstallation, une application requise par une autre de la liste est
+  retirée après elle.
+
 ## [1.0.6] — 2026-10-22
 
 ### Ajouté
