@@ -5,6 +5,12 @@ le projet applique le [versionnage sémantique](https://semver.org/lang/fr/).
 
 ## [Non publié]
 
+### Corrigé
+
+- Manifeste : les identifiants de reçu macOS (`package_id` des méthodes
+  `pkg`) acceptent « _ » et un seul segment (`org.k1jt.wsjtx.x86_64`,
+  `qupath`), comme les reçus réels de `pkgutil`.
+
 ## [1.0.10] — 2026-10-23
 
 ### Modifié

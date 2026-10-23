@@ -45,10 +45,12 @@ pub fn is_valid_msi_product_code(s: &str) -> bool {
     .is_match(s)
 }
 
-/// Identifiant de reçu macOS (`com.example.app`).
+/// Identifiant de reçu macOS (`com.example.app`, `org.k1jt.wsjtx.x86_64`,
+/// `qupath`) : segments alphanumériques séparés par des points, « - » et
+/// « _ » admis hors première position. Passé en argument, jamais à un shell.
 pub fn is_valid_reverse_dns(s: &str) -> bool {
     static R: OnceLock<Regex> = OnceLock::new();
-    re(&R, r"^[A-Za-z0-9][A-Za-z0-9-]*(\.[A-Za-z0-9][A-Za-z0-9-]*)+$").is_match(s) && s.len() <= 255
+    re(&R, r"^[A-Za-z0-9][A-Za-z0-9_-]*(\.[A-Za-z0-9][A-Za-z0-9_-]*)*$").is_match(s) && s.len() <= 255
 }
 
 /// Nom de propriété MSI publique (MAJUSCULES).
@@ -114,6 +116,16 @@ pub fn is_valid_repo_name(s: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn pkg_receipt_ids() {
+        for ok in ["com.example.app", "org.k1jt.wsjtx.x86_64", "qupath", "org.weasis.launcher"] {
+            assert!(super::is_valid_reverse_dns(ok), "{ok}");
+        }
+        for bad in ["", "-x", ".a", "a..b", "a b", "a;b", "a/b", "_a"] {
+            assert!(!super::is_valid_reverse_dns(bad), "{bad}");
+        }
+    }
+
     use super::*;
 
     #[test]
