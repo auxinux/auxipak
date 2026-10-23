@@ -55,7 +55,7 @@ pub fn write_secret(path: &Path, data: &str) -> Result<()> {
 /// Génère un jeu de clés complet dans `out` (répertoire vide ou inexistant).
 pub async fn generate(out: &Path, owner: &str, root_days: i64) -> Result<KeysetSummary> {
     if out.exists() && std::fs::read_dir(out)?.next().is_some() {
-        bail!("{} n'est pas vide", out.display());
+        bail!(tr!("{} n'est pas vide", "{} is not empty", out.display()));
     }
     let root_pem = tuf::generate_key_pem();
     let targets = tuf::generate_key_pem();

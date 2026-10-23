@@ -336,6 +336,7 @@ pub async fn load_app(st: &AppState, id: &str) -> ApiResult<AppDetail> {
         let lang = auxipak_core::i18n::current().code();
         app.status_note = notes
             .get(lang)
+            .or_else(|| notes.get("en"))
             .or_else(|| notes.get("fr"))
             .or_else(|| notes.values().next())
             .cloned();

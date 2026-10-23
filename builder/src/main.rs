@@ -96,12 +96,12 @@ enum Cmd {
     /// (ex. « set server=https://auxipak.auxinux.ca token=apk_… » ; « set token »
     /// sans valeur la demande, hors de l'historique du shell).
     Set {
-        #[arg(required = true, value_name = "CLÉ=VALEUR")]
+        #[arg(required = true, value_name = "KEY=VALUE")]
         assignments: Vec<String>,
     },
     /// Supprimer des réglages enregistrés.
     Unset {
-        #[arg(required = true, value_name = "CLÉ")]
+        #[arg(required = true, value_name = "KEY")]
         keys: Vec<String>,
     },
     /// Afficher les réglages enregistrés (jeton masqué).

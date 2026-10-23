@@ -732,7 +732,7 @@ async fn rollback(env: &Env, txn: Transaction, registry: &mut Registry, existing
             action: txn.action.clone(),
             from: txn.previous_version.clone(),
             to: Some(txn.version.clone()),
-            result: "échec".into(),
+            result: "failed".into(),
         });
         registry.apps.insert(rec.id.clone(), rec);
         let _ = registry.save(&env.paths);

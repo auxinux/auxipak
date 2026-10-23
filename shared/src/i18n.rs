@@ -84,13 +84,30 @@ pub async fn scope<F: std::future::Future>(l: Lang, fut: F) -> F::Output {
     REQUEST.scope(l, fut).await
 }
 
-/// Langue du système, si elle est reconnue.
+/// Langue du système, si elle est reconnue (sinon : anglais, par l'appelant).
 pub fn system() -> Option<Lang> {
-    for v in ["LC_ALL", "LC_MESSAGES", "LANG"] {
-        if let Some(val) = std::env::var(v).ok().filter(|s| !s.is_empty()) {
-            // « C » / « POSIX » : pas de préférence, on continue (puis anglais).
-            return Lang::parse(&val);
+    // macOS : langue de l'interface choisie dans Réglages (AppleLanguages),
+    // prioritaire sur la variable LANG du terminal.
+    #[cfg(target_os = "macos")]
+    if let Some(l) = macos_ui_language() {
+        return Some(l);
+    }
+    // GNU : LANGUAGE (liste « fr:en ») sauf si la locale est C/POSIX.
+    let posix = |v: &str| matches!(v.split('.').next(), Some("C" | "POSIX"));
+    let lc = ["LC_ALL", "LC_MESSAGES", "LANG"]
+        .iter()
+        .find_map(|v| std::env::var(v).ok().filter(|s| !s.is_empty()));
+    if !lc.as_deref().map(posix).unwrap_or(false) {
+        if let Some(l) = std::env::var("LANGUAGE")
+            .ok()
+            .and_then(|v| v.split(':').find_map(Lang::parse))
+        {
+            return Some(l);
         }
+    }
+    if let Some(val) = lc {
+        // « C » / « POSIX » ou langue non prise en charge : anglais.
+        return Lang::parse(&val);
     }
     #[cfg(windows)]
     {
@@ -100,6 +117,36 @@ pub fn system() -> Option<Lang> {
     }
     #[allow(unreachable_code)]
     None
+}
+
+/// macOS : première langue préférée de l'utilisateur (`defaults read -g
+/// AppleLanguages`) ; sous `sudo`, celle de l'utilisateur qui a lancé la
+/// commande. Une première langue non prise en charge donne l'anglais ;
+/// `None` seulement si le réglage est illisible.
+#[cfg(target_os = "macos")]
+fn macos_ui_language() -> Option<Lang> {
+    let mut cmd = std::process::Command::new("/usr/bin/defaults");
+    match std::env::var("SUDO_USER")
+        .ok()
+        .filter(|u| !u.is_empty() && u != "root" && !u.contains('/'))
+    {
+        Some(u) => cmd.args([
+            "read",
+            &format!("/Users/{u}/Library/Preferences/.GlobalPreferences"),
+            "AppleLanguages",
+        ]),
+        None => cmd.args(["read", "-g", "AppleLanguages"]),
+    };
+    let out = cmd.stderr(std::process::Stdio::null()).output().ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    // Sortie : ( "fr-CA", "en-CA" )
+    let text = String::from_utf8_lossy(&out.stdout);
+    let first = text
+        .split(|c: char| c == '"' || c == ',' || c == '(' || c == ')' || c.is_whitespace())
+        .find(|t| !t.is_empty())?;
+    Some(Lang::parse(first).unwrap_or(Lang::En))
 }
 
 /// Langue effective.

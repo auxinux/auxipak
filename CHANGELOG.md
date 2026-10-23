@@ -5,6 +5,26 @@ le projet applique le [versionnage sémantique](https://semver.org/lang/fr/).
 
 ## [Non publié]
 
+## [1.0.10] — 2026-10-23
+
+### Modifié
+
+- Langue : anglais par défaut, français quand le système est en français
+  (macOS : langue de l'interface choisie dans les Réglages, y compris sous
+  `sudo` ; Linux : `LANGUAGE`, puis `LC_ALL`/`LC_MESSAGES`/`LANG` ;
+  Windows : langue d'affichage) ou sur choix explicite ; toute autre langue :
+  anglais.
+- Textes des applications et réserves des pré-évaluations IA : une langue
+  sans traduction retombe sur l'anglais (et non plus sur la langue de base du
+  manifeste).
+- README en anglais (`README.md`), version française dans `README.fr.md`.
+
+### Corrigé
+
+- Messages encore uniquement en français : script refusé, désinstallateur en
+  échec, répertoire de clés non vide ; libellés `KEY=VALUE` de l'aide du
+  Builder.
+
 ## [1.0.10] — 2026-10-22
 
 ### Ajouté

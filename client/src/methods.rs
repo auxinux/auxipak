@@ -439,10 +439,12 @@ fn native_manager(d: Distribution) -> Option<Manager> {
 /// Exécute un script du paquet, si la politique l'autorise.
 pub async fn run_script(ctx: &Ctx<'_>, script: &str, args: &[String], action: &str) -> Result<bool> {
     if !ctx.scripts_allowed {
-        bail!(
+        bail!(tr!(
             "le paquet demande l'exécution du script « {script} » : refusé. Relancez avec --allow-scripts après avoir \
-             examiné le paquet (auxipak info), ou autorisez explicitement les scripts de ce dépôt"
-        );
+             examiné le paquet (auxipak info), ou autorisez explicitement les scripts de ce dépôt",
+            "the package asks to run the script \"{script}\": refused. Run again with --allow-scripts after \
+             reviewing the package (auxipak info), or explicitly allow scripts for this repository"
+        ));
     }
     if !script.starts_with("scripts/") || !ids::is_safe_relative_path(script) {
         bail!(tr!("chemin de script refusé : {script}", "script path refused: {script}"));
@@ -836,7 +838,7 @@ pub async fn remove(ctx: &Ctx<'_>, files: &[PathBuf]) -> Result<bool> {
                 executor::run(&exe, &argv, &ctx.opts()),
             )
             .await?;
-            reboot |= ctx.check("désinstallateur", &out, &[])?;
+            reboot |= ctx.check(&tr!("désinstallateur", "uninstaller"), &out, &[])?;
         }
         Remove::Pkg { package_id, paths } => {
             for p in paths {

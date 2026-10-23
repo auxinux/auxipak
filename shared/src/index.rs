@@ -171,12 +171,13 @@ pub struct AiEvaluation {
 }
 
 impl AiEvaluation {
-    /// Réserves dans la langue `lang`, sinon en français, sinon la première.
+    /// Réserves dans la langue `lang`, sinon en anglais, sinon en français.
     pub fn note(&self, lang: &str) -> Option<&str> {
         let base = lang.split('-').next().unwrap_or(lang);
         self.notes
             .get(lang)
             .or_else(|| self.notes.get(base))
+            .or_else(|| self.notes.get("en"))
             .or_else(|| self.notes.get("fr"))
             .or_else(|| self.notes.values().next())
             .map(String::as_str)
@@ -199,12 +200,15 @@ impl AppMeta {
 }
 
 /// Traduction pour `lang` : correspondance exacte, puis langue de base
-/// (`fr-CA` → `fr`, `fr` → `fr-CA`).
+/// (`fr-CA` → `fr`, `fr` → `fr-CA`), puis — pour une langue sans
+/// traduction ni texte de base (« langue inconnue ») — l'anglais.
+/// `None` : utiliser les champs de premier niveau.
 pub fn pick_translation<'a>(t: &'a BTreeMap<String, Translation>, lang: &str) -> Option<&'a Translation> {
     let base = lang.split('-').next().unwrap_or(lang);
     t.get(lang)
         .or_else(|| t.get(base))
         .or_else(|| t.iter().find(|(k, _)| k.split('-').next() == Some(base)).map(|(_, v)| v))
+        .or_else(|| if base == "fr" { None } else { t.get("en") })
 }
 
 /// `apps.json`.
@@ -313,6 +317,37 @@ pub fn package_target(id: &str, version: &str, file_name: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn unknown_languages_fall_back_to_english() {
+        let tr = |s: &str| Translation {
+            name: None,
+            summary: s.into(),
+            description: None,
+        };
+        // Base française + traduction anglaise (premiers paquets).
+        let fr_base: BTreeMap<String, Translation> = [("en".to_string(), tr("English"))].into();
+        assert_eq!(pick_translation(&fr_base, "en").unwrap().summary, "English");
+        assert_eq!(pick_translation(&fr_base, "de").unwrap().summary, "English");
+        assert!(pick_translation(&fr_base, "fr").is_none(), "base française");
+        assert!(pick_translation(&fr_base, "fr-CA").is_none());
+        // Base anglaise + traduction française (paquets récents).
+        let en_base: BTreeMap<String, Translation> = [("fr".to_string(), tr("Français"))].into();
+        assert_eq!(pick_translation(&en_base, "fr-CA").unwrap().summary, "Français");
+        assert!(pick_translation(&en_base, "en").is_none(), "base anglaise");
+        assert!(
+            pick_translation(&en_base, "es").is_none(),
+            "base anglaise pour une langue inconnue"
+        );
+        let ai = AiEvaluation {
+            status: Status::Compatible,
+            notes: [("fr".to_string(), "fr".to_string()), ("en".to_string(), "en".to_string())].into(),
+            sources: vec![],
+            evaluated_at: Utc::now(),
+        };
+        assert_eq!(ai.note("fr-CA"), Some("fr"));
+        assert_eq!(ai.note("de"), Some("en"));
+    }
+
     use super::*;
 
     #[test]
