@@ -5,6 +5,11 @@ le projet applique le [versionnage sémantique](https://semver.org/lang/fr/).
 
 ## [Non publié]
 
+### Sécurité
+
+- `ctutils` 0.4.6 (RUSTSEC-2026-0385 : masques et comparaisons `u128` non
+  constants en temps ; dépendance de l'authentification PostgreSQL du serveur).
+
 ### Ajouté
 
 - Paquet Debian arm64 : `packaging/deb/build-deb.sh --arch arm64` (binaire
