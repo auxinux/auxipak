@@ -159,22 +159,28 @@ jobs:
           retention-days: 14
 
   deb:
-    name: Paquet Debian du client (amd64)
+    name: Paquet Debian du client (${{ matrix.arch }})
     needs: [build]
-    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: amd64, platform: linux-x86_64, os: ubuntu-24.04, arch_label: x86_64 }
+          - { arch: arm64, platform: linux-arm64, os: ubuntu-24.04-arm, arch_label: arm64 }
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          name: auxipak-linux-x86_64
+          name: auxipak-${{ matrix.platform }}
           path: artifact
       - name: Construction (build-deb.sh --from-dir)
         run: |
           version=$(sed -n '/^\[workspace.package\]/,/^\[/s/^version = "\(.*\)"/\1/p' Cargo.toml)
-          chmod +x artifact/auxipak-linux-x86_64/auxipak
-          packaging/deb/build-deb.sh "$version" --from-dir artifact/auxipak-linux-x86_64 --out dist-deb
+          chmod +x artifact/auxipak-${{ matrix.platform }}/auxipak
+          packaging/deb/build-deb.sh "$version" --arch ${{ matrix.arch }} --from-dir artifact/auxipak-${{ matrix.platform }} --out dist-deb
           echo "VERSION=$version" >> "$GITHUB_ENV"
-          echo "DEB=$PWD/dist-deb/auxipak_${version}_amd64.deb" >> "$GITHUB_ENV"
+          echo "DEB=$PWD/dist-deb/auxipak_${version}_${{ matrix.arch }}.deb" >> "$GITHUB_ENV"
       - name: En-tête et contenu
         run: |
           dpkg-deb -I "$DEB"
@@ -207,7 +213,7 @@ jobs:
           out=$(AUXIPAK_LANG=fr auxipak doctor 2>&1 || true)
           sudo umount "$(readlink -f /etc/os-release)"
           echo "$out"
-          echo "$out" | grep -q 'auxinuxos 13, x86_64'
+          echo "$out" | grep -q 'auxinuxos 13, ${{ matrix.arch_label }}'
           echo "$out" | grep -q 'Canal        : linux/auxinuxos'
           if echo "$out" | grep -q 'NON VALIDÉE'; then echo 'adaptateur auxi non validé'; exit 1; fi
       - name: Désinstallation (conffiles conservés, puis purge)
@@ -219,7 +225,7 @@ jobs:
           test ! -e /etc/auxipak/config.toml
       - uses: actions/upload-artifact@v4
         with:
-          name: auxipak-deb
+          name: auxipak-deb-${{ matrix.arch }}
           path: dist-deb/*.deb
           retention-days: 14
 

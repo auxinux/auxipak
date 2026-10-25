@@ -5,6 +5,13 @@ le projet applique le [versionnage sémantique](https://semver.org/lang/fr/).
 
 ## [Non publié]
 
+### Ajouté
+
+- Paquet Debian arm64 : `packaging/deb/build-deb.sh --arch arm64` (binaire
+  linux-arm64, dépendances lues par `readelf`, valable aussi pour un binaire
+  d'une autre architecture) ; la CI construit, installe et contrôle les
+  paquets amd64 et arm64 (AuxiNux OS Edition ARM, Debian/Ubuntu arm64).
+
 ### Corrigé
 
 - Manifeste : les identifiants de reçu macOS (`package_id` des méthodes

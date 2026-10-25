@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Construit le paquet Debian du client AuxiPak (dpkg-deb, sans debhelper).
 #
-#   packaging/deb/build-deb.sh VERSION [--from-dir DIR] [--out DIR]
+#   packaging/deb/build-deb.sh VERSION [--arch amd64|arm64] [--from-dir DIR] [--out DIR]
 #
-# Produit auxipak_VERSION_amd64.deb :
+# Produit auxipak_VERSION_<arch>.deb (amd64 par défaut ; arm64 pour AuxiNux OS
+# Edition ARM et Debian/Ubuntu arm64) :
 #   /usr/bin/auxipak                               client (seul ; pas le Builder)
 #   /etc/auxipak/config.toml                       conffile : dépôt officiel
 #                                                  + adaptateur auxi (AuxiNux OS)
@@ -11,12 +12,13 @@
 #   /etc/auxipak/trust/official/package-keys.json  du dépôt officiel (conffiles)
 #
 # Le binaire vient :
-#   - par défaut, de l'archive linux-x86_64 publiée sur le serveur
+#   - par défaut, de l'archive linux-x86_64 (ou linux-arm64) publiée sur le serveur
 #     ($AUXIPAK_URL/downloads/, empreinte vérifiée avec SHA256SUMS) ;
 #   - avec --from-dir DIR, de DIR/auxipak (target/release, artefact de CI,
 #     archive extraite).
 #
-# Les dépendances (Depends) sont calculées sur le binaire lui-même (objdump) :
+# Les dépendances (Depends) sont calculées sur le binaire lui-même (readelf,
+# qui lit aussi un binaire d'une autre architecture) :
 # bibliothèques NEEDED et version minimale de la glibc.
 #
 # Ce script ne publie rien : la mise en dépôt APT est une étape séparée.
@@ -30,7 +32,6 @@ ROOT_SHA256=1c5b557606d5786559ad52caba76f0759f842a90d3221736c75551ad867056af
 MAINTAINER="AuxiNux <repo@auxinux.ca>"
 HOMEPAGE="https://auxipak.auxinux.ca"
 DEB_ARCH=amd64
-PLATFORM=linux-x86_64
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "${HERE}/../.." && pwd)"
@@ -46,6 +47,7 @@ FROM_DIR=""
 OUT_DIR="$(pwd)"
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --arch) [[ $# -ge 2 ]] || die "--arch exige amd64 ou arm64"; DEB_ARCH="$2"; shift 2 ;;
     --from-dir) [[ $# -ge 2 ]] || die "--from-dir exige un répertoire"; FROM_DIR="$2"; shift 2 ;;
     --out) [[ $# -ge 2 ]] || die "--out exige un répertoire"; OUT_DIR="$2"; shift 2 ;;
     -h|--help) usage 0 ;;
@@ -57,7 +59,13 @@ done
 VERSION="${VERSION#v}"
 [[ "${VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+([~+][0-9A-Za-z.~+]+)?$ ]] || die "version invalide : ${VERSION}"
 
-for tool in dpkg-deb objdump sha256sum md5sum tar; do
+case "${DEB_ARCH}" in
+  amd64) PLATFORM=linux-x86_64; ELF_MACHINE='X86-64'; HOST_MACHINE=x86_64; LOADER=ld-linux-x86-64.so.2 ;;
+  arm64) PLATFORM=linux-arm64; ELF_MACHINE='AArch64'; HOST_MACHINE=aarch64; LOADER=ld-linux-aarch64.so.1 ;;
+  *) die "architecture non prise en charge : ${DEB_ARCH} (amd64 ou arm64)" ;;
+esac
+
+for tool in dpkg-deb readelf sha256sum md5sum tar; do
   command -v "${tool}" >/dev/null 2>&1 || die "outil requis introuvable : ${tool}"
 done
 
@@ -87,26 +95,27 @@ else
   [[ -f "${BIN}" ]] || die "archive invalide : auxipak absent"
 fi
 
-# ELF x86-64 ?
-objdump -f "${BIN}" 2>/dev/null | grep -q 'file format elf64-x86-64' || die "${BIN} n'est pas un binaire ELF x86-64"
+# Binaire ELF 64 bits de la bonne architecture ?
+readelf -h "${BIN}" 2>/dev/null | grep -q "Machine:.*${ELF_MACHINE}" \
+  || die "${BIN} n'est pas un binaire ELF ${ELF_MACHINE} (--arch ${DEB_ARCH})"
 
 # La version du binaire doit être celle du paquet (exécutable seulement sur
-# un hôte x86-64).
-if [[ "$(uname -m)" == x86_64 ]]; then
+# un hôte de la même architecture).
+if [[ "$(uname -m)" == "${HOST_MACHINE}" ]]; then
   got="$("${BIN}" --version 2>/dev/null || true)"
   [[ "${got}" == "auxipak ${VERSION}" ]] || die "le binaire annonce « ${got} », attendu « auxipak ${VERSION} »"
 fi
 
 # --- Dépendances réelles du binaire -------------------------------------------
 depends=()
-needed="$(objdump -p "${BIN}" | awk '$1 == "NEEDED" { print $2 }')"
+needed="$(readelf -dW "${BIN}" | sed -n 's/.*(NEEDED).*\[\(.*\)\].*/\1/p')"
 if [[ -n "${needed}" ]]; then
-  glibc="$(objdump -T "${BIN}" | grep -o 'GLIBC_[0-9][0-9.]*' | sed 's/GLIBC_//' | sort -uV | tail -n 1)"
+  glibc="$(readelf -VW "${BIN}" | grep -o 'GLIBC_[0-9][0-9.]*' | sed 's/GLIBC_//' | sort -uV | tail -n 1)"
   [[ -n "${glibc}" ]] || die "binaire dynamique sans symbole GLIBC_ : bibliothèque C inattendue"
   depends+=("libc6 (>= ${glibc})")
   for lib in ${needed}; do
     case "${lib}" in
-      libc.so.6|libm.so.6|libpthread.so.0|libdl.so.2|librt.so.1|ld-linux-x86-64.so.2) ;;
+      libc.so.6|libm.so.6|libpthread.so.0|libdl.so.2|librt.so.1|"${LOADER}") ;;
       libgcc_s.so.1) depends+=("libgcc-s1") ;;
       *) die "dépendance inattendue du binaire : ${lib} (ajouter le paquet Debian correspondant)" ;;
     esac
