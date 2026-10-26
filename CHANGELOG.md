@@ -5,6 +5,8 @@ le projet applique le [versionnage sémantique](https://semver.org/lang/fr/).
 
 ## [Non publié]
 
+## [1.0.11] — 2026-10-26
+
 ### Sécurité
 
 - `ctutils` 0.4.6 (RUSTSEC-2026-0385 : masques et comparaisons `u128` non
